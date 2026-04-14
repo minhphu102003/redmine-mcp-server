@@ -12,8 +12,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    _custom_field_to_dict,
     list_project_issue_custom_fields,
+)
+from redmine_mcp_server.handler_impl.issue_fields import (  # noqa: E402
+    _custom_field_to_dict,
 )
 
 
