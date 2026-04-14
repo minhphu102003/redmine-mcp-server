@@ -26,3 +26,5 @@ plans
 .mcpregistry_registry_token
 coverage.xml
 docs_internal/
+.agents/private/
+uv.lock
