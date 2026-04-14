@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from datetime import datetime  # noqa: E402
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.handler_impl.issue_fields import (  # noqa: E402
     _is_true_env,
     _normalize_field_label,
     _parse_create_issue_fields,
@@ -25,12 +25,19 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_missing_custom_field_value,
     _is_allowed_custom_field_value,
     _resolve_required_custom_field_value,
-    _coerce_json_safe,
     _coerce_update_custom_fields,
     _upsert_custom_field_entry,
-    _custom_fields_to_list,
     _custom_field_trackers_to_list,
     _custom_field_applies_to_tracker,
+)
+from redmine_mcp_server.serialization import (  # noqa: E402
+    _coerce_json_safe,
+    _custom_fields_to_list,
+)
+
+DEFAULTS_PATCH_PATH = (
+    "redmine_mcp_server.handler_impl.issue_fields."
+    "_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES"
 )
 
 # ── Cycle 1: _is_true_env ───────────────────────────────────────────
@@ -191,19 +198,13 @@ class TestExtractMissingRequiredFieldNames:
 class TestLoadRequiredCustomFieldDefaults:
     """Tests for _load_required_custom_field_defaults (lines 540-563)."""
 
-    @patch(
-        "redmine_mcp_server.redmine_handler._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES",
-        {},
-    )
+    @patch(DEFAULTS_PATCH_PATH, {})
     def test_empty_env_returns_builtin_defaults(self):
         os.environ.pop("REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS", None)
         result = _load_required_custom_field_defaults()
         assert result == {}
 
-    @patch(
-        "redmine_mcp_server.redmine_handler._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES",
-        {},
-    )
+    @patch(DEFAULTS_PATCH_PATH, {})
     @patch.dict(
         os.environ,
         {"REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS": '{"Project Category": "Any"}'},
@@ -213,10 +214,7 @@ class TestLoadRequiredCustomFieldDefaults:
         result = _load_required_custom_field_defaults()
         assert result == {"projectcategory": "Any"}
 
-    @patch(
-        "redmine_mcp_server.redmine_handler._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES",
-        {},
-    )
+    @patch(DEFAULTS_PATCH_PATH, {})
     @patch.dict(
         os.environ,
         {"REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS": "[1, 2, 3]"},
@@ -226,10 +224,7 @@ class TestLoadRequiredCustomFieldDefaults:
         result = _load_required_custom_field_defaults()
         assert result == {}
 
-    @patch(
-        "redmine_mcp_server.redmine_handler._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES",
-        {},
-    )
+    @patch(DEFAULTS_PATCH_PATH, {})
     @patch.dict(
         os.environ,
         {"REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS": "{bad"},
@@ -239,10 +234,7 @@ class TestLoadRequiredCustomFieldDefaults:
         result = _load_required_custom_field_defaults()
         assert result == {}
 
-    @patch(
-        "redmine_mcp_server.redmine_handler._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES",
-        {},
-    )
+    @patch(DEFAULTS_PATCH_PATH, {})
     @patch.dict(
         os.environ,
         {"REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS": '{"A": null, "B": "val"}'},

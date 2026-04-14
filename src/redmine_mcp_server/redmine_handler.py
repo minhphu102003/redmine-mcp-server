@@ -26,8 +26,7 @@ Dependencies:
 import os
 import uuid
 import json
-import re
-import asyncio
+import asyncio  # noqa: F401
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,20 +37,34 @@ from redminelib import Redmine
 from redminelib.exceptions import (
     ResourceNotFoundError,
     VersionMismatchError,
-    AuthError,
-    ForbiddenError,
-    ServerError,
-    UnknownError,
     ValidationError,
-    HTTPProtocolError,
-)
-from requests.exceptions import (
-    ConnectionError as RequestsConnectionError,
-    Timeout as RequestsTimeout,
-    SSLError as RequestsSSLError,
 )
 from fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
+from .handler_impl import issue_fields as _issue_fields
+from .handler_impl.errors import handle_redmine_error
+from .handler_impl.http_routes import (
+    CleanupTaskManager,
+    cleanup_status_payload,
+    ensure_cleanup_started,
+    health_payload,
+    serve_attachment_by_id,
+)
+from .serialization import (  # noqa: F401
+    wrap_insecure_content,
+    _coerce_json_safe,
+    _custom_fields_to_list,
+    _issue_to_dict,
+    _resource_to_dict,
+    _issue_to_dict_selective,
+    _journals_to_list,
+    _attachments_to_list,
+    _version_to_dict,
+    _analyze_issues,
+    _membership_to_dict,
+    _time_entry_to_dict,
+    _wiki_page_to_dict,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -201,87 +214,6 @@ def _get_redmine_client() -> Redmine:
 mcp = FastMCP("redmine_mcp_tools")
 
 
-class CleanupTaskManager:
-    """Manages the background cleanup task lifecycle."""
-
-    def __init__(self):
-        self.task: Optional[asyncio.Task] = None
-        self.manager: Optional[AttachmentFileManager] = None
-        self.enabled = False
-        self.interval_seconds = 600  # 10 minutes default
-
-    async def start(self):
-        """Start the cleanup task if enabled."""
-        self.enabled = os.getenv("AUTO_CLEANUP_ENABLED", "false").lower() == "true"
-
-        if not self.enabled:
-            logger.info("Automatic cleanup is disabled (AUTO_CLEANUP_ENABLED=false)")
-            return
-
-        interval_minutes = float(os.getenv("CLEANUP_INTERVAL_MINUTES", "10"))
-        self.interval_seconds = interval_minutes * 60
-        attachments_dir = os.getenv("ATTACHMENTS_DIR", "./attachments")
-
-        self.manager = AttachmentFileManager(attachments_dir)
-
-        logger.info(
-            f"Starting automatic cleanup task "
-            f"(interval: {interval_minutes} minutes, "
-            f"directory: {attachments_dir})"
-        )
-
-        self.task = asyncio.create_task(self._cleanup_loop())
-
-    async def _cleanup_loop(self):
-        """The main cleanup loop."""
-        # Initial delay to let server fully start
-        await asyncio.sleep(10)
-
-        while True:
-            try:
-                stats = self.manager.cleanup_expired_files()
-                if stats["cleaned_files"] > 0:
-                    logger.info(
-                        f"Automatic cleanup completed: "
-                        f"removed {stats['cleaned_files']} files, "
-                        f"freed {stats['cleaned_mb']}MB"
-                    )
-                else:
-                    logger.debug("Automatic cleanup: no expired files found")
-
-                # Wait for next interval
-                await asyncio.sleep(self.interval_seconds)
-
-            except asyncio.CancelledError:
-                logger.info("Cleanup task cancelled, shutting down")
-                raise
-            except Exception as e:
-                logger.error(f"Error in cleanup task: {e}", exc_info=True)
-                # Continue running, wait before retry
-                await asyncio.sleep(min(self.interval_seconds, 300))
-
-    async def stop(self):
-        """Stop the cleanup task gracefully."""
-        if self.task and not self.task.done():
-            logger.info("Stopping cleanup task...")
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-            self.task = None
-            logger.info("Cleanup task stopped")
-
-    def get_status(self) -> dict:
-        """Get current status of cleanup task."""
-        return {
-            "enabled": self.enabled,
-            "running": self.task and not self.task.done() if self.task else False,
-            "interval_seconds": self.interval_seconds,
-            "storage_stats": self.manager.get_storage_stats() if self.manager else None,
-        }
-
-
 # Initialize cleanup manager
 cleanup_manager = CleanupTaskManager()
 
@@ -293,17 +225,9 @@ _cleanup_initialized = False
 async def _ensure_cleanup_started():
     """Ensure cleanup task is started (lazy initialization)."""
     global _cleanup_initialized
-    if not _cleanup_initialized:
-        cleanup_enabled = os.getenv("AUTO_CLEANUP_ENABLED", "false").lower() == "true"
-        if cleanup_enabled:
-            await cleanup_manager.start()
-            _cleanup_initialized = True
-            logger.info("Cleanup task initialized via MCP tool call")
-        else:
-            logger.info("Cleanup disabled (AUTO_CLEANUP_ENABLED=false)")
-            _cleanup_initialized = (
-                True  # Mark as "initialized" to avoid repeated checks
-            )
+    _cleanup_initialized, _ = await ensure_cleanup_started(
+        cleanup_manager, _cleanup_initialized
+    )
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -311,86 +235,23 @@ async def health_check(request):
     """Health check endpoint for container orchestration and monitoring."""
     from starlette.responses import JSONResponse
 
-    # Initialize cleanup task on first health check (lazy initialization)
     await _ensure_cleanup_started()
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "service": "redmine_mcp_tools",
-            "auth_mode": REDMINE_AUTH_MODE,
-        }
-    )
+    return JSONResponse(health_payload(REDMINE_AUTH_MODE))
 
 
 @mcp.custom_route("/files/{file_id}", methods=["GET"])
 async def serve_attachment(request):
     """Serve downloaded attachment files via HTTP."""
-    from starlette.responses import FileResponse
     from starlette.exceptions import HTTPException
 
-    file_id = request.path_params["file_id"]
-
-    # Security: Validate file_id format (proper UUID validation)
-    try:
-        uuid.UUID(file_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid file ID")
-
-    # Load file metadata from UUID directory
-    attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-    uuid_dir = attachments_dir / file_id
-    metadata_file = uuid_dir / "metadata.json"
-
-    if not metadata_file.exists():
-        raise HTTPException(status_code=404, detail="File not found or expired")
-
-    try:
-        # Read metadata
-        with open(metadata_file, "r") as f:
-            metadata = json.load(f)
-
-        # Check expiry with proper timezone-aware datetime comparison
-        expires_at_str = metadata.get("expires_at", "")
-        if expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > expires_at:
-                # Clean up expired files
-                try:
-                    file_path = Path(metadata["file_path"])
-                    if file_path.exists():
-                        file_path.unlink()
-                    metadata_file.unlink()
-                    # Remove UUID directory if empty
-                    if uuid_dir.exists() and not any(uuid_dir.iterdir()):
-                        uuid_dir.rmdir()
-                except OSError:
-                    pass  # Log but don't fail if cleanup fails
-                raise HTTPException(status_code=404, detail="File expired")
-
-        # Validate file path security (must be within UUID directory)
-        file_path = Path(metadata["file_path"]).resolve()
-        uuid_dir_resolved = uuid_dir.resolve()
-        try:
-            file_path.relative_to(uuid_dir_resolved)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        # Serve file
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-
-        return FileResponse(
-            path=str(file_path),
-            filename=metadata["original_filename"],
-            media_type=metadata.get("content_type", "application/octet-stream"),
+    result = serve_attachment_by_id(request.path_params["file_id"])
+    if isinstance(result, dict):
+        raise HTTPException(
+            status_code=result.get("status_code", 500),
+            detail=result.get("detail", "Unknown error"),
         )
 
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Corrupted metadata")
-    except ValueError:
-        # Invalid datetime format
-        raise HTTPException(status_code=500, detail="Invalid metadata format")
+    return result
 
 
 @mcp.custom_route("/cleanup/status", methods=["GET"])
@@ -398,135 +259,25 @@ async def cleanup_status(request):
     """Get cleanup task status and statistics."""
     from starlette.responses import JSONResponse
 
-    return JSONResponse(cleanup_manager.get_status())
+    return JSONResponse(cleanup_status_payload(cleanup_manager))
 
 
 def _handle_redmine_error(
     e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """
-    Convert exceptions to user-friendly error messages with actionable guidance.
-    """
-    context = context or {}
-    redmine_url = REDMINE_URL or "REDMINE_URL not configured"
-
-    # Check SSLError BEFORE ConnectionError (SSLError inherits from ConnectionError)
-    if isinstance(e, RequestsSSLError):
-        logger.error(f"SSL error during {operation}: {e}")
-        return {
-            "error": (
-                f"SSL/TLS error connecting to {redmine_url}. "
-                "Please check: 1) SSL certificate validity, "
-                "2) REDMINE_SSL_VERIFY setting, 3) REDMINE_SSL_CERT path"
-            )
-        }
-
-    # Connection-level errors (from requests library)
-    if isinstance(e, RequestsConnectionError):
-        logger.error(f"Connection error during {operation}: {e}")
-        return {
-            "error": (
-                f"Cannot connect to Redmine at {redmine_url}. "
-                "Please check: 1) URL is correct, 2) Network is accessible, "
-                "3) Redmine server is running"
-            )
-        }
-
-    if isinstance(e, RequestsTimeout):
-        logger.error(f"Timeout during {operation}: {e}")
-        return {
-            "error": (
-                f"Connection to Redmine at {redmine_url} timed out. "
-                "Please check: 1) Network connectivity, 2) Redmine server load"
-            )
-        }
-
-    # HTTP-level errors (from redminelib)
-    if isinstance(e, AuthError):
-        logger.error(f"Authentication failed during {operation}")
-        return {
-            "error": (
-                "Authentication failed. Please check your credentials: "
-                "1) REDMINE_API_KEY is valid, or "
-                "2) REDMINE_USERNAME and REDMINE_PASSWORD are correct"
-            )
-        }
-
-    if isinstance(e, ForbiddenError):
-        logger.error(f"Access denied during {operation}")
-        return {
-            "error": (
-                "Access denied. Your Redmine user lacks the required permission "
-                "for this action. Contact your Redmine administrator."
-            )
-        }
-
-    if isinstance(e, ServerError):
-        logger.error(f"Redmine server error during {operation}: {e}")
-        return {
-            "error": (
-                "Redmine server returned an internal error (HTTP 500). "
-                "Check the Redmine server logs or contact your administrator."
-            )
-        }
-
-    if isinstance(e, ResourceNotFoundError):
-        resource_type = context.get("resource_type", "resource")
-        resource_id = context.get("resource_id", "")
-        if resource_id:
-            return {"error": f"{resource_type.capitalize()} {resource_id} not found."}
-        return {"error": f"Requested {resource_type} not found."}
-
-    if isinstance(e, ValidationError):
-        logger.warning(f"Validation error during {operation}: {e}")
-        return {"error": f"Validation failed: {str(e)}"}
-
-    if isinstance(e, VersionMismatchError):
-        return {"error": str(e)}
-
-    if isinstance(e, HTTPProtocolError):
-        logger.error(f"HTTP protocol error during {operation}: {e}")
-        return {
-            "error": (
-                "HTTP/HTTPS protocol mismatch. Ensure REDMINE_URL uses the correct "
-                "protocol (http:// or https://) matching your server configuration."
-            )
-        }
-
-    if isinstance(e, UnknownError):
-        logger.error(f"Unknown HTTP error during {operation}: status={e.status_code}")
-        return {"error": f"Redmine returned HTTP {e.status_code}. Check server logs."}
-
-    # Fallback
-    logger.error(f"Unexpected error during {operation}: {type(e).__name__}: {e}")
-    return {"error": f"An unexpected error occurred while {operation}: {str(e)}"}
+    """Compatibility wrapper for centralized error handling."""
+    return handle_redmine_error(
+        e=e,
+        operation=operation,
+        redmine_url=REDMINE_URL or "REDMINE_URL not configured",
+        context=context,
+    )
 
 
-_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = {}
-
-_STANDARD_ISSUE_UPDATE_FIELDS: Set[str] = {
-    "subject",
-    "description",
-    "notes",
-    "private_notes",
-    "tracker_id",
-    "status_id",
-    "priority_id",
-    "category_id",
-    "fixed_version_id",
-    "assigned_to_id",
-    "parent_issue_id",
-    "start_date",
-    "due_date",
-    "done_ratio",
-    "estimated_hours",
-    "is_private",
-    "watcher_user_ids",
-    "uploads",
-    "deleted_attachment_ids",
-    "custom_fields",
-    "status_name",
-}
+_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = (
+    _issue_fields._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES
+)
+_STANDARD_ISSUE_UPDATE_FIELDS: Set[str] = _issue_fields._STANDARD_ISSUE_UPDATE_FIELDS
 
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
@@ -545,198 +296,11 @@ _READ_ONLY_ERROR = {
 }
 
 
-def _normalize_field_label(label: str) -> str:
-    """Normalize a field label for case/spacing-insensitive comparisons."""
-    return re.sub(r"[^a-z0-9]+", "", label.lower())
-
-
-def _parse_create_issue_fields(
-    fields: Optional[Union[Dict[str, Any], str]],
-) -> Dict[str, Any]:
-    """Parse create issue fields from dict or serialized string payload."""
-    return _parse_optional_object_payload(fields, "fields")
-
-
-def _parse_optional_object_payload(
-    payload: Optional[Union[Dict[str, Any], str]], payload_name: str
-) -> Dict[str, Any]:
-    """Parse an optional payload from dict or serialized JSON object string."""
-    if payload is None:
-        return {}
-
-    if isinstance(payload, dict):
-        parsed: Any = dict(payload)
-    elif isinstance(payload, str):
-        raw = payload.strip()
-        if not raw:
-            return {}
-        try:
-            parsed = json.loads(raw)
-        except Exception as e:
-            raise ValueError(
-                f"Invalid {payload_name} payload. Expected a dict or "
-                "JSON object string."
-            ) from e
-    else:
-        raise ValueError(
-            f"Invalid {payload_name} payload. Expected a dict or JSON object string."
-        )
-
-    if parsed is None:
-        raise ValueError(
-            f"Invalid {payload_name} payload. Parsed value must be an object/dict."
-        )
-
-    if isinstance(parsed, dict) and set(parsed.keys()) == {payload_name}:
-        wrapped = parsed.get(payload_name)
-        if isinstance(wrapped, dict):
-            parsed = wrapped
-
-    if not isinstance(parsed, dict):
-        raise ValueError(
-            f"Invalid {payload_name} payload. Parsed value must be an object/dict."
-        )
-
-    return dict(parsed)
-
-
-def _extract_possible_values(custom_field: Any) -> List[str]:
-    """Extract possible values from a Redmine custom field in a robust way."""
-    possible_values = getattr(custom_field, "possible_values", None) or []
-    result: List[str] = []
-    for value in possible_values:
-        if isinstance(value, dict):
-            extracted = value.get("value")
-        else:
-            extracted = getattr(value, "value", value)
-        if extracted is not None:
-            result.append(str(extracted))
-    return result
-
-
 def _load_required_custom_field_defaults() -> Dict[str, Any]:
     """Load normalized custom field defaults from env + built-in fallbacks."""
-    defaults = dict(_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES)
-    raw = os.getenv("REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS", "").strip()
-    if not raw:
-        return defaults
-
-    try:
-        loaded = json.loads(raw)
-        if isinstance(loaded, dict):
-            for key, value in loaded.items():
-                if key and value is not None:
-                    defaults[_normalize_field_label(str(key))] = value
-        else:
-            logger.warning(
-                "REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS must be a JSON object."
-            )
-    except Exception as e:
-        logger.warning(
-            "Failed parsing REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS as JSON: %s",
-            e,
-        )
-
-    return defaults
-
-
-def _is_required_custom_field_autofill_enabled() -> bool:
-    """Check whether retry-based required custom field autofill is enabled."""
-    return _is_true_env("REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS", "false")
-
-
-def _extract_missing_required_field_names(error_message: str) -> List[str]:
-    """Extract field names from relevant validation errors."""
-    message = error_message or ""
-    if "Validation failed:" in message:
-        message = message.split("Validation failed:", 1)[1]
-
-    # Handle common Redmine validation fragments that imply we should retry
-    # required custom field autofill.
-    markers = [
-        "cannot be blank",
-        "is not included in the list",
-        "is invalid",
-    ]
-
-    missing_names: List[str] = []
-    for item in [part.strip() for part in message.split(",") if part.strip()]:
-        lower_item = item.lower()
-        for marker in markers:
-            marker_pos = lower_item.find(marker)
-            if marker_pos == -1:
-                continue
-            field_name = item[:marker_pos].strip(" .:")
-            if field_name:
-                missing_names.append(field_name)
-            break
-
-    return missing_names
-
-
-def _is_missing_custom_field_value(value: Any) -> bool:
-    """Return True when a custom field value should be treated as missing."""
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip() == ""
-    if isinstance(value, (list, tuple, set, dict)):
-        return len(value) == 0
-    return False
-
-
-def wrap_insecure_content(content: Any) -> Any:
-    """Wrap user-controlled content in boundary tags to prevent prompt injection.
-
-    Wraps non-empty string content in unique boundary tags so that LLM
-    consumers can distinguish trusted tool output from untrusted user data.
-
-    Args:
-        content: The content to wrap. Non-string or empty values are
-                 returned unchanged.
-
-    Returns:
-        Wrapped string with boundary tags, or original value if not a
-        non-empty string.
-    """
-    if not isinstance(content, str) or not content:
-        return content
-    boundary = uuid.uuid4().hex[:16]
-    return (
-        f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
+    return _issue_fields._load_required_custom_field_defaults(
+        defaults=_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES
     )
-
-
-def _is_allowed_custom_field_value(value: Any, possible_values: List[str]) -> bool:
-    """Check whether a value is compatible with field possible_values."""
-    if not possible_values:
-        return True
-    if isinstance(value, (list, tuple, set)):
-        return bool(value) and all(str(item) in possible_values for item in value)
-    return str(value) in possible_values
-
-
-def _resolve_required_custom_field_value(
-    custom_field: Any, defaults: Dict[str, Any]
-) -> Optional[Any]:
-    """Resolve value from explicit defaults only (Redmine default/env override)."""
-    name = str(getattr(custom_field, "name", "") or "")
-    normalized_name = _normalize_field_label(name)
-    possible_values = _extract_possible_values(custom_field)
-
-    default_value = getattr(custom_field, "default_value", None)
-    if not _is_missing_custom_field_value(
-        default_value
-    ) and _is_allowed_custom_field_value(default_value, possible_values):
-        return default_value
-
-    preferred = defaults.get(normalized_name)
-    if not _is_missing_custom_field_value(preferred) and _is_allowed_custom_field_value(
-        preferred, possible_values
-    ):
-        return preferred
-
-    return None
 
 
 def _augment_fields_with_required_custom_fields(
@@ -745,650 +309,32 @@ def _augment_fields_with_required_custom_fields(
     missing_field_names: List[str],
 ) -> Dict[str, Any]:
     """Populate missing required custom fields based on project metadata."""
-    if not missing_field_names:
-        return issue_fields
-
-    missing_normalized = {_normalize_field_label(name) for name in missing_field_names}
-    if not missing_normalized:
-        return issue_fields
-
-    project = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
+    return _issue_fields._augment_fields_with_required_custom_fields(
+        project_id,
+        issue_fields,
+        missing_field_names,
+        get_client=_get_redmine_client,
+        defaults=_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES,
     )
-    project_custom_fields = getattr(project, "issue_custom_fields", None) or []
-
-    updated_fields = dict(issue_fields)
-    existing_custom_fields = updated_fields.get("custom_fields", [])
-    if existing_custom_fields is None:
-        existing_custom_fields = []
-    if not isinstance(existing_custom_fields, list):
-        raise ValueError(
-            "Invalid custom_fields payload. Expected a list of "
-            "{'id': <int>, 'value': <value>} dictionaries."
-        )
-
-    merged_custom_fields: List[Dict[str, Any]] = []
-    existing_entries_by_id: Dict[Any, Dict[str, Any]] = {}
-    for entry in existing_custom_fields:
-        if not isinstance(entry, dict):
-            continue
-        entry_copy = dict(entry)
-        field_id = entry_copy.get("id")
-        if field_id is not None and field_id not in existing_entries_by_id:
-            existing_entries_by_id[field_id] = entry_copy
-        merged_custom_fields.append(entry_copy)
-
-    defaults = _load_required_custom_field_defaults()
-
-    for custom_field in project_custom_fields:
-        field_id = getattr(custom_field, "id", None)
-        field_name = str(getattr(custom_field, "name", "") or "")
-        if field_id is None or not field_name:
-            continue
-
-        normalized_name = _normalize_field_label(field_name)
-        if normalized_name not in missing_normalized:
-            continue
-
-        possible_values = _extract_possible_values(custom_field)
-        field_value = _resolve_required_custom_field_value(custom_field, defaults)
-        if field_value is None:
-            continue
-        existing_entry = existing_entries_by_id.get(field_id)
-        if existing_entry is not None:
-            existing_value = existing_entry.get("value")
-            if _is_missing_custom_field_value(existing_value) or (
-                not _is_allowed_custom_field_value(existing_value, possible_values)
-            ):
-                existing_entry["value"] = field_value
-            continue
-
-        new_entry = {"id": field_id, "value": field_value}
-        merged_custom_fields.append(new_entry)
-        existing_entries_by_id[field_id] = new_entry
-
-    if merged_custom_fields:
-        updated_fields["custom_fields"] = merged_custom_fields
-
-    return updated_fields
-
-
-def _coerce_json_safe(value: Any) -> Any:
-    """Convert arbitrary values into JSON-safe data."""
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, (list, tuple, set)):
-        return [_coerce_json_safe(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _coerce_json_safe(item) for key, item in value.items()}
-    return str(value)
-
-
-def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert issue custom_fields to a serializable list."""
-    raw_custom_fields = getattr(issue, "custom_fields", None)
-    if raw_custom_fields is None:
-        return []
-
-    custom_fields: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_custom_fields)
-    except TypeError:
-        return []
-
-    for custom_field in iterator:
-        if isinstance(custom_field, dict):
-            field_id = custom_field.get("id")
-            field_name = custom_field.get("name")
-            field_value = custom_field.get("value")
-        else:
-            field_id = getattr(custom_field, "id", None)
-            field_name = getattr(custom_field, "name", None)
-            field_value = getattr(custom_field, "value", None)
-
-        custom_fields.append(
-            {
-                "id": field_id,
-                "name": field_name,
-                "value": _coerce_json_safe(field_value),
-            }
-        )
-
-    return custom_fields
-
-
-def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str, Any]:
-    """Convert a python-redmine Issue object to a serializable dict."""
-    # Use getattr for all potentially missing attributes (search API may not return all)
-    assigned = getattr(issue, "assigned_to", None)
-    project = getattr(issue, "project", None)
-    status = getattr(issue, "status", None)
-    priority = getattr(issue, "priority", None)
-    author = getattr(issue, "author", None)
-
-    issue_dict = {
-        "id": getattr(issue, "id", None),
-        "subject": getattr(issue, "subject", ""),
-        "description": wrap_insecure_content(getattr(issue, "description", "")),
-        "project": (
-            {"id": project.id, "name": project.name} if project is not None else None
-        ),
-        "status": (
-            {"id": status.id, "name": status.name} if status is not None else None
-        ),
-        "priority": (
-            {"id": priority.id, "name": priority.name} if priority is not None else None
-        ),
-        "author": (
-            {"id": author.id, "name": author.name} if author is not None else None
-        ),
-        "assigned_to": (
-            {
-                "id": assigned.id,
-                "name": assigned.name,
-            }
-            if assigned is not None
-            else None
-        ),
-        "created_on": (
-            issue.created_on.isoformat()
-            if getattr(issue, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            issue.updated_on.isoformat()
-            if getattr(issue, "updated_on", None) is not None
-            else None
-        ),
-    }
-
-    if include_custom_fields:
-        issue_dict["custom_fields"] = _custom_fields_to_list(issue)
-
-    return issue_dict
-
-
-def _coerce_update_custom_fields(
-    custom_fields: Optional[Any],
-) -> List[Dict[str, Any]]:
-    """Normalize an update payload custom_fields value into Redmine format."""
-    if custom_fields is None:
-        return []
-    if not isinstance(custom_fields, list):
-        raise ValueError(
-            "Invalid custom_fields payload. Expected a list of "
-            "{'id': <int>, 'value': <value>} dictionaries."
-        )
-
-    normalized: List[Dict[str, Any]] = []
-    for entry in custom_fields:
-        if not isinstance(entry, dict):
-            raise ValueError(
-                "Invalid custom_fields payload. Expected a list of "
-                "{'id': <int>, 'value': <value>} dictionaries."
-            )
-        if "id" not in entry:
-            raise ValueError("Invalid custom_fields entry. Missing required 'id'.")
-        normalized.append({"id": entry["id"], "value": entry.get("value")})
-    return normalized
-
-
-def _upsert_custom_field_entry(
-    entries: List[Dict[str, Any]], field_id: Any, value: Any
-) -> None:
-    """Insert or replace a custom field entry by id."""
-    for entry in entries:
-        if entry.get("id") == field_id:
-            entry["value"] = value
-            return
-    entries.append({"id": field_id, "value": value})
 
 
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
     """Load project custom-field definitions for a given issue."""
-    issue = _get_redmine_client().issue.get(issue_id)
-    project = getattr(issue, "project", None)
-    project_id = getattr(project, "id", None)
-    if project_id is None:
-        return []
-    project_obj = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
+    return _issue_fields._resolve_project_issue_custom_fields(
+        issue_id,
+        get_client=_get_redmine_client,
     )
-    return list(getattr(project_obj, "issue_custom_fields", None) or [])
-
-
-def _is_standard_issue_update_key(field_name: str) -> bool:
-    """Return True when a field name should be passed through unchanged."""
-    return field_name in _STANDARD_ISSUE_UPDATE_FIELDS
 
 
 def _map_named_custom_fields_for_update(
     issue_id: int, update_fields: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Map named custom fields in an update payload to custom_fields entries."""
-    if not update_fields:
-        return update_fields
-
-    # Keep caller-provided custom_fields and merge name-based mappings into it.
-    missing = object()
-    custom_fields_raw = update_fields.pop("custom_fields", missing)
-    custom_fields_provided = (
-        custom_fields_raw is not missing and custom_fields_raw is not None
+    return _issue_fields._map_named_custom_fields_for_update(
+        issue_id,
+        update_fields,
+        get_client=_get_redmine_client,
     )
-    if custom_fields_raw is missing:
-        custom_fields_raw = None
-    merged_custom_fields = _coerce_update_custom_fields(custom_fields_raw)
-
-    named_candidates = [
-        field_name
-        for field_name in update_fields.keys()
-        if not _is_standard_issue_update_key(field_name)
-    ]
-    if not named_candidates:
-        if custom_fields_provided:
-            update_fields["custom_fields"] = merged_custom_fields
-        return update_fields
-
-    project_custom_fields = _resolve_project_issue_custom_fields(issue_id)
-    by_normalized_name: Dict[str, Dict[str, Any]] = {}
-    ambiguous_names: Set[str] = set()
-
-    for custom_field in project_custom_fields:
-        field_id = getattr(custom_field, "id", None)
-        field_name = str(getattr(custom_field, "name", "") or "")
-        if field_id is None or not field_name:
-            continue
-        normalized = _normalize_field_label(field_name)
-        if not normalized:
-            continue
-        existing = by_normalized_name.get(normalized)
-        if existing and existing.get("id") != field_id:
-            ambiguous_names.add(normalized)
-            continue
-        by_normalized_name[normalized] = {
-            "id": field_id,
-            "name": field_name,
-            "possible_values": _extract_possible_values(custom_field),
-        }
-
-    for normalized in ambiguous_names:
-        by_normalized_name.pop(normalized, None)
-
-    for candidate in named_candidates:
-        normalized_candidate = _normalize_field_label(candidate)
-        if normalized_candidate in ambiguous_names:
-            raise ValueError(
-                f"Ambiguous custom field name '{candidate}'. "
-                "Use fields.custom_fields with explicit field IDs."
-            )
-
-        match = by_normalized_name.get(normalized_candidate)
-        if match is None:
-            continue
-
-        value = update_fields.pop(candidate)
-        possible_values = match["possible_values"]
-        if not _is_missing_custom_field_value(
-            value
-        ) and not _is_allowed_custom_field_value(value, possible_values):
-            raise ValueError(
-                f"Invalid value '{value}' for custom field '{match['name']}'. "
-                f"Allowed values: {possible_values}."
-            )
-        _upsert_custom_field_entry(merged_custom_fields, match["id"], value)
-
-    if merged_custom_fields or custom_fields_provided:
-        update_fields["custom_fields"] = merged_custom_fields
-
-    return update_fields
-
-
-def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
-    """
-    Convert any Redmine resource to a serializable dict for search results.
-
-    Args:
-        resource: Python-redmine resource object (Issue, WikiPage, etc.)
-        resource_type: Type identifier ('issues', 'wiki_pages', etc.)
-
-    Returns:
-        Dictionary with standardized fields for search results
-    """
-    base_dict: Dict[str, Any] = {
-        "id": getattr(resource, "id", None),
-        "type": resource_type,
-    }
-
-    # Extract title from various possible attributes
-    if hasattr(resource, "subject"):
-        base_dict["title"] = resource.subject
-    elif hasattr(resource, "title"):
-        base_dict["title"] = resource.title
-    elif hasattr(resource, "name"):
-        base_dict["title"] = resource.name
-    else:
-        base_dict["title"] = None
-
-    # Extract project info
-    if hasattr(resource, "project") and resource.project is not None:
-        base_dict["project"] = (
-            resource.project.name
-            if hasattr(resource.project, "name")
-            else str(resource.project)
-        )
-        base_dict["project_id"] = getattr(resource.project, "id", None)
-    elif hasattr(resource, "project_id") and resource.project_id:
-        # Fallback for search results that have project_id but not project object
-        base_dict["project"] = None
-        base_dict["project_id"] = resource.project_id
-    else:
-        base_dict["project"] = None
-        base_dict["project_id"] = None
-
-    # Extract status (issues have status, wiki pages don't)
-    if hasattr(resource, "status"):
-        base_dict["status"] = (
-            resource.status.name
-            if hasattr(resource.status, "name")
-            else str(resource.status)
-        )
-    else:
-        base_dict["status"] = None
-
-    # Extract updated timestamp
-    if hasattr(resource, "updated_on"):
-        base_dict["updated_on"] = (
-            str(resource.updated_on) if resource.updated_on else None
-        )
-    else:
-        base_dict["updated_on"] = None
-
-    # Extract description/excerpt (first 200 chars)
-    if hasattr(resource, "description") and resource.description:
-        raw_excerpt = (
-            resource.description[:200] + "..."
-            if len(resource.description) > 200
-            else resource.description
-        )
-        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
-    elif hasattr(resource, "text") and resource.text:
-        raw_excerpt = (
-            resource.text[:200] + "..." if len(resource.text) > 200 else resource.text
-        )
-        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
-    else:
-        base_dict["excerpt"] = None
-
-    return base_dict
-
-
-def _issue_to_dict_selective(
-    issue: Any, fields: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """Convert a python-redmine Issue object to a dict with selected fields.
-
-    Args:
-        issue: The python-redmine Issue object to convert.
-        fields: List of field names to include. If None, ["*"], or ["all"],
-                returns all fields (same as _issue_to_dict). Invalid or
-                missing fields are silently skipped.
-
-    Available fields:
-        - id: Issue ID
-        - subject: Issue subject/title
-        - description: Issue description
-        - project: Project info (dict with id and name)
-        - status: Status info (dict with id and name)
-        - priority: Priority info (dict with id and name)
-        - author: Author info (dict with id and name)
-        - assigned_to: Assigned user info (dict with id and name, or None)
-        - created_on: Creation timestamp (ISO format)
-        - updated_on: Last update timestamp (ISO format)
-
-    Returns:
-        Dictionary containing only the requested fields.
-
-    Examples:
-        >>> _issue_to_dict_selective(issue, ["id", "subject"])
-        {"id": 123, "subject": "Bug fix"}
-
-        >>> _issue_to_dict_selective(issue, ["*"])
-        # Returns all fields (same as _issue_to_dict)
-
-        >>> _issue_to_dict_selective(issue, None)
-        # Returns all fields (same as _issue_to_dict)
-    """
-    # Handle "all fields" cases
-    if fields is None or fields == ["*"] or fields == ["all"]:
-        return _issue_to_dict(issue)
-
-    # Build field mapping with all available fields
-    # Use getattr for all potentially missing attributes (search API may not return all)
-    assigned = getattr(issue, "assigned_to", None)
-    project = getattr(issue, "project", None)
-    status = getattr(issue, "status", None)
-    priority = getattr(issue, "priority", None)
-    author = getattr(issue, "author", None)
-
-    all_fields = {
-        "id": getattr(issue, "id", None),
-        "subject": getattr(issue, "subject", ""),
-        "description": wrap_insecure_content(getattr(issue, "description", "")),
-        "project": (
-            {"id": project.id, "name": project.name} if project is not None else None
-        ),
-        "status": (
-            {"id": status.id, "name": status.name} if status is not None else None
-        ),
-        "priority": (
-            {"id": priority.id, "name": priority.name} if priority is not None else None
-        ),
-        "author": (
-            {"id": author.id, "name": author.name} if author is not None else None
-        ),
-        "assigned_to": (
-            {
-                "id": assigned.id,
-                "name": assigned.name,
-            }
-            if assigned is not None
-            else None
-        ),
-        "created_on": (
-            issue.created_on.isoformat()
-            if getattr(issue, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            issue.updated_on.isoformat()
-            if getattr(issue, "updated_on", None) is not None
-            else None
-        ),
-    }
-
-    # Return only requested fields (silently skip invalid field names)
-    return {key: all_fields[key] for key in fields if key in all_fields}
-
-
-def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert journals on an issue object to a list of dicts."""
-    raw_journals = getattr(issue, "journals", None)
-    if raw_journals is None:
-        return []
-
-    journals: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_journals)
-    except TypeError:
-        return []
-
-    for journal in iterator:
-        notes = getattr(journal, "notes", "")
-        if not notes:
-            continue
-        user = getattr(journal, "user", None)
-        journals.append(
-            {
-                "id": journal.id,
-                "user": (
-                    {
-                        "id": user.id,
-                        "name": user.name,
-                    }
-                    if user is not None
-                    else None
-                ),
-                "notes": wrap_insecure_content(notes),
-                "created_on": (
-                    journal.created_on.isoformat()
-                    if getattr(journal, "created_on", None) is not None
-                    else None
-                ),
-            }
-        )
-    return journals
-
-
-def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert attachments on an issue object to a list of dicts."""
-    raw_attachments = getattr(issue, "attachments", None)
-    if raw_attachments is None:
-        return []
-
-    attachments: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_attachments)
-    except TypeError:
-        return []
-
-    for attachment in iterator:
-        attachments.append(
-            {
-                "id": attachment.id,
-                "filename": getattr(attachment, "filename", ""),
-                "filesize": getattr(attachment, "filesize", 0),
-                "content_type": getattr(attachment, "content_type", ""),
-                "description": getattr(attachment, "description", ""),
-                "content_url": getattr(attachment, "content_url", ""),
-                "author": (
-                    {
-                        "id": attachment.author.id,
-                        "name": attachment.author.name,
-                    }
-                    if getattr(attachment, "author", None) is not None
-                    else None
-                ),
-                "created_on": (
-                    attachment.created_on.isoformat()
-                    if getattr(attachment, "created_on", None) is not None
-                    else None
-                ),
-            }
-        )
-    return attachments
-
-
-def _version_to_dict(version: Any) -> Dict[str, Any]:
-    """Convert a python-redmine Version object to a serializable dict."""
-    project = getattr(version, "project", None)
-    return {
-        "id": getattr(version, "id", None),
-        "name": getattr(version, "name", ""),
-        "description": wrap_insecure_content(getattr(version, "description", "")),
-        "status": getattr(version, "status", ""),
-        "due_date": (
-            str(version.due_date)
-            if getattr(version, "due_date", None) is not None
-            else None
-        ),
-        "sharing": getattr(version, "sharing", ""),
-        "wiki_page_title": getattr(version, "wiki_page_title", ""),
-        "project": (
-            {"id": project.id, "name": project.name} if project is not None else None
-        ),
-        "created_on": (
-            version.created_on.isoformat()
-            if getattr(version, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            version.updated_on.isoformat()
-            if getattr(version, "updated_on", None) is not None
-            else None
-        ),
-    }
-
-
-def _custom_field_trackers_to_list(custom_field: Any) -> List[Dict[str, Any]]:
-    """Serialize custom field tracker bindings into a predictable list."""
-    raw_trackers = getattr(custom_field, "trackers", None)
-    if raw_trackers is None:
-        return []
-
-    try:
-        iterator = iter(raw_trackers)
-    except TypeError:
-        return []
-
-    trackers: List[Dict[str, Any]] = []
-    for tracker in iterator:
-        tracker_id = None
-        tracker_name = None
-
-        if isinstance(tracker, dict):
-            tracker_id = tracker.get("id")
-            tracker_name = tracker.get("name")
-        else:
-            tracker_id = getattr(tracker, "id", None)
-            tracker_name = getattr(tracker, "name", None)
-
-        if tracker_id is None and tracker_name is None:
-            continue
-
-        if tracker_id is not None:
-            try:
-                tracker_id = int(tracker_id)
-            except (TypeError, ValueError):
-                tracker_id = str(tracker_id)
-
-        trackers.append({"id": tracker_id, "name": tracker_name})
-
-    return trackers
-
-
-def _custom_field_applies_to_tracker(
-    custom_field: Any, tracker_id: Optional[int]
-) -> bool:
-    """Return whether a custom field is available for the given tracker."""
-    if tracker_id is None:
-        return True
-
-    trackers = _custom_field_trackers_to_list(custom_field)
-    if not trackers:
-        # No tracker restrictions exposed by Redmine -> treat as globally available.
-        return True
-
-    for tracker in trackers:
-        if tracker.get("id") == tracker_id:
-            return True
-
-    return False
-
-
-def _custom_field_to_dict(custom_field: Any) -> Dict[str, Any]:
-    """Convert project issue custom field metadata to a serializable dict."""
-    return {
-        "id": getattr(custom_field, "id", None),
-        "name": getattr(custom_field, "name", ""),
-        "field_format": getattr(custom_field, "field_format", ""),
-        "is_required": bool(getattr(custom_field, "is_required", False)),
-        "multiple": bool(getattr(custom_field, "multiple", False)),
-        "default_value": getattr(custom_field, "default_value", None),
-        "possible_values": _extract_possible_values(custom_field),
-        "trackers": _custom_field_trackers_to_list(custom_field),
-    }
 
 
 @mcp.tool()
@@ -1574,9 +520,12 @@ async def list_project_issue_custom_fields(
 
         result: List[Dict[str, Any]] = []
         for custom_field in custom_fields:
-            if not _custom_field_applies_to_tracker(custom_field, parsed_tracker_id):
+            if not _issue_fields._custom_field_applies_to_tracker(
+                custom_field,
+                parsed_tracker_id,
+            ):
                 continue
-            result.append(_custom_field_to_dict(custom_field))
+            result.append(_issue_fields._custom_field_to_dict(custom_field))
 
         return result
     except Exception as e:
@@ -2070,12 +1019,12 @@ async def create_redmine_issue(
         return dict(_READ_ONLY_ERROR)
 
     try:
-        issue_fields = _parse_create_issue_fields(fields)
+        issue_fields = _issue_fields._parse_create_issue_fields(fields)
     except ValueError as e:
         return {"error": str(e)}
 
     try:
-        parsed_extra_fields = _parse_optional_object_payload(
+        parsed_extra_fields = _issue_fields._parse_optional_object_payload(
             extra_fields, "extra_fields"
         )
     except ValueError as e:
@@ -2099,10 +1048,10 @@ async def create_redmine_issue(
         )
         return _issue_to_dict(issue)
     except ValidationError as e:
-        if not _is_required_custom_field_autofill_enabled():
+        if not _issue_fields._is_required_custom_field_autofill_enabled():
             return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
-        missing_names = _extract_missing_required_field_names(str(e))
+        missing_names = _issue_fields._extract_missing_required_field_names(str(e))
         if not missing_names:
             return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
@@ -2174,14 +1123,14 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
-        if not _is_required_custom_field_autofill_enabled():
+        if not _issue_fields._is_required_custom_field_autofill_enabled():
             return _handle_redmine_error(
                 e,
                 f"updating issue {issue_id}",
                 {"resource_type": "issue", "resource_id": issue_id},
             )
 
-        missing_names = _extract_missing_required_field_names(str(e))
+        missing_names = _issue_fields._extract_missing_required_field_names(str(e))
         if not missing_names:
             return _handle_redmine_error(
                 e,
@@ -2463,45 +1412,6 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         )
 
 
-def _analyze_issues(issues: List[Any]) -> Dict[str, Any]:
-    """Helper function to analyze a list of issues and return statistics."""
-    if not issues:
-        return {
-            "by_status": {},
-            "by_priority": {},
-            "by_assignee": {},
-            "total": 0,
-        }
-
-    status_counts = {}
-    priority_counts = {}
-    assignee_counts = {}
-
-    for issue in issues:
-        # Count by status
-        status_name = getattr(issue.status, "name", "Unknown")
-        status_counts[status_name] = status_counts.get(status_name, 0) + 1
-
-        # Count by priority
-        priority_name = getattr(issue.priority, "name", "Unknown")
-        priority_counts[priority_name] = priority_counts.get(priority_name, 0) + 1
-
-        # Count by assignee
-        assigned_to = getattr(issue, "assigned_to", None)
-        if assigned_to:
-            assignee_name = getattr(assigned_to, "name", "Unknown")
-            assignee_counts[assignee_name] = assignee_counts.get(assignee_name, 0) + 1
-        else:
-            assignee_counts["Unassigned"] = assignee_counts.get("Unassigned", 0) + 1
-
-    return {
-        "by_status": status_counts,
-        "by_priority": priority_counts,
-        "by_assignee": assignee_counts,
-        "total": len(issues),
-    }
-
-
 @mcp.tool()
 async def search_entire_redmine(
     query: str,
@@ -2598,186 +1508,6 @@ async def search_entire_redmine(
         return {"error": "Search requires Redmine 3.3.0 or higher."}
     except Exception as e:
         return _handle_redmine_error(e, f"searching Redmine for '{query}'")
-
-
-def _membership_to_dict(membership: Any) -> Dict[str, Any]:
-    """Convert a project membership to a serializable dict."""
-    user = getattr(membership, "user", None)
-    group = getattr(membership, "group", None)
-    project = getattr(membership, "project", None)
-    roles = getattr(membership, "roles", None) or []
-
-    result: Dict[str, Any] = {
-        "id": getattr(membership, "id", None),
-    }
-
-    # User or group (memberships can be for either)
-    if user is not None:
-        result["user"] = {
-            "id": getattr(user, "id", None),
-            "name": getattr(user, "name", ""),
-        }
-        result["group"] = None
-    elif group is not None:
-        result["user"] = None
-        result["group"] = {
-            "id": getattr(group, "id", None),
-            "name": getattr(group, "name", ""),
-        }
-    else:
-        result["user"] = None
-        result["group"] = None
-
-    # Project info
-    if project is not None:
-        result["project"] = {
-            "id": getattr(project, "id", None),
-            "name": getattr(project, "name", ""),
-        }
-    else:
-        result["project"] = None
-
-    # Roles
-    result["roles"] = []
-    try:
-        for role in roles:
-            if isinstance(role, dict):
-                result["roles"].append(
-                    {
-                        "id": role.get("id"),
-                        "name": role.get("name", ""),
-                    }
-                )
-            else:
-                result["roles"].append(
-                    {
-                        "id": getattr(role, "id", None),
-                        "name": getattr(role, "name", ""),
-                    }
-                )
-    except TypeError:
-        pass  # roles not iterable
-
-    return result
-
-
-def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
-    """Convert a time entry to a serializable dict."""
-    user = getattr(time_entry, "user", None)
-    project = getattr(time_entry, "project", None)
-    issue = getattr(time_entry, "issue", None)
-    activity = getattr(time_entry, "activity", None)
-
-    return {
-        "id": getattr(time_entry, "id", None),
-        "hours": getattr(time_entry, "hours", 0),
-        "comments": getattr(time_entry, "comments", ""),
-        "spent_on": (
-            str(time_entry.spent_on)
-            if getattr(time_entry, "spent_on", None) is not None
-            else None
-        ),
-        "user": (
-            {"id": getattr(user, "id", None), "name": getattr(user, "name", "")}
-            if user is not None
-            else None
-        ),
-        "project": (
-            {
-                "id": getattr(project, "id", None),
-                "name": getattr(project, "name", ""),
-            }
-            if project is not None
-            else None
-        ),
-        "issue": ({"id": getattr(issue, "id", None)} if issue is not None else None),
-        "activity": (
-            {
-                "id": getattr(activity, "id", None),
-                "name": getattr(activity, "name", ""),
-            }
-            if activity is not None
-            else None
-        ),
-        "created_on": (
-            time_entry.created_on.isoformat()
-            if getattr(time_entry, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            time_entry.updated_on.isoformat()
-            if getattr(time_entry, "updated_on", None) is not None
-            else None
-        ),
-    }
-
-
-def _wiki_page_to_dict(
-    wiki_page: Any, include_attachments: bool = True
-) -> Dict[str, Any]:
-    """Convert a wiki page object to a dictionary.
-
-    Args:
-        wiki_page: Redmine wiki page object
-        include_attachments: Whether to include attachment metadata
-
-    Returns:
-        Dictionary with wiki page data
-    """
-    result: Dict[str, Any] = {
-        "title": wiki_page.title,
-        "text": wrap_insecure_content(wiki_page.text),
-        "version": wiki_page.version,
-    }
-
-    # Add optional timestamp fields
-    if hasattr(wiki_page, "created_on"):
-        result["created_on"] = (
-            str(wiki_page.created_on) if wiki_page.created_on else None
-        )
-    else:
-        result["created_on"] = None
-
-    if hasattr(wiki_page, "updated_on"):
-        result["updated_on"] = (
-            str(wiki_page.updated_on) if wiki_page.updated_on else None
-        )
-    else:
-        result["updated_on"] = None
-
-    # Add author info
-    if hasattr(wiki_page, "author"):
-        result["author"] = {
-            "id": wiki_page.author.id,
-            "name": wiki_page.author.name,
-        }
-
-    # Add project info
-    if hasattr(wiki_page, "project"):
-        result["project"] = {
-            "id": wiki_page.project.id,
-            "name": wiki_page.project.name,
-        }
-
-    # Process attachments if requested
-    if include_attachments and hasattr(wiki_page, "attachments"):
-        result["attachments"] = []
-        for attachment in wiki_page.attachments:
-            att_dict = {
-                "id": attachment.id,
-                "filename": attachment.filename,
-                "filesize": attachment.filesize,
-                "content_type": attachment.content_type,
-                "description": getattr(attachment, "description", ""),
-                "created_on": (
-                    str(attachment.created_on)
-                    if hasattr(attachment, "created_on") and attachment.created_on
-                    else None
-                ),
-            }
-            result["attachments"].append(att_dict)
-
-    return result
 
 
 @mcp.tool()
