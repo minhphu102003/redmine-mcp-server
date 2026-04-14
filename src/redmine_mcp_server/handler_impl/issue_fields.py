@@ -232,9 +232,7 @@ def _augment_fields_with_required_custom_fields(
     if get_client is None:
         raise ValueError("get_client callable is required.")
 
-    project = get_client().project.get(
-        project_id, include="issue_custom_fields"
-    )
+    project = get_client().project.get(project_id, include="issue_custom_fields")
     project_custom_fields = getattr(project, "issue_custom_fields", None) or []
 
     updated_fields = dict(issue_fields)

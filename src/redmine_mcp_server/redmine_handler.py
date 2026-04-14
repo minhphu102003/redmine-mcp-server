@@ -24,11 +24,8 @@ Dependencies:
 """
 
 import os
-import uuid
-import json
 import asyncio  # noqa: F401
 import logging
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
@@ -43,6 +40,24 @@ from fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 from .handler_impl import issue_fields as _issue_fields
 from .handler_impl.errors import handle_redmine_error
+from .handler_impl.tools import (
+    cleanup_attachment_files_impl,
+    create_redmine_wiki_page_impl,
+    create_time_entry_impl,
+    delete_redmine_wiki_page_impl,
+    get_redmine_attachment_download_url_impl,
+    get_redmine_wiki_page_impl,
+    list_project_issue_custom_fields_impl,
+    list_project_members_impl,
+    list_redmine_projects_impl,
+    list_redmine_versions_impl,
+    list_time_entries_impl,
+    list_time_entry_activities_impl,
+    search_entire_redmine_impl,
+    summarize_project_status_impl,
+    update_redmine_wiki_page_impl,
+    update_time_entry_impl,
+)
 from .handler_impl.http_routes import (
     CleanupTaskManager,
     cleanup_status_payload,
@@ -456,86 +471,27 @@ async def get_redmine_issue(
 
 @mcp.tool()
 async def list_redmine_projects() -> List[Dict[str, Any]]:
-    """
-    Lists all accessible projects in Redmine.
-    Returns:
-        A list of dictionaries, each representing a project.
-    """
-    try:
-        projects = _get_redmine_client().project.all()
-        return [
-            {
-                "id": project.id,
-                "name": project.name,
-                "identifier": project.identifier,
-                "description": getattr(project, "description", ""),
-                "created_on": (
-                    project.created_on.isoformat()
-                    if getattr(project, "created_on", None) is not None
-                    else None
-                ),
-            }
-            for project in projects
-        ]
-    except Exception as e:
-        return [_handle_redmine_error(e, "listing projects")]
+    """Lists all accessible projects in Redmine."""
+    return await list_redmine_projects_impl(
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
 async def list_project_issue_custom_fields(
     project_id: Union[str, int], tracker_id: Optional[Union[str, int]] = None
 ) -> List[Dict[str, Any]]:
-    """List issue custom fields configured for a project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier).
-        tracker_id: Optional tracker ID to filter custom fields by applicability.
-
-    Returns:
-        A list of custom field metadata dictionaries. On failure a list containing
-        a single dictionary with an ``"error"`` key is returned.
-    """
-
-    parsed_tracker_id: Optional[int] = None
-    if tracker_id is not None:
-        try:
-            parsed_tracker_id = int(tracker_id)
-        except (TypeError, ValueError):
-            return [
-                {
-                    "error": (
-                        f"Invalid tracker_id '{tracker_id}'. "
-                        "Expected an integer tracker ID."
-                    )
-                }
-            ]
-
-    await _ensure_cleanup_started()
-
-    try:
-        project = _get_redmine_client().project.get(
-            project_id, include="issue_custom_fields"
-        )
-        custom_fields = getattr(project, "issue_custom_fields", None) or []
-
-        result: List[Dict[str, Any]] = []
-        for custom_field in custom_fields:
-            if not _issue_fields._custom_field_applies_to_tracker(
-                custom_field,
-                parsed_tracker_id,
-            ):
-                continue
-            result.append(_issue_fields._custom_field_to_dict(custom_field))
-
-        return result
-    except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing issue custom fields for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+    """List issue custom fields configured for a project."""
+    return await list_project_issue_custom_fields_impl(
+        project_id,
+        tracker_id,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        custom_field_applies_to_tracker=_issue_fields._custom_field_applies_to_tracker,
+        custom_field_to_dict=_issue_fields._custom_field_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -543,51 +499,15 @@ async def list_redmine_versions(
     project_id: Union[str, int],
     status_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """List versions (roadmap milestones) for a Redmine project.
-
-    Args:
-        project_id: The project ID (numeric) or identifier (string).
-        status_filter: Optional filter by version status.
-            Allowed values: open, locked, closed.
-            When None, all versions are returned.
-
-    Returns:
-        A list of version dictionaries. On failure a list containing
-        a single dictionary with an ``"error"`` key is returned.
-    """
-
-    # Validate status_filter before making API call
-    valid_statuses = {"open", "locked", "closed"}
-    if status_filter is not None:
-        status_filter = str(status_filter).lower()
-        if status_filter not in valid_statuses:
-            return [
-                {
-                    "error": (
-                        f"Invalid status_filter '{status_filter}'. "
-                        f"Allowed values: open, locked, closed"
-                    )
-                }
-            ]
-
-    await _ensure_cleanup_started()
-    try:
-        versions = _get_redmine_client().version.filter(project_id=project_id)
-        result = []
-        for version in versions:
-            if status_filter is not None:
-                if getattr(version, "status", "") != status_filter:
-                    continue
-            result.append(_version_to_dict(version))
-        return result
-    except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing versions for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+    """List versions (roadmap milestones) for a Redmine project."""
+    return await list_redmine_versions_impl(
+        project_id,
+        status_filter,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        version_to_dict=_version_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1188,228 +1108,26 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 async def get_redmine_attachment_download_url(
     attachment_id: int,
 ) -> Dict[str, Any]:
-    """Get HTTP download URL for a Redmine attachment.
-
-    Downloads the attachment to server storage and returns a time-limited
-    HTTP URL that clients can use to download the file. Expiry time and
-    storage location are controlled by server configuration.
-
-    Args:
-        attachment_id: The ID of the attachment to retrieve
-
-    Returns:
-        Dict containing download_url, filename, content_type, size,
-        expires_at, and attachment_id
-
-    Raises:
-        ResourceNotFoundError: If attachment ID doesn't exist
-        Exception: For other download or processing errors
-    """
-
-    # Ensure cleanup task is started (lazy initialization)
-    await _ensure_cleanup_started()
-
-    try:
-        # Get attachment metadata from Redmine
-        attachment = _get_redmine_client().attachment.get(attachment_id)
-
-        # Server-controlled configuration (secure)
-        attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-        expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
-
-        # Create secure storage directory
-        attachments_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate secure UUID-based filename
-        file_id = str(uuid.uuid4())
-
-        # Download using existing approach - keeps original filename
-        downloaded_path = attachment.download(savepath=str(attachments_dir))
-
-        # Get file info
-        original_filename = getattr(
-            attachment, "filename", f"attachment_{attachment_id}"
-        )
-
-        # Create organized storage with UUID directory
-        uuid_dir = attachments_dir / file_id
-        uuid_dir.mkdir(exist_ok=True)
-
-        # Move file to UUID-based location using atomic operations
-        final_path = uuid_dir / original_filename
-        temp_path = uuid_dir / f"{original_filename}.tmp"
-
-        # Atomic file move with error handling
-        try:
-            os.rename(downloaded_path, temp_path)
-            os.rename(temp_path, final_path)
-        except (OSError, IOError) as e:
-            # Cleanup on failure
-            try:
-                if temp_path.exists():
-                    temp_path.unlink()
-                if Path(downloaded_path).exists():
-                    Path(downloaded_path).unlink()
-            except OSError:
-                pass  # Best effort cleanup
-            return {"error": f"Failed to store attachment: {str(e)}"}
-
-        # Calculate expiry time (timezone-aware)
-        expires_hours = expires_minutes / 60.0
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
-
-        # Store metadata atomically (following existing pattern)
-        metadata = {
-            "file_id": file_id,
-            "attachment_id": attachment_id,
-            "original_filename": original_filename,
-            "file_path": str(final_path),
-            "content_type": getattr(
-                attachment, "content_type", "application/octet-stream"
-            ),
-            "size": final_path.stat().st_size,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": expires_at.isoformat(),
-        }
-
-        metadata_file = uuid_dir / "metadata.json"
-        temp_metadata = uuid_dir / "metadata.json.tmp"
-
-        # Atomic metadata write with error handling
-        try:
-            with open(temp_metadata, "w") as f:
-                json.dump(metadata, f, indent=2)
-            os.rename(temp_metadata, metadata_file)
-        except (OSError, IOError, ValueError) as e:
-            # Cleanup on failure
-            try:
-                if temp_metadata.exists():
-                    temp_metadata.unlink()
-                if final_path.exists():
-                    final_path.unlink()
-            except OSError:
-                pass  # Best effort cleanup
-            return {"error": f"Failed to save metadata: {str(e)}"}
-
-        # Generate server base URL from environment configuration
-        # Use public configuration for external URLs
-        public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
-        public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
-
-        # Handle special case of 0.0.0.0 bind address
-        if public_host == "0.0.0.0":
-            public_host = "localhost"
-
-        download_url = f"http://{public_host}:{public_port}/files/{file_id}"
-
-        return {
-            "download_url": download_url,
-            "filename": original_filename,
-            "content_type": metadata["content_type"],
-            "size": metadata["size"],
-            "expires_at": metadata["expires_at"],
-            "attachment_id": attachment_id,
-        }
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"downloading attachment {attachment_id}",
-            {"resource_type": "attachment", "resource_id": attachment_id},
-        )
+    """Get HTTP download URL for a Redmine attachment."""
+    return await get_redmine_attachment_download_url_impl(
+        attachment_id,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
 async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str, Any]:
-    """Provide a summary of project status based on issue activity over the
-    specified time period.
-
-    Args:
-        project_id: The ID of the project to summarize
-        days: Number of days to look back for analysis. Defaults to 30.
-
-    Returns:
-        A dictionary containing project status summary with issue counts,
-        activity metrics, and trends. On error, returns a dictionary with
-        an "error" key.
-    """
-
-    try:
-        # Validate project exists
-        try:
-            project = _get_redmine_client().project.get(project_id)
-        except ResourceNotFoundError:
-            return {"error": f"Project {project_id} not found."}
-
-        # Calculate date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
-        date_filter = f">={start_date.strftime('%Y-%m-%d')}"
-
-        # Get issues created in the date range
-        created_issues = list(
-            _get_redmine_client().issue.filter(
-                project_id=project_id, created_on=date_filter
-            )
-        )
-
-        # Get issues updated in the date range
-        updated_issues = list(
-            _get_redmine_client().issue.filter(
-                project_id=project_id, updated_on=date_filter
-            )
-        )
-
-        # Analyze created issues
-        created_stats = _analyze_issues(created_issues)
-
-        # Analyze updated issues
-        updated_stats = _analyze_issues(updated_issues)
-
-        # Calculate trends
-        total_created = len(created_issues)
-        total_updated = len(updated_issues)
-
-        # Get all project issues for context
-        all_issues = list(_get_redmine_client().issue.filter(project_id=project_id))
-        all_stats = _analyze_issues(all_issues)
-
-        return {
-            "project": {
-                "id": project.id,
-                "name": project.name,
-                "identifier": getattr(project, "identifier", ""),
-            },
-            "analysis_period": {
-                "days": days,
-                "start_date": start_date.strftime("%Y-%m-%d"),
-                "end_date": end_date.strftime("%Y-%m-%d"),
-            },
-            "recent_activity": {
-                "issues_created": total_created,
-                "issues_updated": total_updated,
-                "created_breakdown": created_stats,
-                "updated_breakdown": updated_stats,
-            },
-            "project_totals": {
-                "total_issues": len(all_issues),
-                "overall_breakdown": all_stats,
-            },
-            "insights": {
-                "daily_creation_rate": round(total_created / days, 2),
-                "daily_update_rate": round(total_updated / days, 2),
-                "recent_activity_percentage": round(
-                    (total_updated / len(all_issues) * 100) if all_issues else 0, 2
-                ),
-            },
-        }
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"summarizing project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+    """Provide a summary of project status over the specified time period."""
+    return await summarize_project_status_impl(
+        project_id,
+        days,
+        get_client=_get_redmine_client,
+        analyze_issues=_analyze_issues,
+        handle_error=_handle_redmine_error,
+        resource_not_found_error=ResourceNotFoundError,
+    )
 
 
 @mcp.tool()
@@ -1419,95 +1137,18 @@ async def search_entire_redmine(
     limit: int = 100,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """
-    Search for issues and wiki pages across the Redmine instance.
-
-    Args:
-        query: Text to search for. Case sensitivity controlled by server DB config.
-        resources: Filter by resource types. Allowed: ['issues', 'wiki_pages']
-                   Default: None (searches both issues and wiki_pages)
-        limit: Maximum number of results to return (max 100)
-        offset: Pagination offset for server-side pagination
-
-    Returns:
-        Dictionary containing search results, counts, and metadata.
-        On error, returns {"error": "message"}.
-
-    Note:
-        v1.4 Scope Limitation: Only 'issues' and 'wiki_pages' are supported.
-        Requires Redmine 3.3.0 or higher for search API support.
-    """
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Validate and enforce scope limitation (v1.4)
-        allowed_types = ["issues", "wiki_pages"]
-        if resources:
-            resources = [r for r in resources if r in allowed_types]
-            if not resources:
-                resources = allowed_types  # Fall back to default if all filtered
-        else:
-            resources = allowed_types
-
-        # Cap limit at 100 (Redmine API maximum)
-        limit = min(limit, 100)
-        if limit <= 0:
-            limit = 100
-
-        # Build search options
-        search_options = {
-            "resources": resources,
-            "limit": limit,
-            "offset": offset,
-        }
-
-        # Execute search
-        categorized_results = _get_redmine_client().search(query, **search_options)
-
-        # Handle empty results (python-redmine returns None)
-        if not categorized_results:
-            return {
-                "results": [],
-                "results_by_type": {},
-                "total_count": 0,
-                "query": query,
-            }
-
-        # Process categorized results
-        all_results = []
-        results_by_type: Dict[str, int] = {}
-
-        for resource_type, resource_set in categorized_results.items():
-            # Skip 'unknown' category (plugin resources)
-            if resource_type == "unknown":
-                continue
-
-            # Skip if not in allowed types
-            if resource_type not in allowed_types:
-                continue
-
-            # Handle both ResourceSet and dict (for 'unknown')
-            if hasattr(resource_set, "__iter__"):
-                count = 0
-                for resource in resource_set:
-                    result_dict = _resource_to_dict(resource, resource_type)
-                    all_results.append(result_dict)
-                    count += 1
-                if count > 0:
-                    results_by_type[resource_type] = count
-
-        return {
-            "results": all_results,
-            "results_by_type": results_by_type,
-            "total_count": len(all_results),
-            "query": query,
-        }
-
-    except VersionMismatchError:
-        return {"error": "Search requires Redmine 3.3.0 or higher."}
-    except Exception as e:
-        return _handle_redmine_error(e, f"searching Redmine for '{query}'")
+    """Search for issues and wiki pages across the Redmine instance."""
+    return await search_entire_redmine_impl(
+        query,
+        resources,
+        limit,
+        offset,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        resource_to_dict=_resource_to_dict,
+        handle_error=_handle_redmine_error,
+        version_mismatch_error=VersionMismatchError,
+    )
 
 
 @mcp.tool()
@@ -1517,43 +1158,17 @@ async def get_redmine_wiki_page(
     version: Optional[int] = None,
     include_attachments: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Retrieve full wiki page content from Redmine.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        version: Specific version number (None = latest version)
-        include_attachments: Include attachment metadata in response
-
-    Returns:
-        Dictionary containing full wiki page content and metadata
-
-    Note:
-        Use get_redmine_attachment_download_url() to download attachments.
-    """
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Retrieve wiki page
-        if version:
-            wiki_page = _get_redmine_client().wiki_page.get(
-                wiki_page_title, project_id=project_id, version=version
-            )
-        else:
-            wiki_page = _get_redmine_client().wiki_page.get(
-                wiki_page_title, project_id=project_id
-            )
-
-        return _wiki_page_to_dict(wiki_page, include_attachments)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    """Retrieve full wiki page content from Redmine."""
+    return await get_redmine_wiki_page_impl(
+        project_id,
+        wiki_page_title,
+        version,
+        include_attachments,
+        get_client=_get_redmine_client,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        wiki_page_to_dict=_wiki_page_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1563,41 +1178,19 @@ async def create_redmine_wiki_page(
     text: str,
     comments: str = "",
 ) -> Dict[str, Any]:
-    """
-    Create a new wiki page in a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        text: Wiki page content (Textile or Markdown depending on Redmine config)
-        comments: Optional comment for the change log
-
-    Returns:
-        Dictionary containing created wiki page metadata, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Create wiki page
-        wiki_page = _get_redmine_client().wiki_page.create(
-            project_id=project_id,
-            title=wiki_page_title,
-            text=text,
-            comments=comments if comments else None,
-        )
-
-        return _wiki_page_to_dict(wiki_page)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    """Create a new wiki page in a Redmine project."""
+    return await create_redmine_wiki_page_impl(
+        project_id,
+        wiki_page_title,
+        text,
+        comments,
+        get_client=_get_redmine_client,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        wiki_page_to_dict=_wiki_page_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1607,46 +1200,19 @@ async def update_redmine_wiki_page(
     text: str,
     comments: str = "",
 ) -> Dict[str, Any]:
-    """
-    Update an existing wiki page in a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        text: New wiki page content
-        comments: Optional comment for the change log
-
-    Returns:
-        Dictionary containing updated wiki page metadata, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Update wiki page
-        _get_redmine_client().wiki_page.update(
-            wiki_page_title,
-            project_id=project_id,
-            text=text,
-            comments=comments if comments else None,
-        )
-
-        # Fetch updated page to return current state
-        wiki_page = _get_redmine_client().wiki_page.get(
-            wiki_page_title, project_id=project_id
-        )
-
-        return _wiki_page_to_dict(wiki_page)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    """Update an existing wiki page in a Redmine project."""
+    return await update_redmine_wiki_page_impl(
+        project_id,
+        wiki_page_title,
+        text,
+        comments,
+        get_client=_get_redmine_client,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        wiki_page_to_dict=_wiki_page_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1654,82 +1220,29 @@ async def delete_redmine_wiki_page(
     project_id: Union[str, int],
     wiki_page_title: str,
 ) -> Dict[str, Any]:
-    """
-    Delete a wiki page from a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title to delete
-
-    Returns:
-        Dictionary with success status, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Delete wiki page
-        _get_redmine_client().wiki_page.delete(wiki_page_title, project_id=project_id)
-
-        return {
-            "success": True,
-            "title": wiki_page_title,
-            "message": f"Wiki page '{wiki_page_title}' deleted successfully.",
-        }
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    """Delete a wiki page from a Redmine project."""
+    return await delete_redmine_wiki_page_impl(
+        project_id,
+        wiki_page_title,
+        get_client=_get_redmine_client,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
 async def list_project_members(
     project_id: Union[str, int],
 ) -> List[Dict[str, Any]]:
-    """List members of a Redmine project.
-
-    Returns all users and groups that are members of the specified project,
-    along with their assigned roles.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-
-    Returns:
-        A list of membership dictionaries containing user/group info and roles.
-        On failure, a list containing a single dictionary with an "error" key.
-
-    Examples:
-        >>> await list_project_members("my-project")
-        [
-            {
-                "id": 1,
-                "user": {"id": 5, "name": "John Doe"},
-                "group": null,
-                "project": {"id": 1, "name": "My Project"},
-                "roles": [{"id": 3, "name": "Developer"}]
-            },
-            ...
-        ]
-    """
-    try:
-        memberships = _get_redmine_client().project_membership.filter(
-            project_id=project_id
-        )
-        return [_membership_to_dict(m) for m in memberships]
-    except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing members for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+    """List members of a Redmine project."""
+    return await list_project_members_impl(
+        project_id,
+        get_client=_get_redmine_client,
+        membership_to_dict=_membership_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1742,57 +1255,19 @@ async def list_time_entries(
     limit: int = 25,
     offset: int = 0,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List time entries from Redmine with filtering and pagination.
-
-    Retrieve time entries with optional filtering by project, issue, user,
-    and date range. Supports pagination for handling large result sets.
-
-    Args:
-        project_id: Filter by project (ID number or string identifier).
-        issue_id: Filter by issue ID.
-        user_id: Filter by user ID. Use "me" for current user.
-        from_date: Start date filter (YYYY-MM-DD format).
-        to_date: End date filter (YYYY-MM-DD format).
-        limit: Maximum number of entries to return (default: 25, max: 100).
-        offset: Number of entries to skip for pagination (default: 0).
-
-    Returns:
-        A list of time entry dictionaries. On failure, a list containing
-        a single dictionary with an "error" key.
-
-    Examples:
-        >>> await list_time_entries(project_id="my-project")
-        [{"id": 1, "hours": 2.5, "comments": "Bug fix", ...}, ...]
-
-        >>> await list_time_entries(issue_id=123, from_date="2024-01-01")
-        [{"id": 2, "hours": 1.0, "issue": {"id": 123}, ...}, ...]
-
-        >>> await list_time_entries(user_id="me", limit=10)
-        [{"id": 3, "hours": 4.0, "user": {"id": 5, "name": "Current User"}, ...}]
-    """
-    try:
-        # Build filter parameters
-        filters: Dict[str, Any] = {
-            "limit": min(limit, 100),
-            "offset": offset,
-        }
-
-        if project_id is not None:
-            filters["project_id"] = project_id
-        if issue_id is not None:
-            filters["issue_id"] = issue_id
-        if user_id is not None:
-            filters["user_id"] = user_id
-        if from_date is not None:
-            filters["from_date"] = from_date
-        if to_date is not None:
-            filters["to_date"] = to_date
-
-        time_entries = _get_redmine_client().time_entry.filter(**filters)
-        return [_time_entry_to_dict(te) for te in time_entries]
-
-    except Exception as e:
-        return [_handle_redmine_error(e, "listing time entries")]
+    """List time entries from Redmine with filtering and pagination."""
+    return await list_time_entries_impl(
+        project_id,
+        issue_id,
+        user_id,
+        from_date,
+        to_date,
+        limit,
+        offset,
+        get_client=_get_redmine_client,
+        time_entry_to_dict=_time_entry_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1804,71 +1279,18 @@ async def create_time_entry(
     comments: str = "",
     spent_on: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a new time entry in Redmine.
-
-    Log time against a project or issue. Either project_id or issue_id
-    must be provided. If issue_id is provided, the time entry will be
-    associated with that issue's project.
-
-    Args:
-        hours: Number of hours spent (required). Can be decimal (e.g., 1.5).
-        project_id: Project to log time against (ID or identifier).
-            Required if issue_id is not provided.
-        issue_id: Issue to log time against. If provided, project_id is optional.
-        activity_id: Time entry activity ID (e.g., Development, Design).
-            If not provided, Redmine uses the default activity.
-        comments: Description of work performed.
-        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
-
-    Returns:
-        Dictionary containing the created time entry, or error dict on failure.
-
-    Examples:
-        >>> await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
-        {"id": 1, "hours": 2.5, "issue": {"id": 123}, ...}
-
-        >>> await create_time_entry(
-        ...     hours=1.0,
-        ...     project_id="my-project",
-        ...     activity_id=9,
-        ...     comments="Code review",
-        ...     spent_on="2024-03-15"
-        ... )
-        {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
-    """
-    if project_id is None and issue_id is None:
-        return {"error": "Either project_id or issue_id must be provided."}
-
-    if hours <= 0:
-        return {"error": "Hours must be a positive number."}
-
-    try:
-        # Build create parameters
-        params: Dict[str, Any] = {
-            "hours": hours,
-        }
-
-        if project_id is not None:
-            params["project_id"] = project_id
-        if issue_id is not None:
-            params["issue_id"] = issue_id
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        time_entry = _get_redmine_client().time_entry.create(**params)
-        return _time_entry_to_dict(time_entry)
-
-    except Exception as e:
-        context = {}
-        if issue_id:
-            context = {"resource_type": "issue", "resource_id": issue_id}
-        elif project_id:
-            context = {"resource_type": "project", "resource_id": project_id}
-        return _handle_redmine_error(e, "creating time entry", context)
+    """Create a new time entry in Redmine."""
+    return await create_time_entry_impl(
+        hours,
+        project_id,
+        issue_id,
+        activity_id,
+        comments,
+        spent_on,
+        get_client=_get_redmine_client,
+        time_entry_to_dict=_time_entry_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -1879,117 +1301,35 @@ async def update_time_entry(
     comments: Optional[str] = None,
     spent_on: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Update an existing time entry in Redmine.
-
-    Modify hours, activity, comments, or date of an existing time entry.
-    Only provided fields will be updated.
-
-    Args:
-        time_entry_id: ID of the time entry to update (required).
-        hours: New hours value. Must be positive if provided.
-        activity_id: New activity ID.
-        comments: New comments/description.
-        spent_on: New date (YYYY-MM-DD format).
-
-    Returns:
-        Dictionary containing the updated time entry, or error dict on failure.
-
-    Examples:
-        >>> await update_time_entry(time_entry_id=1, hours=3.0)
-        {"id": 1, "hours": 3.0, ...}
-
-        >>> await update_time_entry(
-        ...     time_entry_id=1,
-        ...     comments="Updated description",
-        ...     spent_on="2024-03-16"
-        ... )
-        {"id": 1, "comments": "Updated description", ...}
-    """
-    if hours is not None and hours <= 0:
-        return {"error": "Hours must be a positive number."}
-
-    try:
-        # Build update parameters
-        params: Dict[str, Any] = {}
-
-        if hours is not None:
-            params["hours"] = hours
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments is not None:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        if not params:
-            return {"error": "No fields provided for update."}
-
-        client = _get_redmine_client()
-        client.time_entry.update(time_entry_id, **params)
-
-        # Fetch and return updated entry
-        updated_entry = client.time_entry.get(time_entry_id)
-        return _time_entry_to_dict(updated_entry)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating time entry {time_entry_id}",
-            {"resource_type": "time entry", "resource_id": time_entry_id},
-        )
+    """Update an existing time entry in Redmine."""
+    return await update_time_entry_impl(
+        time_entry_id,
+        hours,
+        activity_id,
+        comments,
+        spent_on,
+        get_client=_get_redmine_client,
+        time_entry_to_dict=_time_entry_to_dict,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
 async def list_time_entry_activities() -> List[Dict[str, Any]]:
-    """List available time entry activities from Redmine.
-
-    Returns all activity types that can be used when creating or updating
-    time entries (e.g., Development, Design, Testing).
-
-    Returns:
-        A list of activity dictionaries. On failure, a list containing
-        a single dictionary with an "error" key.
-
-    Examples:
-        >>> await list_time_entry_activities()
-        [{"id": 4, "name": "Development", "active": True, "is_default": False}, ...]
-    """
-    try:
-        activities = _get_redmine_client().enumeration.filter(
-            resource="time_entry_activities"
-        )
-        return [
-            {
-                "id": getattr(a, "id", None),
-                "name": getattr(a, "name", None),
-                "active": getattr(a, "active", None),
-                "is_default": getattr(a, "is_default", None),
-            }
-            for a in activities
-        ]
-
-    except Exception as e:
-        return [_handle_redmine_error(e, "listing time entry activities")]
+    """List available time entry activities from Redmine."""
+    return await list_time_entry_activities_impl(
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
 async def cleanup_attachment_files() -> Dict[str, Any]:
-    """Clean up expired attachment files and return storage statistics.
-
-    Returns:
-        A dictionary containing cleanup statistics and current storage usage.
-        On error, a dictionary with "error" is returned.
-    """
-    try:
-        attachments_dir = os.getenv("ATTACHMENTS_DIR", "./attachments")
-        manager = AttachmentFileManager(attachments_dir)
-        cleanup_stats = manager.cleanup_expired_files()
-        storage_stats = manager.get_storage_stats()
-
-        return {"cleanup": cleanup_stats, "current_storage": storage_stats}
-    except Exception as e:
-        logger.error(f"Error during attachment cleanup: {e}")
-        return {"error": f"An error occurred during cleanup: {str(e)}"}
+    """Clean up expired attachment files and return storage statistics."""
+    return await cleanup_attachment_files_impl(
+        attachment_manager_factory=AttachmentFileManager,
+        log=logger,
+    )
 
 
 if __name__ == "__main__":
