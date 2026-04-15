@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 
 from redminelib.exceptions import ValidationError
 
@@ -11,6 +11,15 @@ HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
 ]
+
+
+class IssueToDictFn(Protocol):
+    """Callable signature for issue serialization helper."""
+
+    def __call__(
+        self, issue: Any, include_custom_fields: bool = False
+    ) -> Dict[str, Any]: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +79,29 @@ def _empty_issues_response(
 
 
 def _pagination_info(
-    *, limit: int, offset: int, count: int, total: Optional[int] = None
+    *,
+    limit: int,
+    offset: int,
+    count: int,
+    total: Optional[int] = None,
+    page_size: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Build normalized pagination metadata."""
-    has_next = count == limit
+    resolved_page_size = page_size if page_size is not None else limit
+    if total is not None:
+        has_next = (offset + count) < total
+    else:
+        has_next = count == resolved_page_size
     info: Dict[str, Any] = {
         "limit": limit,
         "offset": offset,
         "count": count,
         "has_next": has_next,
         "has_previous": offset > 0,
-        "next_offset": offset + limit if has_next else None,
-        "previous_offset": max(0, offset - limit) if offset > 0 else None,
+        "next_offset": offset + resolved_page_size if has_next else None,
+        "previous_offset": (
+            max(0, offset - resolved_page_size) if offset > 0 else None
+        ),
     }
     if total is not None:
         info["total"] = total
@@ -101,7 +121,7 @@ async def get_redmine_issue_impl(
     *,
     ensure_cleanup_started: Callable[[], Any],
     get_client: Callable[[], Any],
-    issue_to_dict: Callable[[Any, bool], Dict[str, Any]],
+    issue_to_dict: IssueToDictFn,
     journals_to_list: Callable[[Any], List[Dict[str, Any]]],
     attachments_to_list: Callable[[Any], List[Dict[str, Any]]],
     handle_error: HandleErrorFn,
@@ -250,9 +270,10 @@ async def list_redmine_issues_impl(
             filter_keys,
         )
 
+        fetch_limit = min(limit, 100)
         redmine_filters = {
             "offset": offset,
-            "limit": min(limit, 100),
+            "limit": fetch_limit,
             **filters,
         }
 
@@ -268,15 +289,14 @@ async def list_redmine_issues_impl(
         if include_pagination_info:
             total_count: int
             try:
-                count_query = client.issue.filter(**filters)
-                list(count_query)
+                count_query = client.issue.filter(**filters, limit=1)
                 total_count = count_query.total_count
                 logger.debug("Got total count from separate query: %s", total_count)
             except Exception as e:
                 logger.warning(
                     "Could not get total count: %s, using estimated value", e
                 )
-                if len(result_issues) == limit:
+                if len(result_issues) == fetch_limit:
                     total_count = offset + len(result_issues) + 1
                 else:
                     total_count = offset + len(result_issues)
@@ -288,6 +308,7 @@ async def list_redmine_issues_impl(
                     offset=offset,
                     count=len(result_issues),
                     total=total_count,
+                    page_size=fetch_limit,
                 ),
             }
 
@@ -382,7 +403,7 @@ async def create_redmine_issue_impl(
         [Optional[Union[Dict[str, Any], str]], str], Dict[str, Any]
     ],
     get_client: Callable[[], Any],
-    issue_to_dict: Callable[[Any], Dict[str, Any]],
+    issue_to_dict: IssueToDictFn,
     is_required_custom_field_autofill_enabled: Callable[[], bool],
     extract_missing_required_field_names: Callable[[str], List[str]],
     augment_fields_with_required_custom_fields: Callable[
@@ -467,7 +488,7 @@ async def update_redmine_issue_impl(
     read_only_error: Dict[str, Any],
     get_client: Callable[[], Any],
     map_named_custom_fields_for_update: Callable[[int, Dict[str, Any]], Dict[str, Any]],
-    issue_to_dict: Callable[[Any, bool], Dict[str, Any]],
+    issue_to_dict: IssueToDictFn,
     is_required_custom_field_autofill_enabled: Callable[[], bool],
     extract_missing_required_field_names: Callable[[str], List[str]],
     augment_fields_with_required_custom_fields: Callable[
