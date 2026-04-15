@@ -42,19 +42,24 @@ from .handler_impl import issue_fields as _issue_fields
 from .handler_impl.errors import handle_redmine_error
 from .handler_impl.tools import (
     cleanup_attachment_files_impl,
+    create_redmine_issue_impl,
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
     get_redmine_attachment_download_url_impl,
+    get_redmine_issue_impl,
     get_redmine_wiki_page_impl,
     list_project_issue_custom_fields_impl,
     list_project_members_impl,
+    list_redmine_issues_impl,
     list_redmine_projects_impl,
     list_redmine_versions_impl,
     list_time_entries_impl,
     list_time_entry_activities_impl,
     search_entire_redmine_impl,
+    search_redmine_issues_impl,
     summarize_project_status_impl,
+    update_redmine_issue_impl,
     update_redmine_wiki_page_impl,
     update_time_entry_impl,
 )
@@ -364,109 +369,24 @@ async def get_redmine_issue(
     include_relations: bool = False,
     include_children: bool = False,
 ) -> Dict[str, Any]:
-    """Retrieve a specific Redmine issue by ID.
-
-    Args:
-        issue_id: The ID of the issue to retrieve
-        include_journals: Whether to include journals (comments) in the result.
-            Defaults to ``True``.
-        include_attachments: Whether to include attachments metadata in the
-            result. Defaults to ``True``.
-        include_custom_fields: Whether to include custom fields in the
-            result. Defaults to ``True``.
-        journal_limit: Maximum number of journals to return. When set,
-            enables journal pagination and adds ``journal_pagination``
-            metadata to the response.
-        journal_offset: Number of journals to skip (used with
-            ``journal_limit``). Defaults to ``0``.
-
-    Returns:
-        A dictionary containing issue details. If ``include_journals`` is ``True``
-        and the issue has journals, they will be returned under the ``"journals"``
-        key. If ``include_attachments`` is ``True`` and attachments exist they
-        will be returned under the ``"attachments"`` key. On failure a dictionary
-        with an ``"error"`` key is returned.
-    """
-
-    # Ensure cleanup task is started (lazy initialization)
-    await _ensure_cleanup_started()
-    try:
-        # python-redmine is synchronous, so we don't use await here for the library call
-        includes = []
-        if include_journals:
-            includes.append("journals")
-        if include_attachments:
-            includes.append("attachments")
-        if include_watchers:
-            includes.append("watchers")
-        if include_relations:
-            includes.append("relations")
-        if include_children:
-            includes.append("children")
-
-        if includes:
-            issue = _get_redmine_client().issue.get(
-                issue_id, include=",".join(includes)
-            )
-        else:
-            issue = _get_redmine_client().issue.get(issue_id)
-
-        result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
-        if include_journals:
-            all_journals = _journals_to_list(issue)
-            if journal_limit is not None:
-                total = len(all_journals)
-                offset = journal_offset
-                paginated = all_journals[offset : offset + journal_limit]
-                result["journals"] = paginated
-                result["journal_pagination"] = {
-                    "total": total,
-                    "offset": offset,
-                    "limit": journal_limit,
-                    "count": len(paginated),
-                    "has_more": (offset + journal_limit) < total,
-                }
-            else:
-                result["journals"] = all_journals
-        if include_attachments:
-            result["attachments"] = _attachments_to_list(issue)
-
-        if include_watchers:
-            raw = getattr(issue, "watchers", None) or []
-            result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
-        if include_relations:
-            raw = getattr(issue, "relations", None) or []
-            result["relations"] = [
-                {
-                    "id": r.id,
-                    "issue_id": r.issue_id,
-                    "issue_to_id": r.issue_to_id,
-                    "relation_type": r.relation_type,
-                }
-                for r in raw
-            ]
-        if include_children:
-            raw = getattr(issue, "children", None) or []
-            result["children"] = [
-                {
-                    "id": c.id,
-                    "subject": getattr(c, "subject", ""),
-                    "tracker": (
-                        {"id": c.tracker.id, "name": c.tracker.name}
-                        if getattr(c, "tracker", None)
-                        else None
-                    ),
-                }
-                for c in raw
-            ]
-
-        return result
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+    """Retrieve a specific Redmine issue by ID."""
+    return await get_redmine_issue_impl(
+        issue_id,
+        include_journals,
+        include_attachments,
+        include_custom_fields,
+        journal_limit,
+        journal_offset,
+        include_watchers,
+        include_relations,
+        include_children,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        issue_to_dict=_issue_to_dict,
+        journals_to_list=_journals_to_list,
+        attachments_to_list=_attachments_to_list,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -525,211 +445,25 @@ async def list_redmine_issues(
     fields: Optional[List[str]] = None,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List Redmine issues with flexible filtering and pagination support.
-
-    A general-purpose tool for listing issues from Redmine. Supports
-    filtering by project, status, assignee, tracker, priority, and any
-    other Redmine issue filter. Use this to list all issues in a project,
-    find unassigned issues, or apply any combination of filters.
-
-    Args:
-        project_id: Filter by project (ID or string identifier).
-        status_id: Filter by status ID.
-        tracker_id: Filter by tracker ID.
-        assigned_to_id: Filter by assignee. Use a numeric user ID or the
-            special value 'me' to retrieve issues assigned to the currently
-            authenticated user.
-        priority_id: Filter by priority ID.
-        fixed_version_id: Filter by target version/milestone ID.
-        sort: Sort order (e.g., "updated_on:desc").
-        limit: Maximum number of issues to return (default: 25, max: 1000).
-        offset: Number of issues to skip for pagination (default: 0).
-        include_pagination_info: Return structured response with pagination
-            metadata (default: False).
-        fields: List of field names to include in results (default: all).
-            Available: id, subject, description, project, status, priority,
-            author, assigned_to, created_on, updated_on.
-        filters: Additional Redmine API filter parameters as a dict. Use this
-            for any filter not listed above (e.g., {"cf_1": "value"}).
-
-    Returns:
-        List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
-        Issues are limited to prevent token overflow (25,000 token MCP limit).
-
-    Examples:
-        >>> await list_redmine_issues(project_id=1)
-        [{"id": 1, "subject": "Issue 1", ...}, ...]
-
-        >>> await list_redmine_issues(project_id="my-project", status_id=1)
-        [{"id": 2, "subject": "Open issue", ...}, ...]
-
-        >>> await list_redmine_issues(
-        ...     project_id=1, limit=25, offset=50, include_pagination_info=True
-        ... )
-        {
-            "issues": [...],
-            "pagination": {"total": 150, "has_next": True, "next_offset": 75, ...}
-        }
-
-        >>> await list_redmine_issues(
-        ...     project_id=1, fields=["id", "subject", "status"]
-        ... )
-        [{"id": 1, "subject": "Bug fix", "status": {...}}, ...]
-
-    Performance:
-        - Memory efficient: Uses server-side pagination
-        - Token efficient: Default limit keeps response under 2000 tokens
-        - Further reduce tokens: Use fields parameter for minimal data transfer
-        - Time efficient: Typically <500ms for limit=25
-    """
-
-    # Ensure cleanup task is started (lazy initialization)
-    await _ensure_cleanup_started()
-
-    try:
-        # Build Redmine API filter dict from explicit parameters
-        redmine_api_filters: Dict[str, Any] = {}
-        if project_id is not None:
-            redmine_api_filters["project_id"] = project_id
-        if status_id is not None:
-            redmine_api_filters["status_id"] = status_id
-        if tracker_id is not None:
-            redmine_api_filters["tracker_id"] = tracker_id
-        if assigned_to_id is not None:
-            redmine_api_filters["assigned_to_id"] = assigned_to_id
-        if priority_id is not None:
-            redmine_api_filters["priority_id"] = priority_id
-        if fixed_version_id is not None:
-            redmine_api_filters["fixed_version_id"] = fixed_version_id
-        if sort is not None:
-            redmine_api_filters["sort"] = sort
-        # Merge additional arbitrary Redmine filters if provided
-        if filters:
-            redmine_api_filters.update(filters)
-        filters = redmine_api_filters
-
-        # Log request for monitoring
-        filter_keys = list(filters.keys()) if filters else []
-        logging.info(
-            f"Pagination request: limit={limit}, offset={offset}, filters={filter_keys}"
-        )
-
-        # Validate and sanitize parameters
-        if limit is not None:
-            if not isinstance(limit, int):
-                try:
-                    limit = int(limit)
-                except (ValueError, TypeError):
-                    logging.warning(
-                        f"Invalid limit type {type(limit)}, using default 25"
-                    )
-                    limit = 25
-
-            if limit <= 0:
-                logging.debug(f"Limit {limit} <= 0, returning empty result")
-                empty_result = []
-                if include_pagination_info:
-                    empty_result = {
-                        "issues": [],
-                        "pagination": {
-                            "total": 0,
-                            "limit": limit,
-                            "offset": offset,
-                            "count": 0,
-                            "has_next": False,
-                            "has_previous": False,
-                            "next_offset": None,
-                            "previous_offset": None,
-                        },
-                    }
-                return empty_result
-
-            # Cap at reasonable maximum
-            original_limit = limit
-            limit = min(limit, 1000)
-            if original_limit > limit:
-                logging.warning(
-                    f"Limit {original_limit} exceeds maximum 1000, capped to {limit}"
-                )
-
-        # Validate offset
-        if not isinstance(offset, int) or offset < 0:
-            logging.warning(f"Invalid offset {offset}, reset to 0")
-            offset = 0
-
-        # Use python-redmine ResourceSet native pagination
-        # Server-side filtering more efficient than client-side
-        redmine_filters = {
-            "offset": offset,
-            "limit": min(limit or 25, 100),  # Redmine API max per request
-            **filters,
-        }
-
-        # Get paginated issues from Redmine
-        logging.debug(
-            f"Calling _get_redmine_client().issue.filter with: {redmine_filters}"
-        )
-        issues = _get_redmine_client().issue.filter(**redmine_filters)
-
-        # Convert ResourceSet to list (triggers server-side pagination)
-        issues_list = list(issues)
-        logging.debug(
-            f"Retrieved {len(issues_list)} issues with offset={offset}, limit={limit}"
-        )
-
-        # Convert to dictionaries with optional field selection
-        result_issues = [
-            _issue_to_dict_selective(issue, fields) for issue in issues_list
-        ]
-
-        # Handle metadata response format
-        if include_pagination_info:
-            # Get total count from a separate query without offset/limit
-            try:
-                # Create clean query for total count (no pagination parameters)
-                count_filters = {**filters}
-                count_query = _get_redmine_client().issue.filter(**count_filters)
-                # Must evaluate the query first to get accurate total_count
-                list(count_query)  # Trigger evaluation
-                total_count = count_query.total_count
-                logging.debug(f"Got total count from separate query: {total_count}")
-            except Exception as e:
-                logging.warning(
-                    f"Could not get total count: {e}, using estimated value"
-                )
-                # For unknown total, use a conservative estimate
-                if len(result_issues) == limit:
-                    # If we got a full page, there might be more
-                    total_count = offset + len(result_issues) + 1
-                else:
-                    # If we got less than requested, this is likely the end
-                    total_count = offset + len(result_issues)
-
-            pagination_info = {
-                "total": total_count,
-                "limit": limit,
-                "offset": offset,
-                "count": len(result_issues),
-                "has_next": len(result_issues) == limit,
-                "has_previous": offset > 0,
-                "next_offset": offset + limit if len(result_issues) == limit else None,
-                "previous_offset": max(0, offset - limit) if offset > 0 else None,
-            }
-
-            result = {"issues": result_issues, "pagination": pagination_info}
-
-            logging.info(
-                f"Returning paginated response: {len(result_issues)} issues, "
-                f"total={total_count}"
-            )
-            return result
-
-        # Log success and return simple list
-        logging.info(f"Successfully retrieved {len(result_issues)} issues")
-        return result_issues
-
-    except Exception as e:
-        return [_handle_redmine_error(e, "listing issues")]
+    """List Redmine issues with flexible filtering and pagination support."""
+    return await list_redmine_issues_impl(
+        project_id,
+        status_id,
+        tracker_id,
+        assigned_to_id,
+        priority_id,
+        fixed_version_id,
+        sort,
+        limit,
+        offset,
+        include_pagination_info,
+        fields,
+        filters,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        issue_to_dict_selective=_issue_to_dict_selective,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -743,177 +477,20 @@ async def search_redmine_issues(
     open_issues: bool = False,
     options: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Search Redmine issues matching a query string with pagination support.
-
-    Performs text search across issues using the Redmine Search API.
-    Supports server-side pagination to prevent MCP token overflow.
-
-    Args:
-        query: Text to search for in issues.
-        limit: Maximum number of issues to return (default: 25, max: 1000).
-        offset: Number of issues to skip for pagination (default: 0).
-        include_pagination_info: Return structured response with pagination
-            metadata (default: False).
-        fields: List of field names to include in results (default: all).
-            Available: id, subject, description, project, status, priority,
-            author, assigned_to, created_on, updated_on.
-        scope: Search scope. Values: "all", "my_project", "subprojects".
-        open_issues: Search only open issues (default: False).
-        options: Additional Redmine Search API parameters as a dict.
-
-    Returns:
-        List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
-        Issues are limited to prevent token overflow (25,000 token MCP limit).
-
-    Examples:
-        >>> await search_redmine_issues("bug fix")
-        [{"id": 1, "subject": "Bug in login", ...}, ...]
-
-        >>> await search_redmine_issues(
-        ...     "performance", limit=10, offset=0, include_pagination_info=True
-        ... )
-        {
-            "issues": [...],
-            "pagination": {"limit": 10, "offset": 0, "has_next": True, ...}
-        }
-
-        >>> await search_redmine_issues("urgent", fields=["id", "subject", "status"])
-        [{"id": 1, "subject": "Critical bug", "status": {...}}, ...]
-
-        >>> await search_redmine_issues("bug", scope="my_project", open_issues=True)
-        [{"id": 1, "subject": "Open bug in my project", ...}, ...]
-
-    Note:
-        The Redmine Search API does not provide total_count. Pagination
-        metadata uses conservative estimation: has_next=True if result
-        count equals limit.
-
-        Search API Limitations: The Search API supports text search with
-        scope and open_issues filters only. For advanced filtering by
-        project_id, status_id, priority_id, etc., use list_redmine_issues()
-        instead, which uses the Issues API with full filter support.
-
-    Performance:
-        - Memory efficient: Uses server-side pagination
-        - Token efficient: Default limit keeps response under 2000 tokens
-        - Further reduce tokens: Use fields parameter for minimal data transfer
-    """
-
-    try:
-        # Build search options dict from explicit parameters
-        search_options: Dict[str, Any] = {}
-        if scope is not None:
-            search_options["scope"] = scope
-        if open_issues:
-            search_options["open_issues"] = open_issues
-        # Merge additional arbitrary search options if provided
-        if options:
-            search_options.update(options)
-        options = search_options
-
-        # Log request for monitoring
-        option_keys = list(options.keys()) if options else []
-        logging.info(
-            f"Search request: query='{query}', limit={limit}, "
-            f"offset={offset}, options={option_keys}"
-        )
-
-        # Validate and sanitize limit parameter
-        if limit is not None:
-            if not isinstance(limit, int):
-                try:
-                    limit = int(limit)
-                except (ValueError, TypeError):
-                    logging.warning(
-                        f"Invalid limit type {type(limit)}, using default 25"
-                    )
-                    limit = 25
-
-            if limit <= 0:
-                logging.debug(f"Limit {limit} <= 0, returning empty result")
-                empty_result = []
-                if include_pagination_info:
-                    empty_result = {
-                        "issues": [],
-                        "pagination": {
-                            "limit": limit,
-                            "offset": offset,
-                            "count": 0,
-                            "has_next": False,
-                            "has_previous": False,
-                            "next_offset": None,
-                            "previous_offset": None,
-                        },
-                    }
-                return empty_result
-
-            # Cap at reasonable maximum
-            original_limit = limit
-            limit = min(limit, 1000)
-            if original_limit > limit:
-                logging.warning(
-                    f"Limit {original_limit} exceeds maximum 1000, "
-                    f"capped to {limit}"
-                )
-
-        # Validate offset
-        if not isinstance(offset, int) or offset < 0:
-            logging.warning(f"Invalid offset {offset}, reset to 0")
-            offset = 0
-
-        # Pass offset and limit to Redmine Search API
-        search_params = {"offset": offset, "limit": limit, **options}
-
-        # Perform search with pagination
-        logging.debug(
-            f"Calling _get_redmine_client().issue.search with: {search_params}"
-        )
-        results = _get_redmine_client().issue.search(query, **search_params)
-
-        if results is None:
-            results = []
-
-        # Convert results to list
-        issues_list = list(results)
-        logging.debug(
-            f"Retrieved {len(issues_list)} issues with "
-            f"offset={offset}, limit={limit}"
-        )
-
-        # Convert to dictionaries with optional field selection
-        result_issues = [
-            _issue_to_dict_selective(issue, fields) for issue in issues_list
-        ]
-
-        # Handle metadata response format
-        if include_pagination_info:
-            # Search API doesn't provide total_count
-            # Use conservative estimation
-            pagination_info = {
-                "limit": limit,
-                "offset": offset,
-                "count": len(result_issues),
-                "has_next": len(result_issues) == limit,
-                "has_previous": offset > 0,
-                "next_offset": (
-                    offset + limit if len(result_issues) == limit else None
-                ),
-                "previous_offset": max(0, offset - limit) if offset > 0 else None,
-            }
-
-            result = {"issues": result_issues, "pagination": pagination_info}
-
-            logging.info(
-                f"Returning paginated search response: " f"{len(result_issues)} issues"
-            )
-            return result
-
-        # Log success and return simple list
-        logging.info(f"Successfully searched and retrieved {len(result_issues)} issues")
-        return result_issues
-
-    except Exception as e:
-        return _handle_redmine_error(e, f"searching issues with query '{query}'")
+    """Search Redmine issues matching a query string with pagination support."""
+    return await search_redmine_issues_impl(
+        query,
+        limit,
+        offset,
+        include_pagination_info,
+        fields,
+        scope,
+        open_issues,
+        options,
+        get_client=_get_redmine_client,
+        issue_to_dict_selective=_issue_to_dict_selective,
+        handle_error=_handle_redmine_error,
+    )
 
 
 @mcp.tool()
@@ -924,184 +501,56 @@ async def create_redmine_issue(
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine.
-
-    Compatibility notes:
-    - Supports serialized ``fields`` payload (JSON object string)
-    - Supports optional ``extra_fields`` payload as object/JSON string
-    - Retries once with auto-filled required custom fields if Redmine reports
-      relevant validation errors on required custom fields (e.g. blank/invalid)
-      and
-      ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        issue_fields = _issue_fields._parse_create_issue_fields(fields)
-    except ValueError as e:
-        return {"error": str(e)}
-
-    try:
-        parsed_extra_fields = _issue_fields._parse_optional_object_payload(
-            extra_fields, "extra_fields"
-        )
-    except ValueError as e:
-        return {"error": str(e)}
-
-    if parsed_extra_fields:
-        issue_fields.update(parsed_extra_fields)
-
-    # Prevent callers from overriding explicit positional parameters.
-    issue_fields.pop("project_id", None)
-    issue_fields.pop("subject", None)
-    issue_fields.pop("description", None)
-    issue_fields.pop("extra_fields", None)
-
-    try:
-        issue = _get_redmine_client().issue.create(
-            project_id=project_id,
-            subject=subject,
-            description=description,
-            **issue_fields,
-        )
-        return _issue_to_dict(issue)
-    except ValidationError as e:
-        if not _issue_fields._is_required_custom_field_autofill_enabled():
-            return _handle_redmine_error(e, f"creating issue in project {project_id}")
-
-        missing_names = _issue_fields._extract_missing_required_field_names(str(e))
-        if not missing_names:
-            return _handle_redmine_error(e, f"creating issue in project {project_id}")
-
-        try:
-            retry_fields = _augment_fields_with_required_custom_fields(
-                project_id=project_id,
-                issue_fields=issue_fields,
-                missing_field_names=missing_names,
-            )
-
-            # Retry only when we have actually augmented payload.
-            if retry_fields == issue_fields:
-                return _handle_redmine_error(
-                    e, f"creating issue in project {project_id}"
-                )
-
-            logger.info(
-                "Retrying issue creation with auto-filled custom fields: %s",
-                missing_names,
-            )
-            issue = _get_redmine_client().issue.create(
-                project_id=project_id,
-                subject=subject,
-                description=description,
-                **retry_fields,
-            )
-            return _issue_to_dict(issue)
-        except Exception as retry_error:
-            return _handle_redmine_error(
-                retry_error, f"creating issue in project {project_id}"
-            )
-    except Exception as e:
-        return _handle_redmine_error(e, f"creating issue in project {project_id}")
+    """Create a new issue in Redmine."""
+    return await create_redmine_issue_impl(
+        project_id,
+        subject,
+        description,
+        fields,
+        extra_fields,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        parse_create_issue_fields=_issue_fields._parse_create_issue_fields,
+        parse_optional_object_payload=_issue_fields._parse_optional_object_payload,
+        get_client=_get_redmine_client,
+        issue_to_dict=_issue_to_dict,
+        is_required_custom_field_autofill_enabled=(
+            _issue_fields._is_required_custom_field_autofill_enabled
+        ),
+        extract_missing_required_field_names=(
+            _issue_fields._extract_missing_required_field_names
+        ),
+        augment_fields_with_required_custom_fields=(
+            _augment_fields_with_required_custom_fields
+        ),
+        handle_error=_handle_redmine_error,
+        validation_error=ValidationError,
+    )
 
 
 @mcp.tool()
 async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
-    """Update an existing Redmine issue.
-
-    In addition to standard Redmine fields, a ``status_name`` key may be
-    provided in ``fields``. When present and ``status_id`` is not supplied, the
-    function will look up the corresponding status ID and use it for the update.
-
-    Non-standard keys in ``fields`` are treated as candidate custom-field names.
-    When a matching project custom field is found, it is translated into
-    ``custom_fields`` entries for Redmine update payloads.
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    update_fields = dict(fields)
-
-    # Convert status name to id if requested
-    if "status_name" in update_fields and "status_id" not in update_fields:
-        name = str(update_fields.pop("status_name")).lower()
-        try:
-            statuses = _get_redmine_client().issue_status.all()
-            for status in statuses:
-                if getattr(status, "name", "").lower() == name:
-                    update_fields["status_id"] = status.id
-                    break
-        except Exception as e:
-            logger.warning(f"Error resolving status name '{name}': {e}")
-
-    try:
-        update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-        _get_redmine_client().issue.update(issue_id, **update_fields)
-        updated_issue = _get_redmine_client().issue.get(issue_id)
-        return _issue_to_dict(updated_issue, include_custom_fields=True)
-    except ValidationError as e:
-        if not _issue_fields._is_required_custom_field_autofill_enabled():
-            return _handle_redmine_error(
-                e,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
-            )
-
-        missing_names = _issue_fields._extract_missing_required_field_names(str(e))
-        if not missing_names:
-            return _handle_redmine_error(
-                e,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
-            )
-
-        try:
-            issue = _get_redmine_client().issue.get(issue_id)
-            project = getattr(issue, "project", None)
-            project_id = getattr(project, "id", None)
-            if project_id is None:
-                return _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                )
-
-            retry_fields = _augment_fields_with_required_custom_fields(
-                project_id=project_id,
-                issue_fields=update_fields,
-                missing_field_names=missing_names,
-            )
-
-            # Retry only when we have actually augmented payload.
-            if retry_fields == update_fields:
-                return _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                )
-
-            logger.info(
-                "Retrying issue update with auto-filled custom fields: %s",
-                missing_names,
-            )
-            _get_redmine_client().issue.update(issue_id, **retry_fields)
-            updated_issue = _get_redmine_client().issue.get(issue_id)
-            return _issue_to_dict(updated_issue, include_custom_fields=True)
-        except Exception as retry_error:
-            return _handle_redmine_error(
-                retry_error,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
-            )
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+    """Update an existing Redmine issue."""
+    return await update_redmine_issue_impl(
+        issue_id,
+        fields,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        get_client=_get_redmine_client,
+        map_named_custom_fields_for_update=_map_named_custom_fields_for_update,
+        issue_to_dict=_issue_to_dict,
+        is_required_custom_field_autofill_enabled=(
+            _issue_fields._is_required_custom_field_autofill_enabled
+        ),
+        extract_missing_required_field_names=(
+            _issue_fields._extract_missing_required_field_names
+        ),
+        augment_fields_with_required_custom_fields=(
+            _augment_fields_with_required_custom_fields
+        ),
+        handle_error=_handle_redmine_error,
+        validation_error=ValidationError,
+    )
 
 
 @mcp.tool()

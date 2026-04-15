@@ -5,6 +5,13 @@ from .attachments import (
     cleanup_attachment_files_impl,
     get_redmine_attachment_download_url_impl,
 )
+from .issues import (
+    create_redmine_issue_impl,
+    get_redmine_issue_impl,
+    list_redmine_issues_impl,
+    search_redmine_issues_impl,
+    update_redmine_issue_impl,
+)
 from .projects import (
     list_project_issue_custom_fields_impl,
     list_project_members_impl,
@@ -26,19 +33,24 @@ from .wiki import (
 
 __all__ = [
     "cleanup_attachment_files_impl",
+    "create_redmine_issue_impl",
     "create_redmine_wiki_page_impl",
     "create_time_entry_impl",
     "delete_redmine_wiki_page_impl",
     "get_redmine_attachment_download_url_impl",
+    "get_redmine_issue_impl",
     "get_redmine_wiki_page_impl",
     "list_project_issue_custom_fields_impl",
     "list_project_members_impl",
+    "list_redmine_issues_impl",
     "list_redmine_projects_impl",
     "list_redmine_versions_impl",
     "list_time_entries_impl",
     "list_time_entry_activities_impl",
     "search_entire_redmine_impl",
+    "search_redmine_issues_impl",
     "summarize_project_status_impl",
+    "update_redmine_issue_impl",
     "update_redmine_wiki_page_impl",
     "update_time_entry_impl",
 ]
