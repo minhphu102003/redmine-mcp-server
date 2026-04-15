@@ -379,6 +379,31 @@ class TestListRedmineIssues:
         assert pagination["next_offset"] is None
 
     @pytest.mark.asyncio
+    async def test_pagination_limit_above_api_cap_uses_fetch_page_size(
+        self, mock_redmine
+    ):
+        """When limit>100, has_next/offsets should still use actual fetch size."""
+        mock_issues = self.create_mock_issues(100)
+
+        first_call = Mock()
+        first_call.__iter__ = Mock(return_value=iter(mock_issues))
+        second_call = Mock()
+        second_call.__iter__ = Mock(return_value=iter([]))
+        second_call.total_count = 250
+
+        mock_redmine.issue.filter.side_effect = [first_call, second_call]
+
+        result = await list_redmine_issues(
+            project_id=1, limit=500, offset=0, include_pagination_info=True
+        )
+
+        pagination = result["pagination"]
+        assert pagination["limit"] == 500
+        assert pagination["count"] == 100
+        assert pagination["has_next"] is True
+        assert pagination["next_offset"] == 100
+
+    @pytest.mark.asyncio
     async def test_pagination_zero_limit_with_info(self, mock_redmine):
         """Test pagination info with zero limit."""
         result = await list_redmine_issues(
