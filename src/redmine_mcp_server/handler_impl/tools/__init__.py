@@ -30,6 +30,11 @@ from .wiki import (
     get_redmine_wiki_page_impl,
     update_redmine_wiki_page_impl,
 )
+from .workflow import (
+    get_redmine_issue_allowed_statuses_impl,
+    get_redmine_project_workflow_impl,
+    list_redmine_issue_statuses_impl,
+)
 
 __all__ = [
     "cleanup_attachment_files_impl",
@@ -53,4 +58,7 @@ __all__ = [
     "update_redmine_issue_impl",
     "update_redmine_wiki_page_impl",
     "update_time_entry_impl",
+    "list_redmine_issue_statuses_impl",
+    "get_redmine_issue_allowed_statuses_impl",
+    "get_redmine_project_workflow_impl",
 ]

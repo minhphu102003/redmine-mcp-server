@@ -26,6 +26,7 @@ Dependencies:
 import os
 import asyncio  # noqa: F401
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
@@ -48,7 +49,10 @@ from .handler_impl.tools import (
     delete_redmine_wiki_page_impl,
     get_redmine_attachment_download_url_impl,
     get_redmine_issue_impl,
+    get_redmine_issue_allowed_statuses_impl,
+    get_redmine_project_workflow_impl,
     get_redmine_wiki_page_impl,
+    list_redmine_issue_statuses_impl,
     list_project_issue_custom_fields_impl,
     list_project_members_impl,
     list_redmine_issues_impl,
@@ -298,11 +302,24 @@ _DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = (
     _issue_fields._DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES
 )
 _STANDARD_ISSUE_UPDATE_FIELDS: Set[str] = _issue_fields._STANDARD_ISSUE_UPDATE_FIELDS
+_INSECURE_CONTENT_TAG_RE = re.compile(
+    r"^<insecure-content-[^>]+>\s*(.*?)\s*</insecure-content-[^>]+>$",
+    flags=re.DOTALL,
+)
 
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
     """Parse common truthy env-var values."""
     return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_insecure_text(value: Any) -> str:
+    """Normalize possibly wrapped insecure-content text for safe comparisons."""
+    text = str(value or "").strip()
+    match = _INSECURE_CONTENT_TAG_RE.fullmatch(text)
+    if match:
+        return match.group(1).strip().lower()
+    return text.lower()
 
 
 def _is_read_only_mode() -> bool:
@@ -551,6 +568,206 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         handle_error=_handle_redmine_error,
         validation_error=ValidationError,
     )
+
+
+@mcp.tool()
+async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all issue statuses defined in Redmine."""
+    return await list_redmine_issue_statuses_impl(
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def get_redmine_issue_allowed_statuses(issue_id: int) -> Dict[str, Any]:
+    """Get allowed status transitions for a specific issue."""
+    return await get_redmine_issue_allowed_statuses_impl(
+        issue_id,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def get_redmine_project_workflow(
+    project_id: Union[str, int],
+    tracker_id: Optional[int] = None,
+    status_id: Optional[Union[int, str]] = None,
+    sample_limit: int = 25,
+) -> Dict[str, Any]:
+    """Infer project workflow from issue-level allowed statuses (sample-based)."""
+    return await get_redmine_project_workflow_impl(
+        project_id,
+        tracker_id,
+        status_id,
+        sample_limit,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def get_issue_workflow_context(
+    mode: str = "issue",
+    issue_id: Optional[int] = None,
+    project_id: Optional[Union[str, int]] = None,
+    tracker_id: Optional[int] = None,
+    status_id: Optional[Union[int, str]] = None,
+    sample_limit: int = 25,
+    target_status_id: Optional[int] = None,
+    target_status_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Consolidated workflow context tool.
+
+    Supports statuses, issue transitions, and project workflow snapshots.
+    """
+    resolved_mode = (mode or "issue").strip().lower()
+
+    if resolved_mode == "statuses":
+        data = await list_redmine_issue_statuses()
+        return {"mode": "statuses", "data": data}
+
+    if resolved_mode == "project":
+        if project_id is None:
+            return {"error": "project_id is required when mode='project'."}
+        data = await get_redmine_project_workflow(
+            project_id=project_id,
+            tracker_id=tracker_id,
+            status_id=status_id,
+            sample_limit=sample_limit,
+        )
+        return {"mode": "project", "data": data}
+
+    if issue_id is None:
+        return {
+            "error": (
+                "issue_id is required for mode='issue' and " "mode='transition_check'."
+            )
+        }
+
+    issue_data = await get_redmine_issue_allowed_statuses(issue_id)
+    if isinstance(issue_data, dict) and "error" in issue_data:
+        return {"mode": resolved_mode, "error": issue_data["error"]}
+
+    if resolved_mode == "issue":
+        return {"mode": "issue", "data": issue_data}
+
+    if resolved_mode == "transition_check":
+        if target_status_id is None and not target_status_name:
+            return {
+                "error": (
+                    "target_status_id or target_status_name is required when "
+                    "mode='transition_check'."
+                )
+            }
+
+        allowed = (
+            issue_data.get("allowed_statuses", [])
+            if isinstance(issue_data, dict)
+            else []
+        )
+        match = None
+        if target_status_id is not None:
+            for status in allowed:
+                if status.get("id") == target_status_id:
+                    match = status
+                    break
+        elif target_status_name:
+            expected = _normalize_insecure_text(target_status_name)
+            for status in allowed:
+                if _normalize_insecure_text(status.get("name")) == expected:
+                    match = status
+                    break
+
+        return {
+            "mode": "transition_check",
+            "issue_id": issue_id,
+            "current_status": (
+                issue_data.get("current_status")
+                if isinstance(issue_data, dict)
+                else None
+            ),
+            "target": {
+                "id": target_status_id,
+                "name": target_status_name,
+            },
+            "allowed": bool(match),
+            "matched_status": match,
+            "allowed_statuses": allowed,
+        }
+
+    return {
+        "error": (
+            "Invalid mode. Supported modes: statuses, issue, project, transition_check."
+        )
+    }
+
+
+@mcp.tool()
+async def manage_time_entries(
+    action: str,
+    time_entry_id: Optional[int] = None,
+    hours: Optional[float] = None,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
+    activity_id: Optional[int] = None,
+    comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """Consolidated time-entry tool (list/create/update/activities)."""
+    resolved_action = (action or "").strip().lower()
+
+    if resolved_action == "list":
+        data = await list_time_entries(
+            project_id=project_id,
+            issue_id=issue_id,
+            user_id=user_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+        return {"action": "list", "data": data}
+
+    if resolved_action == "activities":
+        data = await list_time_entry_activities()
+        return {"action": "activities", "data": data}
+
+    if resolved_action == "create":
+        if hours is None:
+            return {"error": "hours is required when action='create'."}
+        data = await create_time_entry(
+            hours=hours,
+            project_id=project_id,
+            issue_id=issue_id,
+            activity_id=activity_id,
+            comments=comments or "",
+            spent_on=spent_on,
+        )
+        return {"action": "create", "data": data}
+
+    if resolved_action == "update":
+        if time_entry_id is None:
+            return {"error": "time_entry_id is required when action='update'."}
+        data = await update_time_entry(
+            time_entry_id=time_entry_id,
+            hours=hours,
+            activity_id=activity_id,
+            comments=comments,
+            spent_on=spent_on,
+        )
+        return {"action": "update", "data": data}
+
+    return {"error": "Invalid action. Supported: list, create, update, activities."}
 
 
 @mcp.tool()
