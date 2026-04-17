@@ -17,7 +17,16 @@ async def list_redmine_projects_impl(
 ) -> List[Dict[str, Any]]:
     """List all accessible projects in Redmine."""
     try:
-        projects = get_client().project.all()
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    "listing projects",
+                    None,
+                )
+            ]
+        projects = client.project.all()
         return [
             {
                 "id": project.id,
@@ -63,7 +72,16 @@ async def list_project_issue_custom_fields_impl(
 
     await ensure_cleanup_started()
     try:
-        project = get_client().project.get(project_id, include="issue_custom_fields")
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    f"listing issue custom fields for project {project_id}",
+                    {"resource_id": project_id},
+                )
+            ]
+        project = client.project.get(project_id, include="issue_custom_fields")
         custom_fields = getattr(project, "issue_custom_fields", None) or []
 
         result: List[Dict[str, Any]] = []
@@ -108,7 +126,16 @@ async def list_redmine_versions_impl(
 
     await ensure_cleanup_started()
     try:
-        versions = get_client().version.filter(project_id=project_id)
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    f"listing versions for project {project_id}",
+                    {"resource_id": project_id},
+                )
+            ]
+        versions = client.version.filter(project_id=project_id)
         result = []
         for version in versions:
             if (
@@ -137,7 +164,16 @@ async def list_project_members_impl(
 ) -> List[Dict[str, Any]]:
     """List members of a Redmine project."""
     try:
-        memberships = get_client().project_membership.filter(project_id=project_id)
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    f"listing members for project {project_id}",
+                    {"resource_id": project_id},
+                )
+            ]
+        memberships = client.project_membership.filter(project_id=project_id)
         return [membership_to_dict(membership) for membership in memberships]
     except Exception as e:
         return [

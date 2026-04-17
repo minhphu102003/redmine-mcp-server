@@ -18,6 +18,8 @@ import httpx
 from importlib.metadata import version, PackageNotFoundError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+import argparse
+import threading
 
 # Configure basic logging before importing modules that log during init
 logging.basicConfig(
@@ -28,6 +30,7 @@ logging.basicConfig(
 
 from .redmine_handler import mcp  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
+from .dynamic_auth_middleware import RedmineDynamicAuthMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +186,8 @@ app = mcp.http_app(stateless_http=True)
 if REDMINE_AUTH_MODE == "oauth":
     app.add_middleware(RedmineOAuthMiddleware)
     register_oauth_routes(app)
+elif REDMINE_AUTH_MODE == "dynamic":
+    app.add_middleware(RedmineDynamicAuthMiddleware)
 
 # Log version at module load time so it appears regardless of how the server is started
 logger.info("Redmine MCP Server v%s", get_version())
@@ -191,15 +196,105 @@ logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
 
 def main():
     """Main entry point for the console script."""
+
     # Note: .env is already loaded during redmine_handler import
     # Note: version/auth mode are logged at module level
     # (works for both direct and uvicorn invocation)
 
-    host = os.getenv("SERVER_HOST", "127.0.0.1")
-    port = int(os.getenv("SERVER_PORT", "8000"))
+    parser = argparse.ArgumentParser(description="Redmine MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["http", "stdio"],
+        default="http",
+        help="Transport mode: 'http' (default) or 'stdio' (hybrid mode)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("SERVER_HOST", "127.0.0.1"),
+        help="Host to bind HTTP server to (default: 127.0.0.1 or SERVER_HOST env)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("SERVER_PORT", "8000")),
+        help="Port to bind HTTP server to (default: 8000 or SERVER_PORT env)",
+    )
 
-    # Run with our app directly so custom routes (well-known endpoints) are served
-    uvicorn.run(app, host=host, port=port, log_config=None)
+    # Use parse_known_args to avoid conflicts with other potential injectors
+    args, _ = parser.parse_known_args()
+
+    if args.transport == "stdio":
+        logger.info("Starting in HYBRID mode (MCP tools via stdio, files via HTTP)")
+
+        # threading.Event lets the health-poll thread signal us the moment
+        # the HTTP server is accepting connections, so we can detect startup
+        # failures (e.g., port already in use) before proceeding with mcp.run().
+        _http_ready = threading.Event()
+
+        def _poll_ready(host: str, port: int, event: threading.Event):
+            """Poll /health until the server responds or we give up."""
+            import time
+            import urllib.request
+            import urllib.error
+
+            url = f"http://{host}:{port}/health"
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                try:
+                    urllib.request.urlopen(url, timeout=0.5)  # noqa: S310
+                    event.set()
+                    return
+                except Exception:
+                    time.sleep(0.1)
+            # Timeout — leave event unset so main thread can warn
+
+        # Start uvicorn in a background thread for file serving and health checks.
+        # daemon=True so the thread exits automatically when the main thread ends.
+        http_thread = threading.Thread(
+            target=uvicorn.run,
+            args=(app,),
+            kwargs={
+                "host": args.host,
+                "port": args.port,
+                "log_config": None,
+                "access_log": False,  # Keep stderr clean for stdio
+            },
+            daemon=True,
+            name="RedmineHTTPBackgroundThread",
+        )
+        http_thread.start()
+
+        # Start a lightweight poller that sets _http_ready once /health responds
+        poll_thread = threading.Thread(
+            target=_poll_ready,
+            args=(args.host, args.port, _http_ready),
+            daemon=True,
+            name="RedmineHTTPReadyPoller",
+        )
+        poll_thread.start()
+
+        _STARTUP_TIMEOUT = 5.0
+        if _http_ready.wait(timeout=_STARTUP_TIMEOUT):
+            logger.info(
+                "HTTP background server ready on %s:%d (file serving & health)",
+                args.host,
+                args.port,
+            )
+        else:
+            logger.warning(
+                "HTTP background server did not become ready within %.0fs "
+                "(port %d may already be in use). "
+                "File serving may be unavailable — continuing with stdio MCP.",
+                _STARTUP_TIMEOUT,
+                args.port,
+            )
+
+        # Run MCP on stdio (blocking)
+        mcp.run()
+    else:
+        logger.info("Starting in HTTP mode (MCP and files via HTTP)")
+        # Run with our app directly so custom routes (well-known endpoints) are served
+        uvicorn.run(app, host=args.host, port=args.port, log_config=None)
 
 
 if __name__ == "__main__":
