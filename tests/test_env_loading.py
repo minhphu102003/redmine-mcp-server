@@ -36,7 +36,10 @@ import sys
 import os
 
 # Clear any existing env vars to ensure we're testing fresh loading
-for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
+for key in [
+    'REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME',
+    'REDMINE_PASSWORD', 'REDMINE_AUTH_MODE'
+]:
     os.environ.pop(key, None)
 
 # Import the module which triggers env loading
@@ -83,7 +86,10 @@ import sys
 import os
 
 # Clear any existing env vars
-for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
+for key in [
+    'REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME',
+    'REDMINE_PASSWORD', 'REDMINE_AUTH_MODE'
+]:
     os.environ.pop(key, None)
 
 # Import the module which triggers env loading and warnings
@@ -120,7 +126,10 @@ import sys
 import os
 
 # Clear any existing env vars
-for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
+for key in [
+    'REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME',
+    'REDMINE_PASSWORD', 'REDMINE_AUTH_MODE'
+]:
     os.environ.pop(key, None)
 
 from redmine_mcp_server import redmine_handler
@@ -166,7 +175,10 @@ from redmine_mcp_server import redmine_handler
 import os
 
 # Clear any existing env vars
-for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
+for key in [
+    'REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME',
+    'REDMINE_PASSWORD', 'REDMINE_AUTH_MODE'
+]:
     os.environ.pop(key, None)
 
 from redmine_mcp_server.redmine_handler import REDMINE_URL

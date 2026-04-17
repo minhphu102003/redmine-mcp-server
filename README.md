@@ -1,26 +1,16 @@
 # Redmine MCP Server
 
-[![PyPI Version](https://img.shields.io/pypi/v/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
-[![License](https://img.shields.io/github/license/jztan/redmine-mcp-server.svg)](LICENSE)
-[![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
-[![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
-[![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
-[![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
-[![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
-
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
-
-**mcp-name: io.github.jztan/redmine-mcp-server**
 
 ## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
 
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
+- **Dynamic Proxy Mode**: Support multi-tenant deployments and Redmine versions < 6.1 via per-request headers
+- **Hybrid Transport**: Use `stdio` for tools and `http` for file serving in a single instance
 - **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
-- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
-- **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
 - **Pagination Support**: Efficiently handle large issue lists with configurable limits
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -28,18 +18,24 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Quick Start
 
-1. **Install the package**
+1. **Clone the repository and install dependencies**
    ```bash
-   pip install redmine-mcp-server
+   git clone https://github.com/your-repo/redmine-mcp-server.git
+   cd redmine-mcp-server
+   uv sync
    ```
 2. **Create a `.env` file** with your Redmine credentials (see [Installation](#installation) for template)
 3. **Start the server**
    ```bash
+   # Standard HTTP mode
    redmine-mcp-server
+   
+   # Or Hybrid mode (Recommended for local dev)
+   redmine-mcp-server --transport stdio
    ```
 4. **Add the server to your MCP client** using one of the guides in [MCP Client Configuration](#mcp-client-configuration).
 
-Once running, the server listens on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
+Once running, the server handles MCP requests via `/mcp` (HTTP) or `stdio`, with a health check at `/health` and file serving at `/files/{file_id}`.
 
 ## Installation
 
@@ -49,11 +45,15 @@ Once running, the server listens on `http://localhost:8000` with the MCP endpoin
 - Docker (alternative deployment, uses Python 3.13)
 - Access to a Redmine instance
 
-### Install from PyPI (Recommended)
+### Install from Source
 
 ```bash
-# Install the package
-pip install redmine-mcp-server
+# Clone the repository
+git clone https://github.com/your-repo/redmine-mcp-server.git
+cd redmine-mcp-server
+
+# Install dependencies using uv
+uv sync
 
 # Create configuration file .env
 cat > .env << 'EOF'
@@ -82,15 +82,15 @@ ATTACHMENT_EXPIRES_MINUTES=60
 EOF
 
 # Edit .env with your actual Redmine settings
-nano .env  # or use your preferred editor
+nano .env
 
 # Run the server
-redmine-mcp-server
-# Or alternatively:
-python -m redmine_mcp_server.main
+# Use --transport stdio for managed stdio (Claude Desktop / VS Code)
+# Use default for HTTP mode (Docker / Production)
+redmine-mcp-server --transport stdio
 ```
 
-The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
+The server runs on `http://localhost:8000` (for files/health) and handles MCP requests via `stdio` or HTTP `/mcp`.
 
 ### Environment Variables Configuration
 
@@ -212,23 +212,27 @@ REDMINE_API_KEY=your_api_key
 
 > **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
 
-Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account.
+Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it.
 
 ```bash
 REDMINE_AUTH_MODE=oauth
 REDMINE_URL=https://redmine.example.com
-REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com
 ```
 
-In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
+### Dynamic mode (Proxy)
 
-| Endpoint | Standard | Purpose |
-|----------|----------|---------|
-| `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
-| `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
-| `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
+**Ideal for Redmine versions < 6.1 or multi-tenant VPS deployments.**
 
-Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
+In this mode, the MCP server acts as a neutral proxy. The Redmine URL and API Key are provided by the AI Agent in each request via HTTP headers. No user credentials are stored on the server.
+
+```bash
+REDMINE_AUTH_MODE=dynamic
+```
+
+**Required Headers from Client:**
+- `X-Redmine-URL`: The target Redmine instance URL
+- `X-Redmine-API-Key`: The user's personal API Key (can also be sent via `Authorization: Bearer <KEY>`)
 
 **Prerequisites for OAuth mode:**
 - An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
@@ -280,6 +284,23 @@ Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile 
 }
 ```
 
+**Dynamic Proxy Mode (Multiple Users):**
+If the server is running on a VPS in `dynamic` mode, include the target Redmine URL and your API Key in the headers:
+```json
+{
+  "servers": {
+    "redmine": {
+      "type": "http",
+      "url": "https://mcp-vps.yourdomain.com/mcp",
+      "headers": {
+        "X-Redmine-URL": "https://redmine.yourcompany.com",
+        "X-Redmine-API-Key": "YOUR_PERSONAL_API_KEY"
+      }
+    }
+  }
+}
+```
+
 </details>
 
 <details>
@@ -315,7 +336,9 @@ Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy 
 1. Open Claude Desktop
 2. Click the **Claude** menu (macOS menu bar / Windows title bar) > **Settings...**
 3. Click the **Developer** tab > **Edit Config**
-4. Add the following configuration:
+4. Paste the configuration below into the json file
+5. Save the file, then **fully quit and restart** Claude Desktop
+6. Look for the tools icon in the input area to verify the connection
 
 ```json
 {
@@ -323,25 +346,26 @@ Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy 
     "redmine": {
       "command": "uv",
       "args": [
+        "--directory", "/path/to/redmine-mcp-server",
         "run",
-        "--with", "fastmcp",
-        "fastmcp",
-        "run",
-        "http://127.0.0.1:8000/mcp"
-      ]
+        "redmine-mcp-server",
+        "--transport", "stdio"
+      ],
+      "env": {
+        "REDMINE_AUTH_MODE": "legacy",
+        "REDMINE_URL": "...",
+        "REDMINE_API_KEY": "..."
+      }
     }
   }
 }
 ```
 
-5. Save the file, then **fully quit and restart** Claude Desktop
-6. Look for the tools icon in the input area to verify the connection
-
 **Config file locations:**
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-**Note:** The Redmine MCP server must be running before starting Claude Desktop.
+**Note:** The Redmine MCP server will be automatically started and stopped by Claude Desktop.
 
 </details>
 
@@ -417,6 +441,23 @@ For clients that require a command-based approach with HTTP bridge:
     "redmine": {
       "command": "npx",
       "args": ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
+    }
+  }
+}
+```
+
+**Using Dynamic Proxy Mode:**
+If connecting to a shared VPS, add the `headers` block:
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "type": "http",
+      "url": "https://mcp-vps.yourdomain.com/mcp",
+      "headers": {
+        "X-Redmine-URL": "https://redmine.their-company.com",
+        "X-Redmine-API-Key": "PERSON_API_KEY"
+      }
     }
   }
 }

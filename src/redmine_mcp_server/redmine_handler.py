@@ -41,6 +41,12 @@ from fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 from .handler_impl import issue_fields as _issue_fields
 from .handler_impl.errors import handle_redmine_error
+from .security import (
+    validate_redmine_url,
+    SecurityValidationError,
+    ssrf_redirect_hook,
+    SSRFSafeHTTPAdapter,
+)
 from .handler_impl.tools import (
     cleanup_attachment_files_impl,
     create_redmine_issue_impl,
@@ -127,13 +133,30 @@ REDMINE_SSL_VERIFY = os.getenv("REDMINE_SSL_VERIFY", "true").lower() == "true"
 REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
 REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
-if not REDMINE_URL:
+# Validation of required environment variables based on authentication mode
+if REDMINE_AUTH_MODE == "dynamic":
+    # In dynamic mode, URL and Key are provided per-request via headers.
+    # No global URL/Key are required at startup.
+    pass
+elif not REDMINE_URL:
     logger.warning(
         "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
-elif REDMINE_AUTH_MODE != "oauth" and not (
-    REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
+elif REDMINE_AUTH_MODE == "legacy":
+    try:
+        validate_redmine_url(REDMINE_URL)
+    except SecurityValidationError as e:
+        logger.warning(
+            f"Global REDMINE_URL fails security validation: {e}. "
+            "If this is intentional (e.g. local dev), "
+            "set REDMINE_SECURITY_STRICT=false."
+        )
+
+if (
+    REDMINE_AUTH_MODE != "oauth"
+    and REDMINE_AUTH_MODE != "dynamic"
+    and not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD))
 ):
     logger.warning(
         "No Redmine authentication configured. "
@@ -169,12 +192,38 @@ def _build_requests_config() -> dict:
         else:
             requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
             logger.info("Using client certificate for mutual TLS")
+    # NOTE: hooks and adapters are intentionally NOT added here.
+    # python-redmine ignores unknown keys in the requests= dict.
+    # SSRF protection is applied separately via _apply_ssrf_protection()
+    # which patches the actual requests.Session after client construction.
     return requests_config
 
 
+def _apply_ssrf_protection(client: Redmine) -> Redmine:
+    """Mount SSRF-safe adapter and redirect hook on a Redmine client's session.
+
+    python-redmine does not forward 'adapters' or 'hooks' from the requests=
+    config dict to its internal requests.Session, so we must patch the session
+    directly after the client is constructed.
+
+    This function:
+    - Mounts SSRFSafeHTTPAdapter for both http:// and https://, which resolves
+      DNS once, validates the IP, and pins the connection (TOCTOU defence).
+    - Appends ssrf_redirect_hook to the session's response hooks so that any
+      HTTP redirect target is validated before requests follows it.
+    """
+    session = client.engine.session
+    adapter = SSRFSafeHTTPAdapter()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.hooks["response"].append(ssrf_redirect_hook)
+    return client
+
+
 # Test-compatibility hook: existing unit tests patch this module-level variable
-# directly. When non-None, _get_redmine_client() returns it immediately.
-# In production this stays None and per-request auth is always used.
+# directly (e.g. @patch("redmine_mcp_server.redmine_handler.redmine", mock)).
+# When non-None, _get_redmine_client() returns it immediately.
+# In production this stays None so per-request Dynamic/OAuth auth is always used.
 redmine = None
 
 # Cached legacy-mode client — avoids recreating Redmine() on every tool call
@@ -182,38 +231,53 @@ redmine = None
 _legacy_client = None
 
 
-def _build_legacy_client() -> Redmine:
-    """Build a Redmine client using legacy credentials (API key or user/pass)."""
+def _build_legacy_client(strict: bool = True) -> Optional[Redmine]:
+    """Build a Redmine client using legacy credentials (API key or user/pass).
+
+    Returns None (instead of raising) when strict=False and no credentials
+    are configured. Callers must never cache a None return value.
+    """
     requests_config = _build_requests_config()
     if REDMINE_API_KEY:
-        if requests_config:
-            return Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
-        return Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+        return _apply_ssrf_protection(
+            Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
+        )
     elif REDMINE_USERNAME and REDMINE_PASSWORD:
-        if requests_config:
-            return Redmine(
+        return _apply_ssrf_protection(
+            Redmine(
                 REDMINE_URL,
                 username=REDMINE_USERNAME,
                 password=REDMINE_PASSWORD,
                 requests=requests_config,
             )
-        return Redmine(
-            REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
         )
     else:
-        raise RuntimeError(
-            "No Redmine authentication available. "
-            "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
-            "REDMINE_USERNAME+REDMINE_PASSWORD."
-        )
+        if strict:
+            raise RuntimeError(
+                "No Redmine authentication available. "
+                "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
+                "REDMINE_USERNAME+REDMINE_PASSWORD."
+            )
+        return None
 
 
-def _get_redmine_client() -> Redmine:
+def _get_redmine_client(strict: bool = True) -> Optional[Redmine]:
     global _legacy_client
 
     if redmine is not None:
         return redmine
 
+    # 1. Check for Dynamic Proxy mode (per-request URL and API Key)
+    from .dynamic_auth_middleware import get_dynamic_config
+
+    dyn_url, dyn_key = get_dynamic_config()
+    if dyn_url and dyn_key:
+        # Dynamic mode: never uses cached client, always per-request
+        requests_config = _build_requests_config()
+        client = Redmine(dyn_url, key=dyn_key, requests=requests_config)
+        return _apply_ssrf_protection(client)
+
+    # 2. Check for OAuth mode (per-request Bearer token)
     from .oauth_middleware import current_redmine_token
 
     token = current_redmine_token.get()
@@ -222,15 +286,19 @@ def _get_redmine_client() -> Redmine:
         # OAuth mode: per-request client with Bearer token (cannot be cached)
         requests_config = _build_requests_config()
         headers = {"Authorization": f"Bearer {token}"}
-        if requests_config:
-            return Redmine(
-                REDMINE_URL, requests={"headers": headers, **requests_config}
-            )
-        return Redmine(REDMINE_URL, requests={"headers": headers})
+        client = Redmine(
+            REDMINE_URL, requests={"headers": headers, **requests_config}
+        )
+        return _apply_ssrf_protection(client)
 
-    # Legacy mode: reuse a cached singleton
+    # 3. Legacy mode: reuse a cached singleton configured via .env.
+    # Never cache None — if no credentials are available, return None without
+    # storing it so that a future call with credentials will still build a client.
     if _legacy_client is None:
-        _legacy_client = _build_legacy_client()
+        client = _build_legacy_client(strict=strict)
+        if client is None:
+            return None
+        _legacy_client = client
     return _legacy_client
 
 
