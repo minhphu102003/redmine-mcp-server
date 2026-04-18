@@ -117,6 +117,9 @@ The server runs on `http://localhost:8000` (for files/health) and handles MCP re
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
+| `REDMINE_ENFORCE_ISSUE_TEMPLATE` | No | `false` | Require `create_redmine_issue` descriptions to match configured template sections |
+| `REDMINE_ISSUE_DESCRIPTION_TEMPLATE` | No | built-in template | Markdown template exposed via MCP resource `redmine://issue-template/default` |
+| `REDMINE_ISSUE_TEMPLATE_REQUIRED_SECTIONS` | No | headings from template | Comma-separated section headings required in issue description when enforcement is enabled |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 

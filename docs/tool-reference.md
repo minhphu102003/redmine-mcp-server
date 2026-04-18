@@ -175,6 +175,16 @@ User-controlled content here...
 
 This allows LLM consumers to distinguish trusted tool output from untrusted user data, preventing prompt injection attacks via Redmine content. Empty strings and non-string values are returned unchanged.
 
+### Issue Template Resource and Enforcement
+
+The server exposes an MCP resource at `redmine://issue-template/default` that agents can read before creating issues.
+
+- `template_markdown`: canonical issue description template
+- `required_sections`: section headings that must be present
+- `enforced`: whether validation is currently active
+
+When `REDMINE_ENFORCE_ISSUE_TEMPLATE=true`, `create_redmine_issue` rejects descriptions missing required headings and returns `template_resource_uri` plus `missing_sections`.
+
 ### Additional Resources
 
 - [SSL Certificate Configuration](../README.md#ssl-certificate-configuration) - Detailed configuration examples

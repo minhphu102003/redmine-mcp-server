@@ -402,6 +402,7 @@ async def create_redmine_issue_impl(
     parse_optional_object_payload: Callable[
         [Optional[Union[Dict[str, Any], str]], str], Dict[str, Any]
     ],
+    validate_issue_template: Callable[[str], Optional[Dict[str, Any]]],
     get_client: Callable[[], Any],
     issue_to_dict: IssueToDictFn,
     is_required_custom_field_autofill_enabled: Callable[[], bool],
@@ -430,6 +431,10 @@ async def create_redmine_issue_impl(
 
     if parsed_extra_fields:
         issue_fields.update(parsed_extra_fields)
+
+    template_error = validate_issue_template(description)
+    if template_error is not None:
+        return template_error
 
     issue_fields.pop("project_id", None)
     issue_fields.pop("subject", None)

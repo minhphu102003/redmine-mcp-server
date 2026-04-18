@@ -31,23 +31,47 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
 from dotenv import load_dotenv
-from redminelib import Redmine
-from redminelib.exceptions import (
+
+# Load environment variables from .env file as early as possible
+# so that modules like .security (imported later) see the correct values.
+_env_paths = [
+    Path.cwd() / ".env",  # User's current working directory (highest priority)
+    Path(__file__).parent.parent.parent / ".env",  # Package directory (fallback)
+]
+
+_env_loaded = False
+for _env_path in _env_paths:
+    if _env_path.exists():
+        load_dotenv(dotenv_path=str(_env_path))
+        _env_loaded = True
+        break
+
+if not _env_loaded:
+    load_dotenv()
+
+from redminelib import Redmine  # noqa: E402
+from redminelib.exceptions import (  # noqa: E402
     ResourceNotFoundError,
     VersionMismatchError,
     ValidationError,
 )
-from fastmcp import FastMCP
-from .file_manager import AttachmentFileManager
-from .handler_impl import issue_fields as _issue_fields
-from .handler_impl.errors import handle_redmine_error
-from .security import (
+from fastmcp import FastMCP  # noqa: E402
+
+# Configure logging early (but after env loading)
+logger = logging.getLogger(__name__)
+if _env_loaded:
+    logger.info("Loaded .env for Redmine MCP Server")
+
+from .file_manager import AttachmentFileManager  # noqa: E402
+from .handler_impl import issue_fields as _issue_fields  # noqa: E402
+from .handler_impl.errors import handle_redmine_error  # noqa: E402
+from .security import (  # noqa: E402
     validate_redmine_url,
     SecurityValidationError,
     ssrf_redirect_hook,
     SSRFSafeHTTPAdapter,
 )
-from .handler_impl.tools import (
+from .handler_impl.tools import (  # noqa: E402
     cleanup_attachment_files_impl,
     create_redmine_issue_impl,
     create_redmine_wiki_page_impl,
@@ -73,14 +97,14 @@ from .handler_impl.tools import (
     update_redmine_wiki_page_impl,
     update_time_entry_impl,
 )
-from .handler_impl.http_routes import (
+from .handler_impl.http_routes import (  # noqa: E402
     CleanupTaskManager,
     cleanup_status_payload,
     ensure_cleanup_started,
     health_payload,
     serve_attachment_by_id,
 )
-from .serialization import (  # noqa: F401
+from .serialization import (  # noqa: E402,F401
     wrap_insecure_content,
     _coerce_json_safe,
     _custom_fields_to_list,
@@ -95,28 +119,6 @@ from .serialization import (  # noqa: F401
     _time_entry_to_dict,
     _wiki_page_to_dict,
 )
-
-# Configure logging
-logger = logging.getLogger(__name__)
-
-# Load environment variables from .env file
-# Search order: current working directory first, then package directory
-_env_paths = [
-    Path.cwd() / ".env",  # User's current working directory (highest priority)
-    Path(__file__).parent.parent.parent / ".env",  # Package directory (fallback)
-]
-
-_env_loaded = False
-for _env_path in _env_paths:
-    if _env_path.exists():
-        load_dotenv(dotenv_path=str(_env_path))
-        logger.info(f"Loaded .env from: {_env_path}")
-        _env_loaded = True
-        break
-
-if not _env_loaded:
-    # Try default load_dotenv() behavior as final fallback
-    load_dotenv()
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
@@ -286,9 +288,7 @@ def _get_redmine_client(strict: bool = True) -> Optional[Redmine]:
         # OAuth mode: per-request client with Bearer token (cannot be cached)
         requests_config = _build_requests_config()
         headers = {"Authorization": f"Bearer {token}"}
-        client = Redmine(
-            REDMINE_URL, requests={"headers": headers, **requests_config}
-        )
+        client = Redmine(REDMINE_URL, requests={"headers": headers, **requests_config})
         return _apply_ssrf_protection(client)
 
     # 3. Legacy mode: reuse a cached singleton configured via .env.
@@ -374,6 +374,19 @@ _INSECURE_CONTENT_TAG_RE = re.compile(
     r"^<insecure-content-[^>]+>\s*(.*?)\s*</insecure-content-[^>]+>$",
     flags=re.DOTALL,
 )
+_ISSUE_TEMPLATE_RESOURCE_URI = "redmine://issue-template/default"
+_DEFAULT_ISSUE_DESCRIPTION_TEMPLATE = (
+    "## Mục tiêu\n"
+    "- Nêu mục tiêu/ngữ cảnh nghiệp vụ.\n\n"
+    "## Hiện trạng\n"
+    "- Mô tả hành vi hiện tại hoặc vấn đề đang gặp.\n\n"
+    "## Kỳ vọng\n"
+    "- Mô tả kết quả mong muốn.\n\n"
+    "## Tiêu chí chấp nhận\n"
+    "- [ ] Điều kiện chấp nhận 1\n"
+    "- [ ] Điều kiện chấp nhận 2\n"
+)
+_ISSUE_TEMPLATE_SECTION_RE = re.compile(r"^\s{0,3}#{2,6}\s+(.+?)\s*$", re.MULTILINE)
 
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
@@ -399,6 +412,94 @@ _READ_ONLY_ERROR = {
     "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
     "Write operations are disabled."
 }
+
+
+def _is_issue_template_enforced() -> bool:
+    """Return whether issue description template validation is enabled."""
+    return _is_true_env("REDMINE_ENFORCE_ISSUE_TEMPLATE", "false")
+
+
+def _load_issue_description_template() -> str:
+    """Load issue description template from env with a safe default."""
+    template = os.getenv("REDMINE_ISSUE_DESCRIPTION_TEMPLATE", "").strip()
+    if template:
+        return template
+    return _DEFAULT_ISSUE_DESCRIPTION_TEMPLATE
+
+
+def _extract_template_sections(template: str) -> List[str]:
+    """Extract markdown heading names from template text."""
+    sections: List[str] = []
+    for match in _ISSUE_TEMPLATE_SECTION_RE.findall(template or ""):
+        cleaned = match.strip()
+        if cleaned:
+            sections.append(cleaned)
+    return sections
+
+
+def _template_required_sections() -> List[str]:
+    """Return required sections from env override or template headings."""
+    raw = os.getenv("REDMINE_ISSUE_TEMPLATE_REQUIRED_SECTIONS", "").strip()
+    if raw:
+        return [section.strip() for section in raw.split(",") if section.strip()]
+    return _extract_template_sections(_load_issue_description_template())
+
+
+def _missing_template_sections(
+    description: str, required_sections: List[str]
+) -> List[str]:
+    """Detect missing required markdown sections in issue description."""
+    if not required_sections:
+        return []
+
+    normalized_description = description or ""
+    detected_sections = {
+        heading.strip().lower()
+        for heading in _ISSUE_TEMPLATE_SECTION_RE.findall(normalized_description)
+        if heading.strip()
+    }
+    return [
+        section
+        for section in required_sections
+        if section.strip().lower() not in detected_sections
+    ]
+
+
+def _validate_issue_description_template(description: str) -> Optional[Dict[str, Any]]:
+    """Validate issue description against required template sections."""
+    if not _is_issue_template_enforced():
+        return None
+
+    required_sections = _template_required_sections()
+    missing_sections = _missing_template_sections(description, required_sections)
+    if not missing_sections:
+        return None
+
+    return {
+        "error": (
+            "Issue description does not match required template sections. "
+            "Please follow the issue template resource before creating issue."
+        ),
+        "template_resource_uri": _ISSUE_TEMPLATE_RESOURCE_URI,
+        "missing_sections": missing_sections,
+    }
+
+
+@mcp.resource(_ISSUE_TEMPLATE_RESOURCE_URI)
+def issue_creation_template_resource() -> Dict[str, Any]:
+    """Template guidance used by agents when creating Redmine issues."""
+    template = _load_issue_description_template()
+    required_sections = _template_required_sections()
+    return {
+        "resource": "issue_creation_template",
+        "enforced": _is_issue_template_enforced(),
+        "required_sections": required_sections,
+        "template_markdown": template,
+        "usage_note": (
+            "When REDMINE_ENFORCE_ISSUE_TEMPLATE=true, create_redmine_issue "
+            "rejects descriptions missing required sections."
+        ),
+    }
 
 
 def _load_required_custom_field_defaults() -> Dict[str, Any]:
@@ -597,6 +698,7 @@ async def create_redmine_issue(
         read_only_error=_READ_ONLY_ERROR,
         parse_create_issue_fields=_issue_fields._parse_create_issue_fields,
         parse_optional_object_payload=_issue_fields._parse_optional_object_payload,
+        validate_issue_template=_validate_issue_description_template,
         get_client=_get_redmine_client,
         issue_to_dict=_issue_to_dict,
         is_required_custom_field_autofill_enabled=(
