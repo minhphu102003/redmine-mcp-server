@@ -408,6 +408,55 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_rejects_missing_template_sections(
+        self, mock_redmine
+    ):
+        """Issue creation is blocked when template enforcement is enabled."""
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        with patch.dict(
+            os.environ,
+            {
+                "REDMINE_ENFORCE_ISSUE_TEMPLATE": "true",
+                "REDMINE_ISSUE_TEMPLATE_REQUIRED_SECTIONS": "Mục tiêu,Hiện trạng",
+            },
+            clear=False,
+        ):
+            result = await create_redmine_issue(
+                1,
+                "Test Issue Subject",
+                "## Mục tiêu\n- Có mô tả mục tiêu",
+            )
+
+        assert "error" in result
+        assert result["template_resource_uri"] == "redmine://issue-template/default"
+        assert result["missing_sections"] == ["Hiện trạng"]
+        mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.unit
+    def test_issue_template_resource_returns_configured_template(self):
+        """Template resource exposes current template and enforcement metadata."""
+        from redmine_mcp_server.redmine_handler import issue_creation_template_resource
+
+        with patch.dict(
+            os.environ,
+            {
+                "REDMINE_ENFORCE_ISSUE_TEMPLATE": "true",
+                "REDMINE_ISSUE_DESCRIPTION_TEMPLATE": (
+                    "## Mục tiêu\nNội dung\n\n## Kỳ vọng\nNội dung"
+                ),
+            },
+            clear=False,
+        ):
+            result = issue_creation_template_resource()
+
+        assert result["resource"] == "issue_creation_template"
+        assert result["enforced"] is True
+        assert result["required_sections"] == ["Mục tiêu", "Kỳ vọng"]
+        assert "template_markdown" in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_fields_json_string(
         self, mock_redmine, mock_redmine_issue
     ):

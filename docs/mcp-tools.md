@@ -69,3 +69,12 @@ Key params: `time_entry_id`, `hours`, `project_id`, `issue_id`, `user_id`, `acti
 
 - Consolidated tools are intended to reduce tool-selection overhead and token usage in agent workflows.
 - Legacy direct tools are still available for backward compatibility.
+
+## Resources
+
+- `redmine://issue-template/default`
+  - Provides issue creation template metadata for agents:
+    - `template_markdown`
+    - `required_sections`
+    - `enforced`
+  - When `REDMINE_ENFORCE_ISSUE_TEMPLATE=true`, `create_redmine_issue` validates description headings against this template.
