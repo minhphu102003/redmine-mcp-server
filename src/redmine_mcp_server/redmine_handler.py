@@ -119,6 +119,18 @@ from .serialization import (  # noqa: E402,F401
     _time_entry_to_dict,
     _wiki_page_to_dict,
 )
+from .resources import (  # noqa: E402
+    ISSUE_TEMPLATE_RESOURCE_URI,
+    TIME_ENTRY_CONTRACT_RESOURCE_URI,
+    build_issue_contract_payload,
+    build_issue_template_payload,
+    build_time_entry_contract_payload,
+    build_transition_matrix,
+    is_issue_template_enforced,
+    required_issue_template_sections,
+    resolve_workflow_contract_sample_limit,
+    validate_issue_description_template,
+)
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
@@ -374,19 +386,6 @@ _INSECURE_CONTENT_TAG_RE = re.compile(
     r"^<insecure-content-[^>]+>\s*(.*?)\s*</insecure-content-[^>]+>$",
     flags=re.DOTALL,
 )
-_ISSUE_TEMPLATE_RESOURCE_URI = "redmine://issue-template/default"
-_DEFAULT_ISSUE_DESCRIPTION_TEMPLATE = (
-    "## Mục tiêu\n"
-    "- Nêu mục tiêu/ngữ cảnh nghiệp vụ.\n\n"
-    "## Hiện trạng\n"
-    "- Mô tả hành vi hiện tại hoặc vấn đề đang gặp.\n\n"
-    "## Kỳ vọng\n"
-    "- Mô tả kết quả mong muốn.\n\n"
-    "## Tiêu chí chấp nhận\n"
-    "- [ ] Điều kiện chấp nhận 1\n"
-    "- [ ] Điều kiện chấp nhận 2\n"
-)
-_ISSUE_TEMPLATE_SECTION_RE = re.compile(r"^\s{0,3}#{2,6}\s+(.+?)\s*$", re.MULTILINE)
 
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
@@ -414,92 +413,132 @@ _READ_ONLY_ERROR = {
 }
 
 
-def _is_issue_template_enforced() -> bool:
-    """Return whether issue description template validation is enabled."""
-    return _is_true_env("REDMINE_ENFORCE_ISSUE_TEMPLATE", "false")
-
-
-def _load_issue_description_template() -> str:
-    """Load issue description template from env with a safe default."""
-    template = os.getenv("REDMINE_ISSUE_DESCRIPTION_TEMPLATE", "").strip()
-    if template:
-        return template
-    return _DEFAULT_ISSUE_DESCRIPTION_TEMPLATE
-
-
-def _extract_template_sections(template: str) -> List[str]:
-    """Extract markdown heading names from template text."""
-    sections: List[str] = []
-    for match in _ISSUE_TEMPLATE_SECTION_RE.findall(template or ""):
-        cleaned = match.strip()
-        if cleaned:
-            sections.append(cleaned)
-    return sections
-
-
-def _template_required_sections() -> List[str]:
-    """Return required sections from env override or template headings."""
-    raw = os.getenv("REDMINE_ISSUE_TEMPLATE_REQUIRED_SECTIONS", "").strip()
-    if raw:
-        return [section.strip() for section in raw.split(",") if section.strip()]
-    return _extract_template_sections(_load_issue_description_template())
-
-
-def _missing_template_sections(
-    description: str, required_sections: List[str]
-) -> List[str]:
-    """Detect missing required markdown sections in issue description."""
-    if not required_sections:
-        return []
-
-    normalized_description = description or ""
-    detected_sections = {
-        heading.strip().lower()
-        for heading in _ISSUE_TEMPLATE_SECTION_RE.findall(normalized_description)
-        if heading.strip()
-    }
-    return [
-        section
-        for section in required_sections
-        if section.strip().lower() not in detected_sections
-    ]
-
-
-def _validate_issue_description_template(description: str) -> Optional[Dict[str, Any]]:
-    """Validate issue description against required template sections."""
-    if not _is_issue_template_enforced():
-        return None
-
-    required_sections = _template_required_sections()
-    missing_sections = _missing_template_sections(description, required_sections)
-    if not missing_sections:
-        return None
-
-    return {
-        "error": (
-            "Issue description does not match required template sections. "
-            "Please follow the issue template resource before creating issue."
-        ),
-        "template_resource_uri": _ISSUE_TEMPLATE_RESOURCE_URI,
-        "missing_sections": missing_sections,
-    }
-
-
-@mcp.resource(_ISSUE_TEMPLATE_RESOURCE_URI)
+@mcp.resource(ISSUE_TEMPLATE_RESOURCE_URI)
 def issue_creation_template_resource() -> Dict[str, Any]:
     """Template guidance used by agents when creating Redmine issues."""
-    template = _load_issue_description_template()
-    required_sections = _template_required_sections()
+    return build_issue_template_payload()
+
+
+@mcp.resource("redmine://issue-contract/{project_id}")
+async def issue_contract_resource(project_id: Union[str, int]) -> Dict[str, Any]:
+    """Issue create/update contract for a given project."""
+    return await build_issue_contract_payload(
+        project_id=project_id,
+        tracker_id=None,
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+        standard_issue_update_fields=_STANDARD_ISSUE_UPDATE_FIELDS,
+        template_resource_uri=ISSUE_TEMPLATE_RESOURCE_URI,
+        template_required_sections=required_issue_template_sections(),
+        template_enforced=is_issue_template_enforced(),
+    )
+
+
+@mcp.resource("redmine://issue-contract/{project_id}/{tracker_id}")
+async def issue_tracker_contract_resource(
+    project_id: Union[str, int], tracker_id: Union[str, int]
+) -> Dict[str, Any]:
+    """Issue create/update contract for a specific project tracker."""
+    return await build_issue_contract_payload(
+        project_id=project_id,
+        tracker_id=tracker_id,
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+        standard_issue_update_fields=_STANDARD_ISSUE_UPDATE_FIELDS,
+        template_resource_uri=ISSUE_TEMPLATE_RESOURCE_URI,
+        template_required_sections=required_issue_template_sections(),
+        template_enforced=is_issue_template_enforced(),
+    )
+
+
+@mcp.resource("redmine://workflow/{project_id}")
+async def workflow_contract_resource(project_id: Union[str, int]) -> Dict[str, Any]:
+    """Workflow transition contract inferred for a project."""
+    sample_limit = resolve_workflow_contract_sample_limit()
+    workflow_snapshot = await get_redmine_project_workflow_impl(
+        project_id,
+        tracker_id=None,
+        status_id=None,
+        sample_limit=sample_limit,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+    if isinstance(workflow_snapshot, dict) and "error" in workflow_snapshot:
+        return workflow_snapshot
+
+    statuses = await list_redmine_issue_statuses_impl(
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+    if isinstance(statuses, dict) and "error" in statuses:
+        return statuses
+
     return {
-        "resource": "issue_creation_template",
-        "enforced": _is_issue_template_enforced(),
-        "required_sections": required_sections,
-        "template_markdown": template,
-        "usage_note": (
-            "When REDMINE_ENFORCE_ISSUE_TEMPLATE=true, create_redmine_issue "
-            "rejects descriptions missing required sections."
-        ),
+        "resource": "workflow_contract",
+        "project_id": project_id,
+        "tracker_id": None,
+        "statuses": statuses,
+        "sample_limit": sample_limit,
+        "transition_matrix": build_transition_matrix(workflow_snapshot),
+        "workflow_snapshot": workflow_snapshot,
     }
+
+
+@mcp.resource("redmine://workflow/{project_id}/{tracker_id}")
+async def workflow_tracker_contract_resource(
+    project_id: Union[str, int], tracker_id: Union[str, int]
+) -> Dict[str, Any]:
+    """Workflow transition contract inferred for a project tracker."""
+    try:
+        parsed_tracker_id = int(tracker_id)
+    except (TypeError, ValueError):
+        return {
+            "error": (
+                f"Invalid tracker_id '{tracker_id}'. Expected an integer tracker ID."
+            )
+        }
+
+    sample_limit = resolve_workflow_contract_sample_limit()
+    workflow_snapshot = await get_redmine_project_workflow_impl(
+        project_id,
+        tracker_id=parsed_tracker_id,
+        status_id=None,
+        sample_limit=sample_limit,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+    if isinstance(workflow_snapshot, dict) and "error" in workflow_snapshot:
+        return workflow_snapshot
+
+    statuses = await list_redmine_issue_statuses_impl(
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+    if isinstance(statuses, dict) and "error" in statuses:
+        return statuses
+
+    return {
+        "resource": "workflow_contract",
+        "project_id": project_id,
+        "tracker_id": parsed_tracker_id,
+        "statuses": statuses,
+        "sample_limit": sample_limit,
+        "transition_matrix": build_transition_matrix(workflow_snapshot),
+        "workflow_snapshot": workflow_snapshot,
+    }
+
+
+@mcp.resource(TIME_ENTRY_CONTRACT_RESOURCE_URI)
+async def time_entry_contract_resource() -> Dict[str, Any]:
+    """Time-entry create/update/list contract for agents."""
+    return await build_time_entry_contract_payload(
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+    )
 
 
 def _load_required_custom_field_defaults() -> Dict[str, Any]:
@@ -698,7 +737,7 @@ async def create_redmine_issue(
         read_only_error=_READ_ONLY_ERROR,
         parse_create_issue_fields=_issue_fields._parse_create_issue_fields,
         parse_optional_object_payload=_issue_fields._parse_optional_object_payload,
-        validate_issue_template=_validate_issue_description_template,
+        validate_issue_template=validate_issue_description_template,
         get_client=_get_redmine_client,
         issue_to_dict=_issue_to_dict,
         is_required_custom_field_autofill_enabled=(

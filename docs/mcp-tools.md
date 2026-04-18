@@ -78,3 +78,24 @@ Key params: `time_entry_id`, `hours`, `project_id`, `issue_id`, `user_id`, `acti
     - `required_sections`
     - `enforced`
   - When `REDMINE_ENFORCE_ISSUE_TEMPLATE=true`, `create_redmine_issue` validates description headings against this template.
+
+- `redmine://issue-contract/{project_id}`
+- `redmine://issue-contract/{project_id}/{tracker_id}`
+  - Issue create/update contract for agents:
+    - required base fields
+    - custom fields + required fields + allowed values
+    - tracker bindings
+    - linked description template contract
+
+- `redmine://workflow/{project_id}`
+- `redmine://workflow/{project_id}/{tracker_id}`
+  - Workflow transition contract:
+    - sampled workflow snapshot
+    - normalized transition matrix (`from -> allowed`)
+    - statuses list for current auth context
+
+- `redmine://time-entry/contract`
+  - Time logging contract:
+    - required fields and validation rules
+    - available activities (id/name/active/default)
+    - create/update payload examples

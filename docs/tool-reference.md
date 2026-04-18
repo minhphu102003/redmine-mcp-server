@@ -185,6 +185,23 @@ The server exposes an MCP resource at `redmine://issue-template/default` that ag
 
 When `REDMINE_ENFORCE_ISSUE_TEMPLATE=true`, `create_redmine_issue` rejects descriptions missing required headings and returns `template_resource_uri` plus `missing_sections`.
 
+### Contract Resources for Agent Planning
+
+To reduce invalid tool calls, the server exposes contract resources:
+
+- `redmine://issue-contract/{project_id}`
+- `redmine://issue-contract/{project_id}/{tracker_id}`
+  - Describes issue create/update fields, required custom fields, allowed values, and tracker bindings.
+
+- `redmine://workflow/{project_id}`
+- `redmine://workflow/{project_id}/{tracker_id}`
+  - Provides inferred transition matrix (`from status -> allowed statuses`) for the current auth context.
+
+- `redmine://time-entry/contract`
+  - Provides time-entry validation rules, allowed activities, and payload examples.
+
+These resources are intended to be read before `create_redmine_issue`, `update_redmine_issue`, and time-entry update/create operations.
+
 ### Additional Resources
 
 - [SSL Certificate Configuration](../README.md#ssl-certificate-configuration) - Detailed configuration examples

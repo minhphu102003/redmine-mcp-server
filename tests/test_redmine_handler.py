@@ -457,6 +457,178 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_issue_contract_resource_by_project(self, mock_redmine):
+        """Issue contract resource returns project custom-field metadata."""
+        from redmine_mcp_server.redmine_handler import issue_contract_resource
+
+        mock_project = Mock()
+        mock_project.id = 12
+        mock_project.name = "Core"
+        mock_project.identifier = "core"
+        mock_project.trackers = [Mock(id=1, name="Bug"), Mock(id=2, name="Task")]
+
+        required_cf = Mock()
+        required_cf.id = 10
+        required_cf.name = "Severity"
+        required_cf.field_format = "list"
+        required_cf.is_required = True
+        required_cf.multiple = False
+        required_cf.default_value = "Medium"
+        required_cf.possible_values = [{"value": "Low"}, {"value": "Medium"}]
+        required_cf.trackers = [{"id": 1, "name": "Bug"}]
+
+        optional_cf = Mock()
+        optional_cf.id = 11
+        optional_cf.name = "Root Cause"
+        optional_cf.field_format = "string"
+        optional_cf.is_required = False
+        optional_cf.multiple = False
+        optional_cf.default_value = None
+        optional_cf.possible_values = []
+        optional_cf.trackers = []
+
+        mock_project.issue_custom_fields = [required_cf, optional_cf]
+        mock_redmine.project.get.return_value = mock_project
+
+        result = await issue_contract_resource(12)
+
+        assert result["resource"] == "issue_contract"
+        assert result["project"]["id"] == 12
+        assert len(result["custom_fields"]) == 2
+        assert result["required_custom_fields"][0]["name"] == "Severity"
+        assert "description_template" in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_issue_contract_resource_by_tracker_filters_fields(
+        self, mock_redmine
+    ):
+        """Tracker contract excludes fields not applied to the tracker."""
+        from redmine_mcp_server.redmine_handler import issue_tracker_contract_resource
+
+        mock_project = Mock()
+        mock_project.id = 12
+        mock_project.name = "Core"
+        mock_project.identifier = "core"
+        mock_project.trackers = [Mock(id=1, name="Bug"), Mock(id=2, name="Task")]
+
+        bug_cf = Mock()
+        bug_cf.id = 10
+        bug_cf.name = "Severity"
+        bug_cf.field_format = "list"
+        bug_cf.is_required = True
+        bug_cf.multiple = False
+        bug_cf.default_value = "Medium"
+        bug_cf.possible_values = [{"value": "Low"}, {"value": "Medium"}]
+        bug_cf.trackers = [{"id": 1, "name": "Bug"}]
+
+        task_cf = Mock()
+        task_cf.id = 11
+        task_cf.name = "Acceptance"
+        task_cf.field_format = "string"
+        task_cf.is_required = False
+        task_cf.multiple = False
+        task_cf.default_value = None
+        task_cf.possible_values = []
+        task_cf.trackers = [{"id": 2, "name": "Task"}]
+
+        mock_project.issue_custom_fields = [bug_cf, task_cf]
+        mock_redmine.project.get.return_value = mock_project
+
+        result = await issue_tracker_contract_resource(12, 1)
+
+        assert result["tracker_id"] == 1
+        assert len(result["custom_fields"]) == 1
+        assert result["custom_fields"][0]["name"] == "Severity"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.list_redmine_issue_statuses_impl")
+    @patch("redmine_mcp_server.redmine_handler.get_redmine_project_workflow_impl")
+    async def test_workflow_contract_resource_builds_transition_matrix(
+        self, mock_workflow_impl, mock_statuses_impl
+    ):
+        """Workflow contract resource should include normalized transition matrix."""
+        from redmine_mcp_server.redmine_handler import workflow_contract_resource
+
+        mock_workflow_impl.return_value = {
+            "workflow_by_current_status": [
+                {
+                    "current_status": {"id": 1, "name": "New"},
+                    "allowed_statuses": [{"id": 2, "name": "In Progress"}],
+                    "issue_count": 3,
+                }
+            ]
+        }
+        mock_statuses_impl.return_value = [
+            {"id": 1, "name": "New", "is_closed": False},
+            {"id": 2, "name": "In Progress", "is_closed": False},
+        ]
+
+        result = await workflow_contract_resource(5)
+
+        assert result["resource"] == "workflow_contract"
+        assert result["project_id"] == 5
+        matrix = result["transition_matrix"]["by_from_status_id"]
+        assert matrix["1"]["allowed_status_ids"] == [2]
+        assert "workflow_snapshot" in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.list_redmine_issue_statuses_impl")
+    @patch("redmine_mcp_server.redmine_handler.get_redmine_project_workflow_impl")
+    async def test_workflow_contract_resource_returns_statuses_error(
+        self, mock_workflow_impl, mock_statuses_impl
+    ):
+        """Workflow contract should propagate status lookup errors."""
+        from redmine_mcp_server.redmine_handler import workflow_contract_resource
+
+        mock_workflow_impl.return_value = {"workflow_by_current_status": []}
+        mock_statuses_impl.return_value = {"error": "status lookup failed"}
+
+        result = await workflow_contract_resource(5)
+
+        assert result == {"error": "status lookup failed"}
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.list_redmine_issue_statuses_impl")
+    @patch("redmine_mcp_server.redmine_handler.get_redmine_project_workflow_impl")
+    async def test_workflow_tracker_contract_resource_returns_statuses_error(
+        self, mock_workflow_impl, mock_statuses_impl
+    ):
+        """Tracker workflow contract should propagate status lookup errors."""
+        from redmine_mcp_server.redmine_handler import (
+            workflow_tracker_contract_resource,
+        )
+
+        mock_workflow_impl.return_value = {"workflow_by_current_status": []}
+        mock_statuses_impl.return_value = {"error": "status lookup failed"}
+
+        result = await workflow_tracker_contract_resource(5, 2)
+
+        assert result == {"error": "status lookup failed"}
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_time_entry_contract_resource_contains_rules_and_activities(
+        self, mock_redmine
+    ):
+        """Time-entry contract exposes validation rules and available activities."""
+        from redmine_mcp_server.redmine_handler import time_entry_contract_resource
+
+        activity = Mock()
+        activity.id = 9
+        activity.name = "Development"
+        activity.active = True
+        activity.is_default = True
+        mock_redmine.enumeration.filter.return_value = [activity]
+
+        result = await time_entry_contract_resource()
+
+        assert result["resource"] == "time_entry_contract"
+        assert result["rules"]["required_on_create"] == ["hours", "project_id|issue_id"]
+        assert result["activities"][0]["id"] == 9
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_fields_json_string(
         self, mock_redmine, mock_redmine_issue
     ):
