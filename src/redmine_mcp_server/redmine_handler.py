@@ -77,6 +77,7 @@ from .handler_impl.tools import (  # noqa: E402
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
+    generate_scrum_report_impl,
     get_redmine_attachment_download_url_impl,
     get_redmine_issue_impl,
     get_redmine_issue_allowed_statuses_impl,
@@ -952,6 +953,32 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         analyze_issues=_analyze_issues,
         handle_error=_handle_redmine_error,
         resource_not_found_error=ResourceNotFoundError,
+    )
+
+
+@mcp.tool()
+async def generate_scrum_report(
+    report_type: str = "daily",
+    user_id: Optional[Union[str, int]] = None,
+    project_id: Optional[Union[str, int]] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    top_n_items: int = 7,
+    include_entries: bool = False,
+) -> Dict[str, Any]:
+    """Generate daily/weekly scrum report drafts from Redmine time entries."""
+    return await generate_scrum_report_impl(
+        report_type=report_type,
+        user_id=user_id,
+        project_id=project_id,
+        from_date=from_date,
+        to_date=to_date,
+        top_n_items=top_n_items,
+        include_entries=include_entries,
+        get_client=_get_redmine_client,
+        time_entry_to_dict=_time_entry_to_dict,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
     )
 
 

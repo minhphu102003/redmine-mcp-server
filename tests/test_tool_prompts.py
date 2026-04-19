@@ -54,6 +54,16 @@ def test_server_operating_prompt_has_global_protocol():
     assert "redmine://time-entry/contract" in prompt
 
 
+def test_generate_scrum_report_prompt_mentions_daily_and_weekly():
+    """Scrum report prompt should guide daily/weekly reporting behavior."""
+    prompt = prompts.generate_scrum_report_prompt(report_type="weekly")
+    assert "`generate_scrum_report`" in prompt
+    assert "report_type=weekly (daily|weekly|custom)" in prompt
+    assert "Use daily to read yesterday data automatically." in prompt
+    assert "Use weekly to read previous week data automatically." in prompt
+    assert "3 reusable report_templates" in prompt
+
+
 def test_prompt_functions_exist_for_all_tools():
     """Each MCP tool in handler should have a sibling prompt playbook function."""
     expected_prompt_functions = [
@@ -73,6 +83,7 @@ def test_prompt_functions_exist_for_all_tools():
         "manage_time_entries_prompt",
         "get_redmine_attachment_download_url_prompt",
         "summarize_project_status_prompt",
+        "generate_scrum_report_prompt",
         "search_entire_redmine_prompt",
         "get_redmine_wiki_page_prompt",
         "create_redmine_wiki_page_prompt",
