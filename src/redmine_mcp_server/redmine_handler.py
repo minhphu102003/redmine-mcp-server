@@ -130,6 +130,7 @@ from .resources import (  # noqa: E402
     required_issue_template_sections,
     validate_issue_description_template,
 )
+from .tool_prompts import register_tool_prompts  # noqa: E402
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
@@ -315,6 +316,7 @@ def _get_redmine_client(strict: bool = True) -> Optional[Redmine]:
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")
+register_tool_prompts(mcp)
 
 
 # Initialize cleanup manager
