@@ -33,6 +33,29 @@ Unified entry point for time logging operations.
 
 Key params: `time_entry_id`, `hours`, `project_id`, `issue_id`, `user_id`, `activity_id`, `comments`, `spent_on`, `from_date`, `to_date`, `limit`, `offset`.
 
+---
+
+### `generate_scrum_report`
+Generate daily/weekly/custom scrum report drafts from logged time entries.
+
+- `report_type="daily"`: auto-reads **yesterday** range
+- `report_type="weekly"`: auto-reads **previous week** range (Mon-Sun)
+- `report_type="custom"`: requires both `from_date` and `to_date`
+- Custom range limit is controlled by `REDMINE_SCRUM_REPORT_MAX_DAYS` (default: 31)
+
+Optional filters: `user_id`, `project_id`.
+Output includes summary metrics, `top_issues`, `top_activities`, `top_users`, and:
+- `report_draft` (quick draft)
+- `report_templates.standup_three_questions`
+- `report_templates.standup_workflow_focused`
+- `report_templates.weekly_status_summary`
+
+Tip:
+- Pass only `project_id` to generate team-level report across multiple users.
+- Pass only `user_id` to generate individual report (cross-project scope).
+- Pass both `project_id` + `user_id` to generate one user's report inside a specific project.
+- Re-generate anytime by calling the same tool again (it always reads fresh data in the selected range).
+
 ## Core issue tools
 
 - `get_redmine_issue`

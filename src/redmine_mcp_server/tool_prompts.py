@@ -316,6 +316,33 @@ def summarize_project_status_prompt(project_id: Union[str, int], days: int = 30)
     )
 
 
+def generate_scrum_report_prompt(report_type: str = "daily") -> str:
+    """Playbook for calling generate_scrum_report."""
+    return _render_tool_prompt(
+        tool_name="generate_scrum_report",
+        objective=(
+            "Generate a fast draft for daily or weekly scrum reports "
+            "from logged time entries."
+        ),
+        required_inputs=[
+            f"report_type={report_type} (daily|weekly|custom)",
+            "user_id/project_id optional filters",
+            "from_date/to_date required only when report_type=custom",
+            "custom range must respect REDMINE_SCRUM_REPORT_MAX_DAYS (default 31)",
+        ],
+        recommended_resources=["redmine://time-entry/contract"],
+        pre_checks=[
+            "Use daily to read yesterday data automatically.",
+            "Use weekly to read previous week data automatically.",
+            "If project has many contributors, omit user_id to get top_users split.",
+        ],
+        result_shape=(
+            "Dict with summary metrics, top_issues/top_activities/top_users, "
+            "report_draft text, and 3 reusable report_templates."
+        ),
+    )
+
+
 def search_entire_redmine_prompt(query: str) -> str:
     """Playbook for calling search_entire_redmine."""
     return _render_tool_prompt(
@@ -507,6 +534,7 @@ _PROMPT_REGISTRY: List[tuple[str, Callable[..., str]]] = [
         get_redmine_attachment_download_url_prompt,
     ),
     ("summarize_project_status_prompt", summarize_project_status_prompt),
+    ("generate_scrum_report_prompt", generate_scrum_report_prompt),
     ("search_entire_redmine_prompt", search_entire_redmine_prompt),
     ("get_redmine_wiki_page_prompt", get_redmine_wiki_page_prompt),
     ("create_redmine_wiki_page_prompt", create_redmine_wiki_page_prompt),

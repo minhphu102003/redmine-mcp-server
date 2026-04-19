@@ -17,6 +17,9 @@ htmlcov/
 .venv
 .env
 .env.docker
+.uv-python/
+.uv-cache/
+.pytest_cache/
 CLAUDE.md
 RELEASE_SOP.md
 .claude
