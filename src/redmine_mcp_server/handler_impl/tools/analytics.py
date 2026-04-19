@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
-from datetime import date, datetime, timedelta
+import zipfile
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
+from xml.sax.saxutils import escape
 
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
@@ -16,6 +20,13 @@ _DEFAULT_SCRUM_REPORT_MAX_DAYS = 31
 _MAX_SCRUM_REPORT_MAX_DAYS = 365
 _DEFAULT_SCRUM_REPORT_ISSUE_FETCH_CONCURRENCY = 5
 _MAX_SCRUM_REPORT_ISSUE_FETCH_CONCURRENCY = 20
+_DEFAULT_WEEKLY_REPORT_TEMPLATE_PATH = (
+    "docs/templates/weekly_work_report_plan_template.md"
+)
+_DEFAULT_WEEKLY_REPORT_OUTPUT_DIR = "reports/weekly"
+_DEFAULT_WEEKLY_REPORT_TEMPLATE_BASE_DIR = "docs/templates"
+_DEFAULT_WEEKLY_REPORT_OUTPUT_BASE_DIR = "reports"
+_PROJECT_ROOT_DIR = Path(__file__).resolve().parents[4]
 
 
 def _resolve_scrum_report_max_days() -> int:
@@ -46,6 +57,287 @@ def _resolve_scrum_issue_fetch_concurrency() -> int:
     if parsed <= 0:
         return 1
     return min(parsed, _MAX_SCRUM_REPORT_ISSUE_FETCH_CONCURRENCY)
+
+
+def _resolve_weekly_report_template_path(custom_path: Optional[str] = None) -> Path:
+    """Resolve weekly report markdown template path."""
+    configured_path = (custom_path or "").strip() or os.getenv(
+        "REDMINE_WEEKLY_REPORT_TEMPLATE_PATH",
+        _DEFAULT_WEEKLY_REPORT_TEMPLATE_PATH,
+    )
+    template_candidate = Path(configured_path).expanduser()
+    template_path = (
+        template_candidate.resolve()
+        if template_candidate.is_absolute()
+        else (_PROJECT_ROOT_DIR / template_candidate).resolve()
+    )
+    template_base_candidate = Path(
+        os.getenv(
+            "REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR",
+            _DEFAULT_WEEKLY_REPORT_TEMPLATE_BASE_DIR,
+        )
+    ).expanduser()
+    template_base_dir = (
+        template_base_candidate.resolve()
+        if template_base_candidate.is_absolute()
+        else (_PROJECT_ROOT_DIR / template_base_candidate).resolve()
+    )
+    if template_path.suffix.lower() != ".md":
+        raise ValueError(
+            f"Invalid template_path extension '{template_path.suffix}'. Expected .md."
+        )
+    if not _is_within_directory(template_path, template_base_dir):
+        raise ValueError(
+            f"template_path must stay within {template_base_dir}: {template_path}"
+        )
+    return template_path
+
+
+def _resolve_weekly_report_output_dir(custom_dir: Optional[str] = None) -> Path:
+    """Resolve output directory for generated weekly markdown reports."""
+    configured_dir = (custom_dir or "").strip() or os.getenv(
+        "REDMINE_WEEKLY_REPORT_OUTPUT_DIR",
+        _DEFAULT_WEEKLY_REPORT_OUTPUT_DIR,
+    )
+    output_candidate = Path(configured_dir).expanduser()
+    output_dir = (
+        output_candidate.resolve()
+        if output_candidate.is_absolute()
+        else (_PROJECT_ROOT_DIR / output_candidate).resolve()
+    )
+    output_base_candidate = Path(
+        os.getenv(
+            "REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR",
+            _DEFAULT_WEEKLY_REPORT_OUTPUT_BASE_DIR,
+        )
+    ).expanduser()
+    output_base_dir = (
+        output_base_candidate.resolve()
+        if output_base_candidate.is_absolute()
+        else (_PROJECT_ROOT_DIR / output_base_candidate).resolve()
+    )
+    if not _is_within_directory(output_dir, output_base_dir):
+        raise ValueError(f"output_dir must stay within {output_base_dir}: {output_dir}")
+    return output_dir
+
+
+def _is_within_directory(path: Path, base_dir: Path) -> bool:
+    """Return True when path is equal to or nested inside base_dir."""
+    try:
+        path.relative_to(base_dir)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_export_file_name(file_name: str, expected_suffix: str) -> str:
+    """Validate user-provided export file name to avoid traversal."""
+    candidate = (file_name or "").strip()
+    if not candidate:
+        raise ValueError("file_name cannot be empty.")
+    path_like = Path(candidate)
+    if path_like.name != candidate or path_like.parent != Path("."):
+        raise ValueError(
+            f"Invalid file_name '{candidate}'. Path separators are not allowed."
+        )
+    if not candidate.lower().endswith(expected_suffix.lower()):
+        candidate = f"{candidate}{expected_suffix}"
+    return candidate
+
+
+def _replace_loop_block(
+    template: str,
+    section_name: str,
+    rows: List[Dict[str, str]],
+) -> str:
+    """Replace simple loop blocks like {{#section}}...{{/section}}."""
+    start_tag = f"{{{{#{section_name}}}}}"
+    end_tag = f"{{{{/{section_name}}}}}"
+    start_idx = template.find(start_tag)
+    end_idx = template.find(end_tag)
+    if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
+        return template
+
+    block_start = start_idx + len(start_tag)
+    block_template = template[block_start:end_idx]
+    rendered_blocks: List[str] = []
+    for row in rows:
+        row_block = block_template
+        for key, value in row.items():
+            row_block = row_block.replace(f"{{{{{key}}}}}", str(value))
+        rendered_blocks.append(row_block)
+
+    return (
+        template[:start_idx]
+        + "".join(rendered_blocks)
+        + template[end_idx + len(end_tag) :]
+    )
+
+
+def _render_weekly_report_template(
+    *,
+    template_text: str,
+    context: Dict[str, str],
+    bao_cao_items: List[Dict[str, str]],
+    ke_hoach_items: List[Dict[str, str]],
+) -> str:
+    """Render weekly work report template with scalar and loop placeholders."""
+    rendered = _replace_loop_block(template_text, "bao_cao_items", bao_cao_items)
+    rendered = _replace_loop_block(rendered, "ke_hoach_items", ke_hoach_items)
+    for key, value in context.items():
+        rendered = rendered.replace(f"{{{{{key}}}}}", str(value))
+    return rendered
+
+
+def _build_minimal_docx_from_text(text: str) -> bytes:
+    """Build a minimal plain-text .docx payload from input lines."""
+    paragraphs: List[str] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line if raw_line else ""
+        safe = escape(line)
+        if line.strip() == "":
+            paragraphs.append("<w:p/>")
+            continue
+        paragraphs.append(
+            '<w:p><w:r><w:t xml:space="preserve">' f"{safe}" "</w:t></w:r></w:p>"
+        )
+
+    document_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            (
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                'wordprocessingml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/'
+                'officeDocument/2006/relationships">'
+            ),
+            f"<w:body>{''.join(paragraphs)}<w:sectPr/></w:body>",
+            "</w:document>",
+        ]
+    )
+    content_types_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',  # noqa: E501
+            (
+                '  <Default Extension="rels" '
+                'ContentType="application/vnd.openxmlformats-package.'
+                'relationships+xml"/>'
+            ),
+            '  <Default Extension="xml" ContentType="application/xml"/>',
+            (
+                '  <Override PartName="/word/document.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.'
+                'wordprocessingml.document.main+xml"/>'
+            ),
+            (
+                '  <Override PartName="/docProps/core.xml" '
+                'ContentType="application/vnd.openxmlformats-package.'
+                'core-properties+xml"/>'
+            ),
+            (
+                '  <Override PartName="/docProps/app.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.'
+                'extended-properties+xml"/>'
+            ),
+            "</Types>",
+            "",
+        ]
+    )
+    root_rels_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            (
+                "<Relationships "
+                'xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            ),
+            (
+                '  <Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                'relationships/officeDocument" '
+                'Target="word/document.xml"/>'
+            ),
+            (
+                '  <Relationship Id="rId2" '
+                'Type="http://schemas.openxmlformats.org/package/2006/'
+                'relationships/metadata/core-properties" '
+                'Target="docProps/core.xml"/>'
+            ),
+            (
+                '  <Relationship Id="rId3" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                'relationships/extended-properties" '
+                'Target="docProps/app.xml"/>'
+            ),
+            "</Relationships>",
+            "",
+        ]
+    )
+    now_utc = datetime.now(timezone.utc).isoformat()
+    core_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            (
+                "<cp:coreProperties "
+                'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/'
+                'core-properties"'
+            ),
+            ' xmlns:dc="http://purl.org/dc/elements/1.1/"',
+            ' xmlns:dcterms="http://purl.org/dc/terms/"',
+            ' xmlns:dcmitype="http://purl.org/dc/dcmitype/"',
+            ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+            "  <dc:title>Weekly Work Report</dc:title>",
+            "  <dc:creator>Redmine MCP Server</dc:creator>",
+            "  <cp:lastModifiedBy>Redmine MCP Server</cp:lastModifiedBy>",
+            (
+                '  <dcterms:created xsi:type="dcterms:W3CDTF">'
+                f"{now_utc}</dcterms:created>"
+            ),
+            (
+                '  <dcterms:modified xsi:type="dcterms:W3CDTF">'
+                f"{now_utc}</dcterms:modified>"
+            ),
+            "</cp:coreProperties>",
+            "",
+        ]
+    )
+    app_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            (
+                '<Properties xmlns="http://schemas.openxmlformats.org/'
+                'officeDocument/2006/extended-properties"'
+            ),
+            (
+                ' xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/'
+                'docPropsVTypes">'
+            ),
+            "  <Application>Redmine MCP Server</Application>",
+            "</Properties>",
+            "",
+        ]
+    )
+    doc_rels_xml = "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            (
+                "<Relationships "
+                'xmlns="http://schemas.openxmlformats.org/package/2006/'
+                'relationships"></Relationships>'
+            ),
+            "",
+        ]
+    )
+
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml)
+        zf.writestr("_rels/.rels", root_rels_xml)
+        zf.writestr("word/document.xml", document_xml)
+        zf.writestr("word/_rels/document.xml.rels", doc_rels_xml)
+        zf.writestr("docProps/core.xml", core_xml)
+        zf.writestr("docProps/app.xml", app_xml)
+    return stream.getvalue()
 
 
 def _resolve_scrum_report_range(
@@ -135,7 +427,7 @@ def _extract_description_excerpt(value: Any, max_len: int = 180) -> str:
     collapsed = " ".join(text.split())
     if len(collapsed) <= max_len:
         return collapsed
-    return f"{collapsed[: max_len - 1].rstrip()}…"
+    return f"{collapsed[: max_len - 1].rstrip()}..."
 
 
 def _safe_name(value: Any, default: str) -> str:
@@ -354,6 +646,7 @@ async def generate_scrum_report_impl(
             issue_item["updated_on"] = _iso_date(
                 getattr(issue_data, "updated_on", None)
             )
+            issue_item["done_ratio_raw"] = getattr(issue_data, "done_ratio", None)
             issue_item["description_excerpt_raw"] = _extract_description_excerpt(
                 getattr(issue_data, "description", None)
             )
@@ -555,6 +848,259 @@ async def generate_scrum_report_impl(
         return handle_error(e, "generating scrum report", None)
 
 
+async def _build_weekly_report_render_payload(
+    *,
+    generate_scrum_report_fn: Callable[..., Awaitable[Dict[str, Any]]],
+    user_id: Optional[Union[str, int]],
+    project_id: Optional[Union[str, int]],
+    top_n_items: int,
+    template_path: Optional[str],
+    unit_name: str,
+    reporter_name: str,
+    location: str,
+    today: Optional[date],
+) -> Dict[str, Any]:
+    """Build rendered weekly report markdown and metadata from scrum report data."""
+    report_data = await generate_scrum_report_fn(
+        report_type="weekly",
+        user_id=user_id,
+        project_id=project_id,
+        top_n_items=top_n_items,
+        include_entries=False,
+    )
+    if isinstance(report_data, dict) and "error" in report_data:
+        return report_data
+
+    analysis_range = report_data.get("analysis_range", {})
+    from_date = str(analysis_range.get("from_date", "")).strip()
+    to_date = str(analysis_range.get("to_date", "")).strip()
+    if not from_date or not to_date:
+        return {"error": "Weekly report data is missing analysis_range dates."}
+
+    parsed_from = date.fromisoformat(from_date)
+    parsed_to = date.fromisoformat(to_date)
+    next_week_start = parsed_to + timedelta(days=1)
+    next_week_end = next_week_start + timedelta(days=6)
+    week_report = parsed_from.isocalendar().week
+    week_plan = next_week_start.isocalendar().week
+
+    top_issues = report_data.get("top_issues", []) or []
+
+    def _resolve_completion_percent(item: Dict[str, Any]) -> str:
+        raw_done_ratio = item.get("done_ratio_raw")
+        if isinstance(raw_done_ratio, (int, float)):
+            clamped = int(max(0, min(100, round(float(raw_done_ratio)))))
+            return str(clamped)
+        status_raw = str(item.get("status_raw", "")).lower()
+        return (
+            "100"
+            if "closed" in status_raw
+            or "done" in status_raw
+            or "resolved" in status_raw
+            else "80"
+        )
+
+    bao_cao_items = [
+        {
+            "cong_viec": str(item.get("issue_subject", "N/A")),
+            "phan_tram_hoan_thanh": _resolve_completion_percent(item),
+            "mo_ta": str(item.get("description_excerpt", "(no description)")),
+        }
+        for item in top_issues
+    ] or [
+        {
+            "cong_viec": "(Không có dữ liệu)",
+            "phan_tram_hoan_thanh": "0",
+            "mo_ta": "Không có time entry trong tuần báo cáo.",
+        }
+    ]
+
+    ke_hoach_items = [
+        {
+            "cong_viec": str(item.get("issue_subject", "N/A")),
+            "phan_tram_chi_tieu": "100",
+            "mo_ta": f"Tiếp tục hoàn thiện: {item.get('description_excerpt', '')}",
+        }
+        for item in top_issues[: max(1, min(top_n_items, 10))]
+    ] or [
+        {
+            "cong_viec": "(Chưa xác định)",
+            "phan_tram_chi_tieu": "100",
+            "mo_ta": "Bổ sung kế hoạch cho tuần kế tiếp.",
+        }
+    ]
+
+    template_file = _resolve_weekly_report_template_path(template_path)
+    if not template_file.exists() or not template_file.is_file():
+        return {"error": f"Weekly report template not found: {template_file}"}
+    template_text = template_file.read_text(encoding="utf-8")
+
+    now = today or date.today()
+    context = {
+        "don_vi": unit_name,
+        "nguoi_bao_cao": reporter_name,
+        "dia_diem": location,
+        "ngay": str(now.day),
+        "thang": str(now.month),
+        "nam": str(now.year),
+        "tuan_bao_cao": str(week_report),
+        "tuan_ke_hoach": str(week_plan),
+        "range_bao_cao": f"{from_date} - {to_date}",
+        "range_ke_hoach": (
+            f"{next_week_start.isoformat()} - {next_week_end.isoformat()}"
+        ),
+    }
+    markdown = _render_weekly_report_template(
+        template_text=template_text,
+        context=context,
+        bao_cao_items=bao_cao_items,
+        ke_hoach_items=ke_hoach_items,
+    )
+
+    return {
+        "markdown": markdown,
+        "template_file": template_file,
+        "report_summary": report_data.get("summary", {}),
+        "analysis_range": {
+            "from_date": from_date,
+            "to_date": to_date,
+            "week_report": week_report,
+            "week_plan": week_plan,
+        },
+    }
+
+
+async def export_weekly_report_markdown_impl(
+    *,
+    generate_scrum_report_fn: Callable[..., Awaitable[Dict[str, Any]]],
+    user_id: Optional[Union[str, int]] = None,
+    project_id: Optional[Union[str, int]] = None,
+    top_n_items: int = 7,
+    template_path: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    file_name: Optional[str] = None,
+    unit_name: str = "TRUNG TÂM CSE",
+    reporter_name: str = "NGƯỜI BÁO CÁO",
+    location: str = "Đà Nẵng",
+    today: Optional[date] = None,
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Export a weekly markdown report file from scrum analytics data."""
+    try:
+        render_payload = await _build_weekly_report_render_payload(
+            generate_scrum_report_fn=generate_scrum_report_fn,
+            user_id=user_id,
+            project_id=project_id,
+            top_n_items=top_n_items,
+            template_path=template_path,
+            unit_name=unit_name,
+            reporter_name=reporter_name,
+            location=location,
+            today=today,
+        )
+        if "error" in render_payload:
+            return render_payload
+        markdown = str(render_payload["markdown"])
+        template_file = Path(render_payload["template_file"])
+        analysis_range = dict(render_payload["analysis_range"])
+        from_date = str(analysis_range["from_date"])
+        to_date = str(analysis_range["to_date"])
+        week_report = int(analysis_range["week_report"])
+
+        output_directory = _resolve_weekly_report_output_dir(output_dir)
+        output_directory.mkdir(parents=True, exist_ok=True)
+        resolved_file_name = (
+            _validate_export_file_name(file_name, ".md")
+            if file_name
+            else f"weekly-report-w{week_report}-{from_date}-to-{to_date}.md"
+        )
+        output_path = (output_directory / resolved_file_name).resolve()
+        if not _is_within_directory(output_path, output_directory):
+            raise ValueError(
+                f"file_name escapes output directory: {resolved_file_name}"
+            )
+        output_path.write_text(markdown, encoding="utf-8")
+
+        return {
+            "exported": True,
+            "template_path": str(template_file),
+            "output_path": str(output_path),
+            "output_file_name": output_path.name,
+            "markdown_size_bytes": output_path.stat().st_size,
+            "analysis_range": analysis_range,
+            "report_summary": render_payload.get("report_summary", {}),
+            "preview": markdown[:2000],
+        }
+    except Exception as e:
+        return handle_error(e, "exporting weekly report markdown", None)
+
+
+async def export_weekly_report_docx_impl(
+    *,
+    generate_scrum_report_fn: Callable[..., Awaitable[Dict[str, Any]]],
+    user_id: Optional[Union[str, int]] = None,
+    project_id: Optional[Union[str, int]] = None,
+    top_n_items: int = 7,
+    template_path: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    file_name: Optional[str] = None,
+    unit_name: str = "TRUNG TÂM CSE",
+    reporter_name: str = "NGƯỜI BÁO CÁO",
+    location: str = "Đà Nẵng",
+    today: Optional[date] = None,
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Export weekly report to a plain-text .docx wrapper rendered from markdown."""
+    try:
+        render_payload = await _build_weekly_report_render_payload(
+            generate_scrum_report_fn=generate_scrum_report_fn,
+            user_id=user_id,
+            project_id=project_id,
+            top_n_items=top_n_items,
+            template_path=template_path,
+            unit_name=unit_name,
+            reporter_name=reporter_name,
+            location=location,
+            today=today,
+        )
+        if "error" in render_payload:
+            return render_payload
+
+        markdown_text = str(render_payload["markdown"])
+        analysis_range = dict(render_payload["analysis_range"])
+        from_date = str(analysis_range["from_date"])
+        to_date = str(analysis_range["to_date"])
+        week_report = int(analysis_range["week_report"])
+        output_directory = _resolve_weekly_report_output_dir(output_dir)
+        output_directory.mkdir(parents=True, exist_ok=True)
+        docx_name = (
+            _validate_export_file_name(file_name, ".docx")
+            if file_name
+            else f"weekly-report-w{week_report}-{from_date}-to-{to_date}.docx"
+        )
+        docx_path = (output_directory / docx_name).resolve()
+        if not _is_within_directory(docx_path, output_directory):
+            raise ValueError(f"file_name escapes output directory: {docx_name}")
+        docx_bytes = _build_minimal_docx_from_text(markdown_text)
+        docx_path.write_bytes(docx_bytes)
+
+        return {
+            "exported": True,
+            "output_path": str(docx_path),
+            "output_file_name": docx_path.name,
+            "docx_size_bytes": docx_path.stat().st_size,
+            "analysis_range": analysis_range,
+            "report_summary": render_payload.get("report_summary", {}),
+            "render_mode": "plain_text_docx_from_markdown",
+            "format_note": (
+                "This DOCX preserves markdown content as plain text; "
+                "headings/tables are not converted to native Word formatting."
+            ),
+        }
+    except Exception as e:
+        return handle_error(e, "exporting weekly report docx", None)
+
+
 async def summarize_project_status_impl(
     project_id: int,
     days: int = 30,
@@ -566,8 +1112,9 @@ async def summarize_project_status_impl(
 ) -> Dict[str, Any]:
     """Provide summary statistics for project activity over a date window."""
     try:
+        client = get_client()
         try:
-            project = get_client().project.get(project_id)
+            project = await asyncio.to_thread(client.project.get, project_id)
         except resource_not_found_error:
             return {"error": f"Project {project_id} not found."}
 
@@ -575,7 +1122,6 @@ async def summarize_project_status_impl(
         start_date = end_date - timedelta(days=days)
         date_filter = f">={start_date.strftime('%Y-%m-%d')}"
 
-        client = get_client()
         created_issues = await asyncio.to_thread(
             lambda: list(
                 client.issue.filter(project_id=project_id, created_on=date_filter)
@@ -671,40 +1217,42 @@ async def search_entire_redmine_impl(
             "limit": limit,
             "offset": offset,
         }
-        categorized_results = await asyncio.to_thread(
-            get_client().search, query, **search_options
-        )
+        client = get_client()
 
-        if not categorized_results:
+        def _search_and_serialize() -> Dict[str, Any]:
+            categorized_results = client.search(query, **search_options)
+            if not categorized_results:
+                return {
+                    "results": [],
+                    "results_by_type": {},
+                    "total_count": 0,
+                    "query": query,
+                }
+
+            all_results = []
+            results_by_type: Dict[str, int] = {}
+            for resource_type, resource_set in categorized_results.items():
+                if resource_type == "unknown":
+                    continue
+                if resource_type not in allowed_types:
+                    continue
+
+                if hasattr(resource_set, "__iter__"):
+                    count = 0
+                    for resource in resource_set:
+                        all_results.append(resource_to_dict(resource, resource_type))
+                        count += 1
+                    if count > 0:
+                        results_by_type[resource_type] = count
+
             return {
-                "results": [],
-                "results_by_type": {},
-                "total_count": 0,
+                "results": all_results,
+                "results_by_type": results_by_type,
+                "total_count": len(all_results),
                 "query": query,
             }
 
-        all_results = []
-        results_by_type: Dict[str, int] = {}
-        for resource_type, resource_set in categorized_results.items():
-            if resource_type == "unknown":
-                continue
-            if resource_type not in allowed_types:
-                continue
-
-            if hasattr(resource_set, "__iter__"):
-                count = 0
-                for resource in resource_set:
-                    all_results.append(resource_to_dict(resource, resource_type))
-                    count += 1
-                if count > 0:
-                    results_by_type[resource_type] = count
-
-        return {
-            "results": all_results,
-            "results_by_type": results_by_type,
-            "total_count": len(all_results),
-            "query": query,
-        }
+        return await asyncio.to_thread(_search_and_serialize)
     except version_mismatch_error:
         return {"error": "Search requires Redmine 3.3.0 or higher."}
     except Exception as e:

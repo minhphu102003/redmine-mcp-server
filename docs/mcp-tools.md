@@ -56,6 +56,25 @@ Tip:
 - Pass both `project_id` + `user_id` to generate one user's report inside a specific project.
 - Re-generate anytime by calling the same tool again (it always reads fresh data in the selected range).
 
+---
+
+### `export_weekly_report_markdown`
+Export weekly report to a markdown file based on your template:
+- default template: `docs/templates/weekly_work_report_plan_template.md`
+- default output dir: `reports/weekly`
+
+This tool internally calls `generate_scrum_report(report_type="weekly")`, renders
+the template, and writes `.md` output so devs can share/edit quickly.
+
+---
+
+### `export_weekly_report_docx`
+Export weekly report to `.docx` for client delivery.
+
+This tool reuses the weekly markdown template and generates a plain-text Word
+document wrapper under `reports/weekly` (or custom `output_dir`).
+Current behavior keeps markdown semantics as text (not native Word tables/headings).
+
 ## Core issue tools
 
 - `get_redmine_issue`

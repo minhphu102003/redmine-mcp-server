@@ -64,6 +64,21 @@ def test_generate_scrum_report_prompt_mentions_daily_and_weekly():
     assert "3 reusable report_templates" in prompt
 
 
+def test_export_weekly_report_markdown_prompt_mentions_template_and_output():
+    """Export prompt should mention template and output directory controls."""
+    prompt = prompts.export_weekly_report_markdown_prompt()
+    assert "`export_weekly_report_markdown`" in prompt
+    assert "template_path optional" in prompt
+    assert "output_dir optional" in prompt
+
+
+def test_export_weekly_report_docx_prompt_mentions_docx_behavior():
+    """DOCX export prompt should mention docx output contract."""
+    prompt = prompts.export_weekly_report_docx_prompt()
+    assert "`export_weekly_report_docx`" in prompt
+    assert ".docx" in prompt
+
+
 def test_prompt_functions_exist_for_all_tools():
     """Each MCP tool in handler should have a sibling prompt playbook function."""
     expected_prompt_functions = [
@@ -84,6 +99,8 @@ def test_prompt_functions_exist_for_all_tools():
         "get_redmine_attachment_download_url_prompt",
         "summarize_project_status_prompt",
         "generate_scrum_report_prompt",
+        "export_weekly_report_markdown_prompt",
+        "export_weekly_report_docx_prompt",
         "search_entire_redmine_prompt",
         "get_redmine_wiki_page_prompt",
         "create_redmine_wiki_page_prompt",

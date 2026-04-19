@@ -343,6 +343,56 @@ def generate_scrum_report_prompt(report_type: str = "daily") -> str:
     )
 
 
+def export_weekly_report_markdown_prompt() -> str:
+    """Playbook for calling export_weekly_report_markdown."""
+    return _render_tool_prompt(
+        tool_name="export_weekly_report_markdown",
+        objective=(
+            "Generate and export a weekly markdown report document "
+            "using the configured template file."
+        ),
+        required_inputs=[
+            "project_id and/or user_id filters",
+            (
+                "template_path optional (defaults to "
+                "docs/templates/weekly_work_report_plan_template.md)"
+            ),
+            "output_dir optional (defaults to reports/weekly)",
+        ],
+        pre_checks=[
+            "Ensure weekly template placeholders match expected keys.",
+            "Set reporter_name/unit_name/location to customize document header.",
+        ],
+        result_shape=(
+            "Dict with output_path, output_file_name, summary, and markdown preview."
+        ),
+    )
+
+
+def export_weekly_report_docx_prompt() -> str:
+    """Playbook for calling export_weekly_report_docx."""
+    return _render_tool_prompt(
+        tool_name="export_weekly_report_docx",
+        objective=(
+            "Generate and export a weekly .docx report as a plain-text "
+            "wrapper around rendered markdown content."
+        ),
+        required_inputs=[
+            "project_id and/or user_id filters",
+            "template_path optional (reuses weekly markdown template)",
+            "output_dir optional (defaults to reports/weekly)",
+        ],
+        pre_checks=[
+            "Use file_name with .docx extension for explicit naming.",
+            "Set reporter_name/unit_name/location to match the client document header.",
+        ],
+        result_shape=(
+            "Dict with output_path, output_file_name, report_summary, "
+            "and format_note."
+        ),
+    )
+
+
 def search_entire_redmine_prompt(query: str) -> str:
     """Playbook for calling search_entire_redmine."""
     return _render_tool_prompt(
@@ -535,6 +585,8 @@ _PROMPT_REGISTRY: List[tuple[str, Callable[..., str]]] = [
     ),
     ("summarize_project_status_prompt", summarize_project_status_prompt),
     ("generate_scrum_report_prompt", generate_scrum_report_prompt),
+    ("export_weekly_report_markdown_prompt", export_weekly_report_markdown_prompt),
+    ("export_weekly_report_docx_prompt", export_weekly_report_docx_prompt),
     ("search_entire_redmine_prompt", search_entire_redmine_prompt),
     ("get_redmine_wiki_page_prompt", get_redmine_wiki_page_prompt),
     ("create_redmine_wiki_page_prompt", create_redmine_wiki_page_prompt),
