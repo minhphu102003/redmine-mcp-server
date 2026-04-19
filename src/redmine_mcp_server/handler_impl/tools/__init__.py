@@ -1,6 +1,8 @@
 """Dependency-injected tool implementations extracted from redmine_handler."""
 
 from .analytics import (
+    export_weekly_report_docx_impl,
+    export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
     search_entire_redmine_impl,
     summarize_project_status_impl,
@@ -66,4 +68,6 @@ __all__ = [
     "get_redmine_issue_allowed_statuses_impl",
     "get_redmine_project_workflow_impl",
     "generate_scrum_report_impl",
+    "export_weekly_report_markdown_impl",
+    "export_weekly_report_docx_impl",
 ]

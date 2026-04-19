@@ -77,6 +77,8 @@ from .handler_impl.tools import (  # noqa: E402
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
+    export_weekly_report_docx_impl,
+    export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
     get_redmine_attachment_download_url_impl,
     get_redmine_issue_impl,
@@ -978,6 +980,62 @@ async def generate_scrum_report(
         get_client=_get_redmine_client,
         time_entry_to_dict=_time_entry_to_dict,
         wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def export_weekly_report_markdown(
+    user_id: Optional[Union[str, int]] = None,
+    project_id: Optional[Union[str, int]] = None,
+    top_n_items: int = 7,
+    template_path: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    file_name: Optional[str] = None,
+    unit_name: str = "TRUNG TÂM CSE",
+    reporter_name: str = "NGƯỜI BÁO CÁO",
+    location: str = "Đà Nẵng",
+) -> Dict[str, Any]:
+    """Export weekly report markdown file from scrum report analytics."""
+    return await export_weekly_report_markdown_impl(
+        generate_scrum_report_fn=generate_scrum_report,
+        user_id=user_id,
+        project_id=project_id,
+        top_n_items=top_n_items,
+        template_path=template_path,
+        output_dir=output_dir,
+        file_name=file_name,
+        unit_name=unit_name,
+        reporter_name=reporter_name,
+        location=location,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def export_weekly_report_docx(
+    user_id: Optional[Union[str, int]] = None,
+    project_id: Optional[Union[str, int]] = None,
+    top_n_items: int = 7,
+    template_path: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    file_name: Optional[str] = None,
+    unit_name: str = "TRUNG TÂM CSE",
+    reporter_name: str = "NGƯỜI BÁO CÁO",
+    location: str = "Đà Nẵng",
+) -> Dict[str, Any]:
+    """Export weekly report as .docx for client-facing sharing."""
+    return await export_weekly_report_docx_impl(
+        generate_scrum_report_fn=generate_scrum_report,
+        user_id=user_id,
+        project_id=project_id,
+        top_n_items=top_n_items,
+        template_path=template_path,
+        output_dir=output_dir,
+        file_name=file_name,
+        unit_name=unit_name,
+        reporter_name=reporter_name,
+        location=location,
         handle_error=_handle_redmine_error,
     )
 

@@ -15,6 +15,8 @@ from redmine_mcp_server.handler_impl.tools import analytics  # noqa: E402
 from redmine_mcp_server.handler_impl.tools.analytics import (  # noqa: E402
     _resolve_scrum_issue_fetch_concurrency,
     _resolve_scrum_report_range,
+    export_weekly_report_docx_impl,
+    export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
 )
 
@@ -246,3 +248,204 @@ async def test_generate_scrum_report_tool_delegates_to_impl():
 
     assert result == payload
     assert mock_impl.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_markdown_impl_writes_file(tmp_path, monkeypatch):
+    template_path = tmp_path / "weekly_template.md"
+    template_path.write_text(
+        (
+            "BÁO CÁO CÔNG TÁC TUẦN {{tuan_bao_cao}}\n"
+            "{{#bao_cao_items}}- {{cong_viec}} | {{phan_tram_hoan_thanh}} | {{mo_ta}}\n"
+            "{{/bao_cao_items}}"
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR", str(tmp_path))
+
+    async def _fake_generate_scrum_report_fn(**kwargs):
+        return {
+            "analysis_range": {
+                "from_date": "2026-04-06",
+                "to_date": "2026-04-12",
+            },
+            "summary": {"total_hours": 10.0},
+            "top_issues": [
+                {
+                    "issue_subject": "Fix login flow",
+                    "description_excerpt": "Complete OAuth flow",
+                    "status_raw": "In Progress",
+                }
+            ],
+        }
+
+    result = await export_weekly_report_markdown_impl(
+        generate_scrum_report_fn=_fake_generate_scrum_report_fn,
+        template_path=str(template_path),
+        output_dir=str(output_dir),
+        file_name="weekly.md",
+        reporter_name="Nguyen Minh Phu",
+        handle_error=lambda exc, op, ctx: {"error": str(exc)},
+    )
+
+    assert result["exported"] is True
+    output_path = output_dir / "weekly.md"
+    assert output_path.exists()
+    content = output_path.read_text(encoding="utf-8")
+    assert "BÁO CÁO CÔNG TÁC TUẦN" in content
+    assert "Fix login flow" in content
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_markdown_tool_delegates_to_impl():
+    payload = {"exported": True, "output_path": "reports/weekly/sample.md"}
+    with patch.object(
+        redmine_handler,
+        "export_weekly_report_markdown_impl",
+        AsyncMock(return_value=payload),
+    ) as mock_impl:
+        result = await redmine_handler.export_weekly_report_markdown(project_id=12)
+
+    assert result == payload
+    assert mock_impl.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_docx_impl_writes_docx_file(tmp_path, monkeypatch):
+    template_path = tmp_path / "weekly_template.md"
+    template_path.write_text("BÁO CÁO CÔNG TÁC TUẦN {{tuan_bao_cao}}", encoding="utf-8")
+    output_dir = tmp_path / "out"
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR", str(tmp_path))
+
+    async def _fake_generate_scrum_report_fn(**kwargs):
+        return {
+            "analysis_range": {
+                "from_date": "2026-04-06",
+                "to_date": "2026-04-12",
+            },
+            "summary": {"total_hours": 10.0},
+            "top_issues": [],
+        }
+
+    result = await export_weekly_report_docx_impl(
+        generate_scrum_report_fn=_fake_generate_scrum_report_fn,
+        template_path=str(template_path),
+        output_dir=str(output_dir),
+        file_name="weekly-client.docx",
+        handle_error=lambda exc, op, ctx: {"error": str(exc)},
+    )
+
+    assert result["exported"] is True
+    docx_path = output_dir / "weekly-client.docx"
+    assert docx_path.exists()
+    assert docx_path.stat().st_size > 0
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_docx_tool_delegates_to_impl():
+    payload = {"exported": True, "output_path": "reports/weekly/sample.docx"}
+    with patch.object(
+        redmine_handler,
+        "export_weekly_report_docx_impl",
+        AsyncMock(return_value=payload),
+    ) as mock_impl:
+        result = await redmine_handler.export_weekly_report_docx(project_id=12)
+
+    assert result == payload
+    assert mock_impl.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_markdown_rejects_path_traversal_file_name(
+    tmp_path, monkeypatch
+):
+    template_base = tmp_path / "templates"
+    output_base = tmp_path / "reports"
+    template_base.mkdir(parents=True, exist_ok=True)
+    output_base.mkdir(parents=True, exist_ok=True)
+    template_path = template_base / "weekly.md"
+    template_path.write_text("{{tuan_bao_cao}}", encoding="utf-8")
+
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR", str(template_base))
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR", str(output_base))
+
+    async def _fake_generate_scrum_report_fn(**kwargs):
+        return {
+            "analysis_range": {"from_date": "2026-04-06", "to_date": "2026-04-12"},
+            "summary": {"total_hours": 10.0},
+            "top_issues": [],
+        }
+
+    result = await export_weekly_report_markdown_impl(
+        generate_scrum_report_fn=_fake_generate_scrum_report_fn,
+        template_path=str(template_path),
+        output_dir=str(output_base),
+        file_name="../../evil.md",
+        handle_error=lambda exc, op, ctx: {"error": str(exc)},
+    )
+    assert "error" in result
+    assert "Path separators are not allowed" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_markdown_rejects_template_path_outside_base(
+    tmp_path, monkeypatch
+):
+    template_base = tmp_path / "templates"
+    output_base = tmp_path / "reports"
+    template_base.mkdir(parents=True, exist_ok=True)
+    output_base.mkdir(parents=True, exist_ok=True)
+    outside_template = tmp_path / "outside.md"
+    outside_template.write_text("{{tuan_bao_cao}}", encoding="utf-8")
+
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR", str(template_base))
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR", str(output_base))
+
+    async def _fake_generate_scrum_report_fn(**kwargs):
+        return {
+            "analysis_range": {"from_date": "2026-04-06", "to_date": "2026-04-12"},
+            "summary": {"total_hours": 10.0},
+            "top_issues": [],
+        }
+
+    result = await export_weekly_report_markdown_impl(
+        generate_scrum_report_fn=_fake_generate_scrum_report_fn,
+        template_path=str(outside_template),
+        output_dir=str(output_base),
+        handle_error=lambda exc, op, ctx: {"error": str(exc)},
+    )
+    assert "error" in result
+    assert "template_path must stay within" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_export_weekly_report_markdown_returns_clear_error_when_template_missing(
+    tmp_path, monkeypatch
+):
+    template_base = tmp_path / "templates"
+    output_base = tmp_path / "reports"
+    template_base.mkdir(parents=True, exist_ok=True)
+    output_base.mkdir(parents=True, exist_ok=True)
+    missing_template = template_base / "missing.md"
+
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_TEMPLATE_BASE_DIR", str(template_base))
+    monkeypatch.setenv("REDMINE_WEEKLY_REPORT_OUTPUT_BASE_DIR", str(output_base))
+
+    async def _fake_generate_scrum_report_fn(**kwargs):
+        return {
+            "analysis_range": {"from_date": "2026-04-06", "to_date": "2026-04-12"},
+            "summary": {"total_hours": 10.0},
+            "top_issues": [],
+        }
+
+    result = await export_weekly_report_markdown_impl(
+        generate_scrum_report_fn=_fake_generate_scrum_report_fn,
+        template_path=str(missing_template),
+        output_dir=str(output_base),
+        handle_error=lambda exc, op, ctx: {"error": str(exc)},
+    )
+    assert "error" in result
+    assert "Weekly report template not found" in result["error"]
