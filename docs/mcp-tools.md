@@ -2,6 +2,13 @@
 
 This document lists MCP tools currently exposed by `src/redmine_mcp_server/redmine_handler.py`.
 
+## Prompts
+
+- `redmine_server_operating_prompt`
+  - Global operating prompt for this MCP server.
+  - Designed to be loaded first by client/agent orchestration before tool calls.
+  - Client enforcement guide: `docs/client-bootstrap-prompt.md`.
+
 ## Consolidated tools (recommended for agent workflows)
 
 ### `get_issue_workflow_context`
