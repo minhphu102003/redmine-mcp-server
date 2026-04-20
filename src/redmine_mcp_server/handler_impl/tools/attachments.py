@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
+from urllib.parse import urlparse
 
 from ...attachment_manager import AttachmentFileManager
 
@@ -18,6 +19,37 @@ HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
 ]
+
+
+def _sanitize_attachment_filename(raw_name: Any, fallback_name: str) -> str:
+    """Normalize untrusted attachment filename to a safe basename."""
+    candidate = str(raw_name or "").strip().replace("\\", "/")
+    candidate = Path(candidate).name
+    candidate = "".join(ch for ch in candidate if ch.isprintable() and ch not in "\r\n")
+    if candidate in {"", ".", ".."}:
+        return fallback_name
+    # Keep file names short for filesystem and header safety.
+    return candidate[:255]
+
+
+def _build_download_url(file_id: str) -> str:
+    """Build public download URL using a trusted base URL when configured."""
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if public_base_url:
+        parsed = urlparse(public_base_url)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return f"{public_base_url}/files/{file_id}"
+
+    public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
+    public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
+    public_scheme = os.getenv("PUBLIC_SCHEME", "https").strip().lower()
+    if public_scheme not in {"http", "https"}:
+        public_scheme = "https"
+
+    if public_host == "0.0.0.0":
+        public_host = "localhost"
+
+    return f"{public_scheme}://{public_host}:{public_port}/files/{file_id}"
 
 
 async def get_redmine_attachment_download_url_impl(
@@ -44,11 +76,14 @@ async def get_redmine_attachment_download_url_impl(
             "filename",
             f"attachment_{attachment_id}",
         )
+        safe_filename = _sanitize_attachment_filename(
+            original_filename, f"attachment_{attachment_id}"
+        )
 
         uuid_dir = attachments_dir / file_id
         uuid_dir.mkdir(exist_ok=True)
-        final_path = uuid_dir / original_filename
-        temp_path = uuid_dir / f"{original_filename}.tmp"
+        final_path = uuid_dir / safe_filename
+        temp_path = uuid_dir / f"{safe_filename}.tmp"
 
         try:
             os.rename(downloaded_path, temp_path)
@@ -68,7 +103,7 @@ async def get_redmine_attachment_download_url_impl(
         metadata = {
             "file_id": file_id,
             "attachment_id": attachment_id,
-            "original_filename": original_filename,
+            "original_filename": safe_filename,
             "file_path": str(final_path),
             "content_type": getattr(
                 attachment,
@@ -97,16 +132,10 @@ async def get_redmine_attachment_download_url_impl(
                 pass
             return {"error": f"Failed to save metadata: {str(e)}"}
 
-        public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
-        public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
-
-        if public_host == "0.0.0.0":
-            public_host = "localhost"
-
-        download_url = f"http://{public_host}:{public_port}/files/{file_id}"
+        download_url = _build_download_url(file_id)
         return {
             "download_url": download_url,
-            "filename": original_filename,
+            "filename": safe_filename,
             "content_type": metadata["content_type"],
             "size": metadata["size"],
             "expires_at": metadata["expires_at"],

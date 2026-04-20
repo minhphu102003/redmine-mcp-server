@@ -49,6 +49,22 @@ def get_version() -> str:
         return "dev"
 
 
+def _is_true_env(var_name: str, default: str = "false") -> bool:
+    """Parse common truthy env-var values."""
+    return os.getenv(var_name, default).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_public_bind(host: str) -> bool:
+    """Return whether host binds beyond loopback interfaces."""
+    normalized = (host or "").strip().lower()
+    return normalized not in {"", "127.0.0.1", "localhost", "::1"}
+
+
 # --- OAuth2 route handlers (registered conditionally) ---
 
 
@@ -105,28 +121,41 @@ async def revoke_token(request: Request):
         502 Bad Gateway if Redmine is unreachable
     """
     token = None
+    allow_unauthenticated_revoke = _is_true_env(
+        "REDMINE_ALLOW_UNAUTHENTICATED_REVOKE", "false"
+    )
 
-    # Try Authorization header first
+    # Authorization header is required by default.
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header.removeprefix("Bearer ").strip()
+    elif not allow_unauthenticated_revoke:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "unauthorized",
+                "error_description": (
+                    "Authorization: Bearer <token> is required for token revocation. "
+                    "Set REDMINE_ALLOW_UNAUTHENTICATED_REVOKE=true only in trusted "
+                    "internal networks."
+                ),
+            },
+        )
 
-    # Fall back to request body
-    if not token:
+    if not token and allow_unauthenticated_revoke:
         content_type = request.headers.get("Content-Type", "")
         if "application/json" in content_type:
             try:
                 body = await request.json()
                 token = body.get("token")
             except Exception:
-                pass
+                token = None
         else:
-            # form-encoded
             try:
                 form = await request.form()
                 token = form.get("token")
             except Exception:
-                pass
+                token = None
 
     if not token:
         return JSONResponse(
@@ -222,6 +251,20 @@ def main():
 
     # Use parse_known_args to avoid conflicts with other potential injectors
     args, _ = parser.parse_known_args()
+
+    if (
+        REDMINE_AUTH_MODE == "legacy"
+        and _is_public_bind(args.host)
+        and not _is_true_env("REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC", "false")
+    ):
+        logger.error(
+            "Refusing to start in legacy mode on public host '%s'. "
+            "Use REDMINE_AUTH_MODE=oauth or REDMINE_AUTH_MODE=dynamic. "
+            "Override only if you understand the risk by setting "
+            "REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC=true.",
+            args.host,
+        )
+        raise SystemExit(2)
 
     if args.transport == "stdio":
         logger.info("Starting in HYBRID mode (MCP tools via stdio, files via HTTP)")

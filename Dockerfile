@@ -27,13 +27,13 @@ FROM python:3.13-slim AS runtime
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    HOME="/home/appuser"
 
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl && \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -51,7 +51,7 @@ COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser README.md ./
 
 # Create directories for logs and data
-RUN mkdir -p /app/logs /app/data && \
+RUN mkdir -p /app/logs /app/data /app/data/attachments && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
@@ -59,10 +59,10 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
 
 # Expose port
 EXPOSE 8000
 
 # Default command
-CMD ["python", "-m", "uvicorn", "src.redmine_mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["redmine-mcp-server", "--transport", "http", "--host", "0.0.0.0", "--port", "8000"]
