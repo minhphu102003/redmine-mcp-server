@@ -12,6 +12,7 @@ from .attachments import (
     get_redmine_attachment_download_url_impl,
 )
 from .issues import (
+    create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
     get_redmine_issue_impl,
     list_redmine_issues_impl,
@@ -19,8 +20,10 @@ from .issues import (
     update_redmine_issue_impl,
 )
 from .projects import (
+    list_project_issue_categories_impl,
     list_project_issue_custom_fields_impl,
     list_project_members_impl,
+    list_project_trackers_impl,
     list_redmine_projects_impl,
     list_redmine_versions_impl,
 )
@@ -44,6 +47,7 @@ from .workflow import (
 
 __all__ = [
     "cleanup_attachment_files_impl",
+    "create_redmine_issue_with_subtasks_impl",
     "create_redmine_issue_impl",
     "create_redmine_wiki_page_impl",
     "create_time_entry_impl",
@@ -51,8 +55,10 @@ __all__ = [
     "get_redmine_attachment_download_url_impl",
     "get_redmine_issue_impl",
     "get_redmine_wiki_page_impl",
+    "list_project_issue_categories_impl",
     "list_project_issue_custom_fields_impl",
     "list_project_members_impl",
+    "list_project_trackers_impl",
     "list_redmine_issues_impl",
     "list_redmine_projects_impl",
     "list_redmine_versions_impl",

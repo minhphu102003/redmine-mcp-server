@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Callable, Dict, List, Optional, Union
 
 HandleErrorFn = Callable[
@@ -13,6 +14,7 @@ HandleErrorFn = Callable[
 _DEFAULT_WORKFLOW_SAMPLE_LIMIT = 25
 _MAX_WORKFLOW_SAMPLE_LIMIT = 100
 _WORKFLOW_FETCH_CONCURRENCY = 10
+_DEFAULT_WORKFLOW_DETAIL_MAX_REQUESTS = 50
 
 
 def _status_to_dict(status: Any, wrap_content: Callable[[Any], Any]) -> Dict[str, Any]:
@@ -91,6 +93,21 @@ def _normalize_sample_limit(sample_limit: int) -> int:
     return min(parsed, _MAX_WORKFLOW_SAMPLE_LIMIT)
 
 
+def _workflow_detail_max_requests() -> int:
+    """Resolve max detail requests per workflow snapshot."""
+    raw = os.getenv(
+        "REDMINE_MCP_WORKFLOW_DETAIL_MAX_REQUESTS",
+        str(_DEFAULT_WORKFLOW_DETAIL_MAX_REQUESTS),
+    ).strip()
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_WORKFLOW_DETAIL_MAX_REQUESTS
+    if parsed <= 0:
+        return _DEFAULT_WORKFLOW_DETAIL_MAX_REQUESTS
+    return min(parsed, _MAX_WORKFLOW_SAMPLE_LIMIT)
+
+
 async def get_redmine_project_workflow_impl(
     project_id: Union[str, int],
     tracker_id: Optional[int] = None,
@@ -127,12 +144,25 @@ async def get_redmine_project_workflow_impl(
                     include="allowed_statuses",
                 )
 
-        issue_ids = [
-            issue_id
-            for issue in issues
-            for issue_id in [getattr(issue, "id", None)]
-            if issue_id is not None
-        ]
+        detail_limit = _workflow_detail_max_requests()
+        representative_map: Dict[tuple[Any, Any], int] = {}
+        fallback_issue_ids: List[int] = []
+        for issue in issues:
+            issue_id = getattr(issue, "id", None)
+            if issue_id is None:
+                continue
+            status = getattr(issue, "status", None)
+            status_id_value = getattr(status, "id", None)
+            tracker = getattr(issue, "tracker", None)
+            tracker_id_value = getattr(tracker, "id", None)
+            if status_id_value is None:
+                fallback_issue_ids.append(issue_id)
+                continue
+            key = (status_id_value, tracker_id_value)
+            representative_map.setdefault(key, issue_id)
+
+        issue_ids = list(representative_map.values()) + fallback_issue_ids
+        issue_ids = issue_ids[:detail_limit]
         detailed_issues = await asyncio.gather(
             *(_fetch_detailed_issue(issue_id) for issue_id in issue_ids)
         )
@@ -212,6 +242,10 @@ async def get_redmine_project_workflow_impl(
                 "detail_request_count": len(issue_ids),
                 "total_request_count": len(issue_ids) + 1,
                 "detail_fetch_concurrency": _WORKFLOW_FETCH_CONCURRENCY,
+                "detail_request_cap": detail_limit,
+                "detail_selection_strategy": (
+                    "one representative issue per (status, tracker) pair"
+                ),
             },
         }
     except Exception as e:

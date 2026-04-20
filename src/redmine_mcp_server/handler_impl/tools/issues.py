@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 import logging
+import json
 from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
 
 from redminelib.exceptions import ValidationError
@@ -106,6 +109,51 @@ def _pagination_info(
     if total is not None:
         info["total"] = total
     return info
+
+
+def _coerce_optional_object_payload(
+    payload: Optional[Union[Dict[str, Any], str]],
+    payload_name: str,
+) -> Dict[str, Any]:
+    """Parse optional dict-or-JSON-string payload into a plain dict."""
+    if payload is None:
+        return {}
+    if isinstance(payload, dict):
+        parsed = dict(payload)
+        if isinstance(parsed.get(payload_name), dict) and len(parsed) == 1:
+            return dict(parsed[payload_name])
+        return parsed
+    if isinstance(payload, str):
+        raw = payload.strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid {payload_name} payload. "
+                "Expected a dict or JSON object string."
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                f"Invalid {payload_name} payload. Parsed value must be an object/dict."
+            )
+        return dict(parsed)
+    raise ValueError(
+        f"Invalid {payload_name} payload. Expected a dict or JSON object string."
+    )
+
+
+def _resolve_subtask_batch_limit(default: int = 50) -> int:
+    """Resolve subtask batch limit from environment with safe bounds."""
+    raw = os.getenv("REDMINE_MCP_SUBTASK_BATCH_LIMIT", str(default)).strip()
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if value <= 0:
+        return default
+    return min(value, 200)
 
 
 async def get_redmine_issue_impl(
@@ -442,7 +490,9 @@ async def create_redmine_issue_impl(
     issue_fields.pop("extra_fields", None)
 
     try:
-        issue = get_client().issue.create(
+        client = get_client()
+        issue = await asyncio.to_thread(
+            client.issue.create,
             project_id=project_id,
             subject=subject,
             description=description,
@@ -470,7 +520,9 @@ async def create_redmine_issue_impl(
                 "Retrying issue creation with auto-filled custom fields: %s",
                 missing_names,
             )
-            issue = get_client().issue.create(
+            client = get_client()
+            issue = await asyncio.to_thread(
+                client.issue.create,
                 project_id=project_id,
                 subject=subject,
                 description=description,
@@ -511,7 +563,7 @@ async def update_redmine_issue_impl(
     if "status_name" in update_fields and "status_id" not in update_fields:
         name = str(update_fields.pop("status_name")).lower()
         try:
-            statuses = get_client().issue_status.all()
+            statuses = await asyncio.to_thread(get_client().issue_status.all)
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
                     update_fields["status_id"] = status.id
@@ -522,8 +574,8 @@ async def update_redmine_issue_impl(
     try:
         update_fields = map_named_custom_fields_for_update(issue_id, update_fields)
         client = get_client()
-        client.issue.update(issue_id, **update_fields)
-        updated_issue = client.issue.get(issue_id)
+        await asyncio.to_thread(client.issue.update, issue_id, **update_fields)
+        updated_issue = await asyncio.to_thread(client.issue.get, issue_id)
         return issue_to_dict(updated_issue, include_custom_fields=True)
     except validation_error as e:
         if not is_required_custom_field_autofill_enabled():
@@ -542,7 +594,7 @@ async def update_redmine_issue_impl(
             )
 
         try:
-            issue = get_client().issue.get(issue_id)
+            issue = await asyncio.to_thread(get_client().issue.get, issue_id)
             project = getattr(issue, "project", None)
             project_id = getattr(project, "id", None)
             if project_id is None:
@@ -569,8 +621,9 @@ async def update_redmine_issue_impl(
                 "Retrying issue update with auto-filled custom fields: %s",
                 missing_names,
             )
-            get_client().issue.update(issue_id, **retry_fields)
-            updated_issue = get_client().issue.get(issue_id)
+            client = get_client()
+            await asyncio.to_thread(client.issue.update, issue_id, **retry_fields)
+            updated_issue = await asyncio.to_thread(client.issue.get, issue_id)
             return issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
             return handle_error(
@@ -584,3 +637,169 @@ async def update_redmine_issue_impl(
             f"updating issue {issue_id}",
             {"resource_type": "issue", "resource_id": issue_id},
         )
+
+
+async def create_redmine_issue_with_subtasks_impl(
+    project_id: int,
+    parent_subject: str,
+    parent_description: str = "",
+    parent_fields: Optional[Union[Dict[str, Any], str]] = None,
+    parent_extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    subtasks: Optional[List[Dict[str, Any]]] = None,
+    stop_on_subtask_error: bool = False,
+    *,
+    create_issue_fn: Callable[..., Any],
+    wrap_content: Callable[[Any], Any],
+) -> Dict[str, Any]:
+    """Create a parent issue and a batch of subtasks under it."""
+    if not str(parent_subject or "").strip():
+        return {"error": "parent_subject is required."}
+
+    subtask_items = [] if subtasks is None else subtasks
+    if not isinstance(subtask_items, list):
+        return {"error": "subtasks must be a list of objects."}
+    subtask_batch_limit = _resolve_subtask_batch_limit()
+
+    try:
+        parent_payload = _coerce_optional_object_payload(parent_fields, "parent_fields")
+        parent_payload.update(
+            _coerce_optional_object_payload(parent_extra_fields, "parent_extra_fields")
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    parent_issue = await create_issue_fn(
+        project_id=project_id,
+        subject=parent_subject,
+        description=parent_description,
+        fields=parent_payload,
+        extra_fields=None,
+    )
+    if not isinstance(parent_issue, dict) or "error" in parent_issue:
+        return {
+            "error": "Failed to create parent issue.",
+            "project_id": project_id,
+            "parent_issue": parent_issue,
+            "created_subtasks": [],
+            "failed_subtasks": [],
+        }
+
+    parent_issue_id = parent_issue.get("id")
+    if parent_issue_id is None:
+        return {
+            "error": "Parent issue creation returned no issue id.",
+            "project_id": project_id,
+            "parent_issue": parent_issue,
+            "created_subtasks": [],
+            "failed_subtasks": [],
+        }
+
+    created_subtasks: List[Dict[str, Any]] = []
+    failed_subtasks: List[Dict[str, Any]] = []
+
+    stop_processing = False
+    for batch_start in range(0, len(subtask_items), subtask_batch_limit):
+        batch = subtask_items[batch_start : batch_start + subtask_batch_limit]
+        for offset, subtask in enumerate(batch):
+            index = batch_start + offset
+            if not isinstance(subtask, dict):
+                failed_subtasks.append(
+                    {
+                        "index": index,
+                        "subject": None,
+                        "error": "Each subtask must be an object.",
+                    }
+                )
+                if stop_on_subtask_error:
+                    stop_processing = True
+                    break
+                continue
+
+            subtask_subject = str(subtask.get("subject", "")).strip()
+            if not subtask_subject:
+                failed_subtasks.append(
+                    {
+                        "index": index,
+                        "subject": None,
+                        "error": "subtask.subject is required.",
+                    }
+                )
+                if stop_on_subtask_error:
+                    stop_processing = True
+                    break
+                continue
+
+            try:
+                subtask_payload = _coerce_optional_object_payload(
+                    subtask.get("fields"), "subtask.fields"
+                )
+                subtask_payload.update(
+                    _coerce_optional_object_payload(
+                        subtask.get("extra_fields"), "subtask.extra_fields"
+                    )
+                )
+            except ValueError as exc:
+                failed_subtasks.append(
+                    {
+                        "index": index,
+                        "subject": wrap_content(subtask_subject),
+                        "error": str(exc),
+                    }
+                )
+                if stop_on_subtask_error:
+                    stop_processing = True
+                    break
+                continue
+
+            subtask_payload["parent_issue_id"] = parent_issue_id
+            subtask_description = str(subtask.get("description", ""))
+
+            subtask_issue = await create_issue_fn(
+                project_id=project_id,
+                subject=subtask_subject,
+                description=subtask_description,
+                fields=subtask_payload,
+                extra_fields=None,
+            )
+            if not isinstance(subtask_issue, dict) or "error" in subtask_issue:
+                failed_subtasks.append(
+                    {
+                        "index": index,
+                        "subject": wrap_content(subtask_subject),
+                        "error": (
+                            subtask_issue.get("error", "Unknown subtask creation error")
+                            if isinstance(subtask_issue, dict)
+                            else "Unknown subtask creation error"
+                        ),
+                        "result": subtask_issue,
+                    }
+                )
+                if stop_on_subtask_error:
+                    stop_processing = True
+                    break
+                continue
+
+            created_subtasks.append(subtask_issue)
+
+        if stop_processing:
+            break
+
+    return {
+        "project_id": project_id,
+        "parent_issue": parent_issue,
+        "created_subtasks": created_subtasks,
+        "failed_subtasks": failed_subtasks,
+        "summary": {
+            "requested_subtasks": len(subtask_items),
+            "created_subtasks": len(created_subtasks),
+            "failed_subtasks": len(failed_subtasks),
+            "stop_on_subtask_error": stop_on_subtask_error,
+            "subtask_batch_size": subtask_batch_limit,
+            "subtask_batch_count": (
+                (len(subtask_items) + subtask_batch_limit - 1) // subtask_batch_limit
+                if subtask_items
+                else 0
+            ),
+            "stopped_early": stop_processing,
+        },
+    }

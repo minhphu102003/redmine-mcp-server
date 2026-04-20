@@ -81,6 +81,7 @@ Current behavior keeps markdown semantics as text (not native Word tables/headin
 - `list_redmine_issues`
 - `search_redmine_issues`
 - `create_redmine_issue`
+- `create_redmine_issue_with_subtasks`
 - `update_redmine_issue`
 - `list_redmine_issue_statuses`
 - `get_redmine_issue_allowed_statuses`
@@ -89,6 +90,8 @@ Current behavior keeps markdown semantics as text (not native Word tables/headin
 ## Project tools
 
 - `list_redmine_projects`
+- `list_project_trackers`
+- `list_project_issue_categories`
 - `list_project_issue_custom_fields`
 - `list_redmine_versions`
 - `list_project_members`
