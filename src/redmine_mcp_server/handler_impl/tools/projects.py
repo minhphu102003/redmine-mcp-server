@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
 HandleErrorFn = Callable[
@@ -26,7 +27,7 @@ async def list_redmine_projects_impl(
                     None,
                 )
             ]
-        projects = client.project.all()
+        projects = await asyncio.to_thread(client.project.all)
         return [
             {
                 "id": project.id,
@@ -81,7 +82,9 @@ async def list_project_issue_custom_fields_impl(
                     {"resource_id": project_id},
                 )
             ]
-        project = client.project.get(project_id, include="issue_custom_fields")
+        project = await asyncio.to_thread(
+            client.project.get, project_id, include="issue_custom_fields"
+        )
         custom_fields = getattr(project, "issue_custom_fields", None) or []
 
         result: List[Dict[str, Any]] = []
@@ -135,7 +138,7 @@ async def list_redmine_versions_impl(
                     {"resource_id": project_id},
                 )
             ]
-        versions = client.version.filter(project_id=project_id)
+        versions = await asyncio.to_thread(client.version.filter, project_id=project_id)
         result = []
         for version in versions:
             if (
@@ -173,13 +176,110 @@ async def list_project_members_impl(
                     {"resource_id": project_id},
                 )
             ]
-        memberships = client.project_membership.filter(project_id=project_id)
+        memberships = await asyncio.to_thread(
+            client.project_membership.filter, project_id=project_id
+        )
         return [membership_to_dict(membership) for membership in memberships]
     except Exception as e:
         return [
             handle_error(
                 e,
                 f"listing members for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+async def list_project_trackers_impl(
+    project_id: Union[str, int],
+    *,
+    ensure_cleanup_started: Callable[[], Awaitable[Any]],
+    get_client: Callable[[], Any],
+    wrap_content: Callable[[Any], Any],
+    handle_error: HandleErrorFn,
+) -> List[Dict[str, Any]]:
+    """List trackers enabled for a specific Redmine project."""
+    await ensure_cleanup_started()
+    try:
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    f"listing trackers for project {project_id}",
+                    {"resource_id": project_id},
+                )
+            ]
+
+        project = await asyncio.to_thread(
+            client.project.get, project_id, include="trackers"
+        )
+        trackers = getattr(project, "trackers", None) or []
+        return [
+            {
+                "id": getattr(tracker, "id", None),
+                "name": wrap_content(getattr(tracker, "name", "")),
+            }
+            for tracker in trackers
+        ]
+    except Exception as e:
+        return [
+            handle_error(
+                e,
+                f"listing trackers for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+async def list_project_issue_categories_impl(
+    project_id: Union[str, int],
+    *,
+    ensure_cleanup_started: Callable[[], Awaitable[Any]],
+    get_client: Callable[[], Any],
+    wrap_content: Callable[[Any], Any],
+    handle_error: HandleErrorFn,
+) -> List[Dict[str, Any]]:
+    """List issue categories configured for a specific Redmine project."""
+    await ensure_cleanup_started()
+    try:
+        client = get_client()
+        if client is None:
+            return [
+                handle_error(
+                    RuntimeError("Redmine client not initialized"),
+                    f"listing issue categories for project {project_id}",
+                    {"resource_id": project_id},
+                )
+            ]
+
+        categories = await asyncio.to_thread(
+            client.issue_category.filter, project_id=project_id
+        )
+        return [
+            {
+                "id": getattr(category, "id", None),
+                "name": wrap_content(getattr(category, "name", "")),
+                "assigned_to": (
+                    {
+                        "id": getattr(
+                            getattr(category, "assigned_to", None), "id", None
+                        ),
+                        "name": wrap_content(
+                            getattr(getattr(category, "assigned_to", None), "name", "")
+                        ),
+                    }
+                    if getattr(category, "assigned_to", None) is not None
+                    else None
+                ),
+            }
+            for category in categories
+        ]
+    except Exception as e:
+        return [
+            handle_error(
+                e,
+                f"listing issue categories for project {project_id}",
                 {"resource_type": "project", "resource_id": project_id},
             )
         ]

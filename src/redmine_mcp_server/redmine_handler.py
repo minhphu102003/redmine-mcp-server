@@ -73,6 +73,7 @@ from .security import (  # noqa: E402
 )
 from .handler_impl.tools import (  # noqa: E402
     cleanup_attachment_files_impl,
+    create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
@@ -86,8 +87,10 @@ from .handler_impl.tools import (  # noqa: E402
     get_redmine_project_workflow_impl,
     get_redmine_wiki_page_impl,
     list_redmine_issue_statuses_impl,
+    list_project_issue_categories_impl,
     list_project_issue_custom_fields_impl,
     list_project_members_impl,
+    list_project_trackers_impl,
     list_redmine_issues_impl,
     list_redmine_projects_impl,
     list_redmine_versions_impl,
@@ -593,6 +596,32 @@ async def list_project_issue_custom_fields(
 
 
 @mcp.tool()
+async def list_project_trackers(project_id: Union[str, int]) -> List[Dict[str, Any]]:
+    """List trackers available for creating issues in a project."""
+    return await list_project_trackers_impl(
+        project_id,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def list_project_issue_categories(
+    project_id: Union[str, int],
+) -> List[Dict[str, Any]]:
+    """List issue categories available in a project."""
+    return await list_project_issue_categories_impl(
+        project_id,
+        ensure_cleanup_started=_ensure_cleanup_started,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
 async def list_redmine_versions(
     project_id: Union[str, int],
     status_filter: Optional[str] = None,
@@ -704,6 +733,30 @@ async def create_redmine_issue(
         ),
         handle_error=_handle_redmine_error,
         validation_error=ValidationError,
+    )
+
+
+@mcp.tool()
+async def create_redmine_issue_with_subtasks(
+    project_id: int,
+    parent_subject: str,
+    parent_description: str = "",
+    parent_fields: Optional[Union[Dict[str, Any], str]] = None,
+    parent_extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    subtasks: Optional[List[Dict[str, Any]]] = None,
+    stop_on_subtask_error: bool = False,
+) -> Dict[str, Any]:
+    """Create one parent issue and multiple subtasks in a single call."""
+    return await create_redmine_issue_with_subtasks_impl(
+        project_id=project_id,
+        parent_subject=parent_subject,
+        parent_description=parent_description,
+        parent_fields=parent_fields,
+        parent_extra_fields=parent_extra_fields,
+        subtasks=subtasks,
+        stop_on_subtask_error=stop_on_subtask_error,
+        create_issue_fn=create_redmine_issue,
+        wrap_content=wrap_insecure_content,
     )
 
 

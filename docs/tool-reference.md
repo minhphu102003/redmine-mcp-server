@@ -267,6 +267,53 @@ list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
 
 ---
 
+### `list_project_trackers`
+
+List trackers enabled for a project (for example Bug, Task, Feature).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+
+**Returns:** List of tracker dictionaries (`id`, `name`)
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "Bug"},
+  {"id": 2, "name": "Task"},
+  {"id": 3, "name": "Feature"}
+]
+```
+
+---
+
+### `list_project_issue_categories`
+
+List issue categories configured for a project (for example Frontend, Backend).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+
+**Returns:** List of category dictionaries (`id`, `name`, optional `assigned_to`)
+
+**Example:**
+```json
+[
+  {
+    "id": 12,
+    "name": "Backend",
+    "assigned_to": {"id": 5, "name": "Alice"}
+  },
+  {
+    "id": 13,
+    "name": "Frontend",
+    "assigned_to": null
+  }
+]
+```
+
+---
+
 ### `summarize_project_status`
 
 Provide a comprehensive summary of project status based on issue activity over a specified time period.
@@ -658,6 +705,51 @@ create_redmine_issue(
     subject="Login button not working",
     description="The login button does not respond to clicks",
     fields={"priority_id": 3, "tracker_id": 1}
+)
+```
+
+---
+
+### `create_redmine_issue_with_subtasks`
+
+Creates one parent issue and multiple subtasks in a single tool call.
+
+**Parameters:**
+- `project_id` (integer, required): Target project ID
+- `parent_subject` (string, required): Parent issue title
+- `parent_description` (string, optional): Parent issue description. Default: `""`
+- `parent_fields` (object|string, optional): Additional fields for parent issue
+- `parent_extra_fields` (object|string, optional): Additional fields merged into parent fields
+- `subtasks` (array, optional): List of subtask objects:
+  - `subject` (string, required)
+  - `description` (string, optional)
+  - `fields` (object|string, optional)
+  - `extra_fields` (object|string, optional)
+- `stop_on_subtask_error` (boolean, optional): Stop processing on first failed subtask. Default: `false`
+
+**Returns:** Dictionary containing:
+- `parent_issue`
+- `created_subtasks`
+- `failed_subtasks`
+- `summary`
+
+**Behavior notes:**
+- Each subtask is forced to use `parent_issue_id=<created_parent_id>`.
+- Parent/subtask creation follows the same validation, template, and read-only rules as `create_redmine_issue`.
+- Subtasks are processed in batches of **50** by default (`REDMINE_MCP_SUBTASK_BATCH_LIMIT`).
+
+**Example:**
+```python
+create_redmine_issue_with_subtasks(
+    project_id=1,
+    parent_subject="Implement OAuth login flow",
+    parent_description="Break down this epic into implementable tasks.",
+    parent_fields={"tracker_id": 2, "priority_id": 3},
+    subtasks=[
+        {"subject": "Design callback handler", "fields": {"tracker_id": 1}},
+        {"subject": "Implement token refresh"},
+        {"subject": "Add integration tests", "fields": {"assigned_to_id": 12}},
+    ],
 )
 ```
 

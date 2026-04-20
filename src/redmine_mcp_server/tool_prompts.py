@@ -140,6 +140,31 @@ def list_redmine_versions_prompt(project_id: Union[str, int]) -> str:
     )
 
 
+def list_project_trackers_prompt(project_id: Union[str, int]) -> str:
+    """Playbook for calling list_project_trackers."""
+    return _render_tool_prompt(
+        tool_name="list_project_trackers",
+        objective="List tracker types available for issue creation in a project.",
+        required_inputs=[f"project_id={project_id}"],
+        pre_checks=["Call before create_redmine_issue to pick a valid tracker_id."],
+        result_shape="List[tracker] with id and name.",
+    )
+
+
+def list_project_issue_categories_prompt(project_id: Union[str, int]) -> str:
+    """Playbook for calling list_project_issue_categories."""
+    return _render_tool_prompt(
+        tool_name="list_project_issue_categories",
+        objective="List available issue categories in a project.",
+        required_inputs=[f"project_id={project_id}"],
+        pre_checks=[
+            "Use before create_redmine_issue/update_redmine_issue "
+            "to select category_id."
+        ],
+        result_shape="List[category] with id, name, and optional assigned_to.",
+    )
+
+
 def list_redmine_issues_prompt(project_id: Optional[Union[str, int]] = None) -> str:
     """Playbook for calling list_redmine_issues."""
     scope = project_id if project_id is not None else "all visible projects"
@@ -184,6 +209,35 @@ def create_redmine_issue_prompt(project_id: Union[str, int], subject: str) -> st
             "Respect read-only mode when enabled.",
         ],
         result_shape="Dict with created issue payload or validation error.",
+    )
+
+
+def create_redmine_issue_with_subtasks_prompt(project_id: Union[str, int]) -> str:
+    """Playbook for calling create_redmine_issue_with_subtasks."""
+    return _render_tool_prompt(
+        tool_name="create_redmine_issue_with_subtasks",
+        objective=(
+            "Create one parent issue and multiple subtasks for complex work items."
+        ),
+        required_inputs=[
+            f"project_id={project_id}",
+            "parent_subject",
+            "subtasks list with each item containing subject (required)",
+            "Subtasks are processed in batches of 50 by default",
+        ],
+        recommended_resources=[
+            "redmine://issue-template/default",
+            f"redmine://issue-contract/{project_id}",
+        ],
+        pre_checks=[
+            "Use list_project_trackers/list_project_issue_categories "
+            "to choose valid IDs.",
+            "Each subtask can pass fields/extra_fields "
+            "and auto-inherits parent_issue_id.",
+        ],
+        result_shape=(
+            "Dict with parent_issue, created_subtasks, failed_subtasks, and summary."
+        ),
     )
 
 
@@ -566,10 +620,19 @@ _PROMPT_REGISTRY: List[tuple[str, Callable[..., str]]] = [
         "list_project_issue_custom_fields_prompt",
         list_project_issue_custom_fields_prompt,
     ),
+    ("list_project_trackers_prompt", list_project_trackers_prompt),
+    (
+        "list_project_issue_categories_prompt",
+        list_project_issue_categories_prompt,
+    ),
     ("list_redmine_versions_prompt", list_redmine_versions_prompt),
     ("list_redmine_issues_prompt", list_redmine_issues_prompt),
     ("search_redmine_issues_prompt", search_redmine_issues_prompt),
     ("create_redmine_issue_prompt", create_redmine_issue_prompt),
+    (
+        "create_redmine_issue_with_subtasks_prompt",
+        create_redmine_issue_with_subtasks_prompt,
+    ),
     ("update_redmine_issue_prompt", update_redmine_issue_prompt),
     ("list_redmine_issue_statuses_prompt", list_redmine_issue_statuses_prompt),
     (
