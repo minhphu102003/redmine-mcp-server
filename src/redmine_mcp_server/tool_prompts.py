@@ -205,7 +205,14 @@ def create_redmine_issue_prompt(project_id: Union[str, int], subject: str) -> st
             f"redmine://issue-contract/{project_id}",
         ],
         pre_checks=[
+            "Subject must follow: [module name] task name.",
+            "Ask user explicitly for: tracker_id, assigned_to_id, "
+            "category_id, fixed_version_id, estimated_hours, "
+            "start_date, due_date.",
+            "Do not auto-choose assignee/category/version/tracker "
+            "without user confirmation.",
             "Validate required custom fields from issue-contract.",
+            "If missing, apply defaults: status=New, priority=Normal, done_ratio=0.",
             "Respect read-only mode when enabled.",
         ],
         result_shape="Dict with created issue payload or validation error.",

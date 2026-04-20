@@ -34,7 +34,7 @@ async def list_redmine_issue_statuses_impl(
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all issue statuses defined in Redmine."""
     try:
-        statuses = get_client().issue_status.all()
+        statuses = await asyncio.to_thread(get_client().issue_status.all)
         return [_status_to_dict(status, wrap_content) for status in statuses]
     except Exception as e:
         return handle_error(e, "listing issue statuses", None)
@@ -49,7 +49,9 @@ async def get_redmine_issue_allowed_statuses_impl(
 ) -> Dict[str, Any]:
     """Get workflow-allowed next statuses for a specific issue."""
     try:
-        issue = get_client().issue.get(issue_id, include="allowed_statuses")
+        issue = await asyncio.to_thread(
+            get_client().issue.get, issue_id, include="allowed_statuses"
+        )
         current_status = getattr(issue, "status", None)
         raw_allowed = getattr(issue, "allowed_statuses", None) or []
 
