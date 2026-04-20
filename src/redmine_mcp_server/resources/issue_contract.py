@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from ..handler_impl import issue_fields as _issue_fields
@@ -43,7 +44,11 @@ async def build_issue_contract_payload(
         }
 
     try:
-        project = get_client().project.get(project_id, include="issue_custom_fields")
+        project = await asyncio.to_thread(
+            get_client().project.get,
+            project_id,
+            include="issue_custom_fields",
+        )
         project_custom_fields = getattr(project, "issue_custom_fields", None) or []
         custom_fields: List[Dict[str, Any]] = []
 

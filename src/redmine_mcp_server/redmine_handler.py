@@ -27,6 +27,8 @@ import os
 import asyncio  # noqa: F401
 import logging
 import re
+import time
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
@@ -332,6 +334,12 @@ cleanup_manager = CleanupTaskManager()
 # Global flag to track if cleanup has been initialized
 _cleanup_initialized = False
 
+_STATUS_ID_CACHE: Dict[str, tuple[Optional[int], float]] = {}
+_PRIORITY_ID_CACHE: Dict[str, tuple[Optional[int], float]] = {}
+_TRACKER_NAME_CACHE: Dict[tuple[str, int], tuple[Optional[str], float]] = {}
+_METADATA_CACHE_TTL_SECONDS = 300.0
+_CACHE_MISS = object()
+
 
 async def _ensure_cleanup_started():
     """Ensure cleanup task is started (lazy initialization)."""
@@ -407,6 +415,182 @@ def _normalize_insecure_text(value: Any) -> str:
     if match:
         return match.group(1).strip().lower()
     return text.lower()
+
+
+def _is_valid_date_yyyy_mm_dd(value: Any) -> bool:
+    """Return whether value is a valid YYYY-MM-DD date string."""
+    if not isinstance(value, str):
+        return False
+    try:
+        date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_non_empty_value(value: Any) -> bool:
+    """Return whether a create field value should be considered present."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _cache_get(
+    cache: Dict[Any, tuple[Any, float]],
+    key: Any,
+    ttl_seconds: float = _METADATA_CACHE_TTL_SECONDS,
+) -> Any:
+    """Get cache value if present and not expired."""
+    cached = cache.get(key)
+    if cached is None:
+        return _CACHE_MISS
+    value, stored_at = cached
+    if (time.monotonic() - stored_at) > ttl_seconds:
+        cache.pop(key, None)
+        return _CACHE_MISS
+    return value
+
+
+def _cache_set(cache: Dict[Any, tuple[Any, float]], key: Any, value: Any) -> None:
+    """Store cache value with monotonic timestamp."""
+    cache[key] = (value, time.monotonic())
+
+
+async def _resolve_status_id_by_name(status_name: str) -> Optional[int]:
+    """Resolve issue status id by display name (case-insensitive)."""
+    cache_key = status_name.strip().lower()
+    cached = _cache_get(_STATUS_ID_CACHE, cache_key)
+    if cached is not _CACHE_MISS:
+        return cached
+
+    client = _get_redmine_client(strict=False)
+    if client is None:
+        return None
+    try:
+        statuses = await asyncio.to_thread(client.issue_status.all)
+    except Exception:
+        return None
+    try:
+        iterator = iter(statuses)
+    except TypeError:
+        return None
+    expected = status_name.strip().lower()
+    for status in iterator:
+        if str(getattr(status, "name", "")).strip().lower() == expected:
+            resolved = getattr(status, "id", None)
+            _cache_set(_STATUS_ID_CACHE, cache_key, resolved)
+            return resolved
+    _cache_set(_STATUS_ID_CACHE, cache_key, None)
+    return None
+
+
+async def _resolve_priority_id_by_name(priority_name: str) -> Optional[int]:
+    """Resolve issue priority id by display name (case-insensitive)."""
+    cache_key = priority_name.strip().lower()
+    cached = _cache_get(_PRIORITY_ID_CACHE, cache_key)
+    if cached is not _CACHE_MISS:
+        return cached
+
+    client = _get_redmine_client(strict=False)
+    if client is None:
+        return None
+    try:
+        priorities = await asyncio.to_thread(client.issue_priority.all)
+    except Exception:
+        return None
+    try:
+        iterator = iter(priorities)
+    except TypeError:
+        return None
+    expected = priority_name.strip().lower()
+    for priority in iterator:
+        if str(getattr(priority, "name", "")).strip().lower() == expected:
+            resolved = getattr(priority, "id", None)
+            _cache_set(_PRIORITY_ID_CACHE, cache_key, resolved)
+            return resolved
+    _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
+    return None
+
+
+async def _prepare_create_issue_fields(
+    project_id: int,
+    subject: str,
+    issue_fields: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Apply create-issue policy: defaults + optional strict validation."""
+    issue_fields.setdefault("done_ratio", 0)
+
+    if "status_id" not in issue_fields:
+        status_id = await _resolve_status_id_by_name("New")
+        if status_id is not None:
+            issue_fields["status_id"] = status_id
+
+    if "priority_id" not in issue_fields:
+        priority_id = await _resolve_priority_id_by_name("Normal")
+        if priority_id is not None:
+            issue_fields["priority_id"] = priority_id
+
+    strict_mode = _is_true_env("REDMINE_STRICT_ISSUE_CREATION_INPUTS", "false")
+    if not strict_mode:
+        return None
+
+    if not re.match(r"^\[[^\[\]\r\n]+\]\s+.+$", str(subject or "").strip()):
+        return {
+            "error": (
+                "Issue subject must follow format '[module name] task name'. "
+                "Example: '[auth] implement refresh token flow'."
+            )
+        }
+
+    required_user_fields = [
+        "estimated_hours",
+        "start_date",
+        "due_date",
+        "tracker_id",
+        "assigned_to_id",
+        "category_id",
+        "fixed_version_id",
+    ]
+    missing_fields = [
+        field
+        for field in required_user_fields
+        if not _is_non_empty_value(issue_fields.get(field))
+    ]
+    if missing_fields:
+        return {
+            "error": (
+                "Missing required planning fields for issue creation. "
+                "Please ask user to provide these fields explicitly."
+            ),
+            "missing_fields": missing_fields,
+            "defaults_applied": {
+                "status": "New",
+                "priority": "Normal",
+                "done_ratio": 0,
+            },
+            "project_id": project_id,
+        }
+
+    if not _is_valid_date_yyyy_mm_dd(issue_fields.get("start_date")):
+        return {"error": "start_date must be in YYYY-MM-DD format."}
+    if not _is_valid_date_yyyy_mm_dd(issue_fields.get("due_date")):
+        return {"error": "due_date must be in YYYY-MM-DD format."}
+
+    start_date = date.fromisoformat(str(issue_fields.get("start_date")))
+    due_date = date.fromisoformat(str(issue_fields.get("due_date")))
+    if due_date < start_date:
+        return {"error": "due_date must be greater than or equal to start_date."}
+
+    try:
+        estimated_hours = float(issue_fields.get("estimated_hours"))
+    except (TypeError, ValueError):
+        return {"error": "estimated_hours must be a positive number."}
+    if estimated_hours <= 0:
+        return {"error": "estimated_hours must be a positive number."}
+
+    return None
 
 
 def _is_read_only_mode() -> bool:
@@ -536,6 +720,42 @@ def _map_named_custom_fields_for_update(
         update_fields,
         get_client=_get_redmine_client,
     )
+
+
+async def _resolve_project_tracker_name(
+    project_id: Union[int, str], tracker_id: Union[int, str, Any]
+) -> Optional[str]:
+    """Resolve tracker name for a project-scoped tracker id."""
+    try:
+        parsed_tracker_id = int(tracker_id)
+    except (TypeError, ValueError):
+        return None
+
+    project_key = str(project_id)
+    cache_key = (project_key, parsed_tracker_id)
+    cached = _cache_get(_TRACKER_NAME_CACHE, cache_key)
+    if cached is not _CACHE_MISS:
+        return cached
+
+    client = _get_redmine_client()
+    if client is None:
+        return None
+
+    try:
+        project = await asyncio.to_thread(
+            client.project.get, project_id, include="trackers"
+        )
+        for tracker in getattr(project, "trackers", None) or []:
+            if getattr(tracker, "id", None) == parsed_tracker_id:
+                name = getattr(tracker, "name", None)
+                if name:
+                    resolved = str(name)
+                    _cache_set(_TRACKER_NAME_CACHE, cache_key, resolved)
+                    return resolved
+    except Exception:
+        return None
+    _cache_set(_TRACKER_NAME_CACHE, cache_key, None)
+    return None
 
 
 @mcp.tool()
@@ -719,7 +939,9 @@ async def create_redmine_issue(
         read_only_error=_READ_ONLY_ERROR,
         parse_create_issue_fields=_issue_fields._parse_create_issue_fields,
         parse_optional_object_payload=_issue_fields._parse_optional_object_payload,
+        prepare_issue_fields=_prepare_create_issue_fields,
         validate_issue_template=validate_issue_description_template,
+        resolve_tracker_name=_resolve_project_tracker_name,
         get_client=_get_redmine_client,
         issue_to_dict=_issue_to_dict,
         is_required_custom_field_autofill_enabled=(

@@ -185,6 +185,14 @@ The server exposes an MCP resource at `redmine://issue-template/default` that ag
 
 When `REDMINE_ENFORCE_ISSUE_TEMPLATE=true`, `create_redmine_issue` rejects descriptions missing required headings and returns `template_resource_uri` plus `missing_sections`.
 
+Tracker-aware template variants are supported by file naming convention under
+`src/redmine_mcp_server/resources/templates/`:
+- `issue_description_bug.md` for Bug tracker
+- `issue_description_feature.md` for Feature tracker
+
+When `tracker_id` is provided on create, the server resolves tracker name in
+the target project and validates against the matching template variant when available.
+
 ### Contract Resources for Agent Planning
 
 To reduce invalid tool calls, the server exposes contract resources:
@@ -696,6 +704,21 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 **Returns:** Created issue dictionary
 
 **Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`), the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
+
+**Planning defaults:**
+- `done_ratio` defaults to `0` when omitted.
+- If available in Redmine metadata, defaults are applied for:
+  - `status_id` -> `New`
+  - `priority_id` -> `Normal`
+
+**Strict input policy (optional):**
+- Enable with `REDMINE_STRICT_ISSUE_CREATION_INPUTS=true`.
+- Enforced checks:
+  - `subject` must match: `[module name] task name`
+  - caller must provide: `tracker_id`, `assigned_to_id`, `category_id`,
+    `fixed_version_id`, `estimated_hours`, `start_date`, `due_date`
+  - `start_date`/`due_date` format `YYYY-MM-DD` and `due_date >= start_date`
+  - `estimated_hours > 0`
 
 **Example:**
 ```python

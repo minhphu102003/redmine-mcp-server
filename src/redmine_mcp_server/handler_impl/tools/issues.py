@@ -6,7 +6,7 @@ import asyncio
 import os
 import logging
 import json
-from typing import Any, Callable, Dict, List, Optional, Protocol, Type, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Type, Union
 
 from redminelib.exceptions import ValidationError
 
@@ -14,6 +14,7 @@ HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
 ]
+ResolveTrackerNameFn = Callable[[int, Any], Any]
 
 
 class IssueToDictFn(Protocol):
@@ -192,9 +193,11 @@ async def get_redmine_issue_impl(
 
         client = get_client()
         if includes:
-            issue = client.issue.get(issue_id, include=",".join(includes))
+            issue = await asyncio.to_thread(
+                client.issue.get, issue_id, include=",".join(includes)
+            )
         else:
-            issue = client.issue.get(issue_id)
+            issue = await asyncio.to_thread(client.issue.get, issue_id)
 
         result = issue_to_dict(issue, include_custom_fields=include_custom_fields)
         if include_journals:
@@ -327,8 +330,9 @@ async def list_redmine_issues_impl(
 
         logger.debug("Calling issue.filter with: %s", redmine_filters)
         client = get_client()
-        issues = client.issue.filter(**redmine_filters)
-        issues_list = list(issues)
+        issues_list = await asyncio.to_thread(
+            lambda: list(client.issue.filter(**redmine_filters))
+        )
 
         result_issues = [
             issue_to_dict_selective(issue, fields) for issue in issues_list
@@ -337,8 +341,9 @@ async def list_redmine_issues_impl(
         if include_pagination_info:
             total_count: int
             try:
-                count_query = client.issue.filter(**filters, limit=1)
-                total_count = count_query.total_count
+                total_count = await asyncio.to_thread(
+                    lambda: client.issue.filter(**filters, limit=1).total_count
+                )
                 logger.debug("Got total count from separate query: %s", total_count)
             except Exception as e:
                 logger.warning(
@@ -411,11 +416,10 @@ async def search_redmine_issues_impl(
         search_params = {"offset": offset, "limit": limit, **search_options}
 
         logger.debug("Calling issue.search with: %s", search_params)
-        results = get_client().issue.search(query, **search_params)
-        if results is None:
-            results = []
-
-        issues_list = list(results)
+        results = await asyncio.to_thread(
+            get_client().issue.search, query, **search_params
+        )
+        issues_list = [] if results is None else list(results)
         result_issues = [
             issue_to_dict_selective(issue, fields) for issue in issues_list
         ]
@@ -450,7 +454,11 @@ async def create_redmine_issue_impl(
     parse_optional_object_payload: Callable[
         [Optional[Union[Dict[str, Any], str]], str], Dict[str, Any]
     ],
-    validate_issue_template: Callable[[str], Optional[Dict[str, Any]]],
+    prepare_issue_fields: Callable[
+        [int, str, Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]
+    ],
+    validate_issue_template: Callable[[str, Optional[str]], Optional[Dict[str, Any]]],
+    resolve_tracker_name: ResolveTrackerNameFn,
     get_client: Callable[[], Any],
     issue_to_dict: IssueToDictFn,
     is_required_custom_field_autofill_enabled: Callable[[], bool],
@@ -480,7 +488,19 @@ async def create_redmine_issue_impl(
     if parsed_extra_fields:
         issue_fields.update(parsed_extra_fields)
 
-    template_error = validate_issue_template(description)
+    policy_error = await prepare_issue_fields(project_id, subject, issue_fields)
+    if policy_error is not None:
+        return policy_error
+
+    tracker_name: Optional[str] = None
+    tracker_id = issue_fields.get("tracker_id")
+    if tracker_id is not None:
+        try:
+            tracker_name = await resolve_tracker_name(project_id, tracker_id)
+        except Exception:
+            tracker_name = None
+
+    template_error = validate_issue_template(description, tracker_name)
     if template_error is not None:
         return template_error
 
