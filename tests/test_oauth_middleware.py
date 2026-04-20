@@ -613,7 +613,7 @@ class TestRevokeEndpoint:
 
     @pytest.mark.asyncio
     async def test_revoke_with_json_body_success(self, app):
-        """Token in JSON body is forwarded to Redmine and returns success."""
+        """JSON body token is rejected by default without Authorization header."""
         mock_response = MagicMock()
         mock_response.status_code = 200
 
@@ -633,14 +633,13 @@ class TestRevokeEndpoint:
                     headers={"Content-Type": "application/json"},
                 )
 
-        assert response.status_code == 200
-        assert response.json()["success"] is True
-        call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs["data"]["token"] == "json-body-token"
+        assert response.status_code == 401
+        assert response.json()["error"] == "unauthorized"
+        mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_revoke_with_form_body_success(self, app):
-        """Token in form-encoded body is forwarded to Redmine."""
+        """Form token is rejected by default without Authorization header."""
         mock_response = MagicMock()
         mock_response.status_code = 200
 
@@ -656,19 +655,20 @@ class TestRevokeEndpoint:
             ) as client:
                 response = await client.post("/revoke", data={"token": "form-token"})
 
-        assert response.status_code == 200
-        assert response.json()["success"] is True
+        assert response.status_code == 401
+        assert response.json()["error"] == "unauthorized"
+        mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_revoke_no_token_returns_400(self, app):
-        """Returns 400 when no token is provided."""
+        """Returns 401 when auth header is missing."""
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post("/revoke")
 
-        assert response.status_code == 400
-        assert response.json()["error"] == "invalid_request"
+        assert response.status_code == 401
+        assert response.json()["error"] == "unauthorized"
 
     @pytest.mark.asyncio
     async def test_revoke_redmine_unreachable_returns_502(self, app):
@@ -742,9 +742,7 @@ class TestRevokeEndpoint:
 
     @pytest.mark.asyncio
     async def test_revoke_bypasses_oauth_middleware(self, app):
-        """/revoke is accessible without OAuth middleware blocking it."""
-        # This test verifies the endpoint is in SKIP_AUTH_PATHS
-        # We don't mock httpx here - just verify no 401 from middleware
+        """/revoke remains unauthenticated by middleware but endpoint enforces auth."""
         mock_response = MagicMock()
         mock_response.status_code = 200
 
@@ -758,8 +756,41 @@ class TestRevokeEndpoint:
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                # Send token in body (not header) - if middleware ran, it would reject
                 response = await client.post("/revoke", json={"token": "test"})
 
-        # If we get here without 401, the middleware was bypassed
+        assert response.status_code == 401
+        assert response.json()["error"] == "unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_revoke_with_json_body_allowed_when_env_enabled(self, app):
+        """Allows body token only when REDMINE_ALLOW_UNAUTHENTICATED_REVOKE=true."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with (
+            patch.dict(
+                os.environ,
+                {"REDMINE_ALLOW_UNAUTHENTICATED_REVOKE": "true"},
+                clear=False,
+            ),
+            patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke",
+                    json={"token": "json-body-token"},
+                    headers={"Content-Type": "application/json"},
+                )
+
         assert response.status_code == 200
+        assert response.json()["success"] is True
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs["data"]["token"] == "json-body-token"

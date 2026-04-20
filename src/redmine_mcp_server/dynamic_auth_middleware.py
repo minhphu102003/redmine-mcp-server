@@ -1,5 +1,6 @@
 import logging
 from contextvars import ContextVar
+from urllib.parse import urlparse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -51,9 +52,11 @@ class RedmineDynamicAuthMiddleware(BaseHTTPMiddleware):
         except SecurityValidationError as e:
             # Log full details server-side for debugging, but return a generic
             # message to the client to prevent internal network topology enumeration.
-            logger.warning(
-                f"Blocked unsafe Redmine URL '{redmine_url}': {e}"
-            )
+            parsed = urlparse(redmine_url)
+            redacted_url = f"{parsed.scheme}://{parsed.hostname or 'unknown'}"
+            if parsed.port:
+                redacted_url = f"{redacted_url}:{parsed.port}"
+            logger.warning("Blocked unsafe Redmine URL '%s': %s", redacted_url, e)
             return JSONResponse(
                 status_code=403,
                 content={

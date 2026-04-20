@@ -177,9 +177,17 @@ def serve_attachment_by_id(
         if not file_path.exists():
             return {"status_code": 404, "detail": "File not found"}
 
+        header_filename = Path(str(metadata.get("original_filename", ""))).name
+        header_filename = (
+            "".join(
+                ch for ch in header_filename if ch.isprintable() and ch not in "\r\n"
+            ).strip()
+            or "attachment.bin"
+        )
+
         return FileResponse(
             path=str(file_path),
-            filename=metadata["original_filename"],
+            filename=header_filename,
             media_type=metadata.get("content_type", "application/octet-stream"),
         )
 

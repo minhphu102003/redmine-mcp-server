@@ -163,9 +163,7 @@ class SSRFSafeHTTPAdapter(requests.adapters.HTTPAdapter):
 
         # --- Single DNS resolution + validation ---
         try:
-            addr_info = socket.getaddrinfo(
-                hostname, port, proto=socket.IPPROTO_TCP
-            )
+            addr_info = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
         except socket.gaierror as exc:
             raise SecurityValidationError(
                 f"Could not resolve '{hostname}': {exc}"
@@ -203,7 +201,5 @@ class SSRFSafeHTTPAdapter(requests.adapters.HTTPAdapter):
             hostname if parsed.port is None else f"{hostname}:{parsed.port}"
         )
 
-        logger.debug(
-            "SSRFSafeHTTPAdapter: '%s' pinned to %s", hostname, pinned_ip
-        )
+        logger.debug("SSRFSafeHTTPAdapter: '%s' pinned to %s", hostname, pinned_ip)
         return super().send(request, **kwargs)

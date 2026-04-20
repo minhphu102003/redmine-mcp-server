@@ -1,0 +1,55 @@
+# Replace with your real domain.
+mcp.example.com {
+    encode gzip zstd
+
+    # TLS is automatic with Let's Encrypt when DNS points to this VPS.
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Keep access logs for botnet/fail2ban analysis.
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Block common noisy probes quickly.
+    @blocked_paths path /wp-admin* /wp-login* /xmlrpc.php* /.env* /.git* /phpmyadmin*
+    respond @blocked_paths 403
+
+    # Optional protection: uncomment and set hashed credentials for extra gate.
+    # basicauth /mcp* {
+    #     mcpuser JDJhJDE0JE8xS3d0VE1Tb3RVM1JHUmxwU3V1eWV3R0ZCN2xXQ1RaNW4xUnNQTVdSUTV2VWRPTi9pRk8=
+    # }
+
+    handle /mcp* {
+        @mcp_methods method GET POST OPTIONS
+        reverse_proxy @mcp_methods redmine-mcp-server:8000
+        respond 405
+    }
+
+    # Optional health endpoint; keep if you need external checks.
+    handle /health {
+        @health_methods method GET HEAD
+        reverse_proxy @health_methods redmine-mcp-server:8000
+        respond 405
+    }
+
+    # Attachment download endpoint (if your workflow needs it).
+    handle /files/* {
+        @file_methods method GET HEAD
+        reverse_proxy @file_methods redmine-mcp-server:8000
+        respond 405
+    }
+
+    # Hide everything else.
+    respond 404
+}

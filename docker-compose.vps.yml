@@ -1,0 +1,114 @@
+services:
+  redmine-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redmine-mcp-server
+    user: "1000:1000"
+    init: true
+    env_file:
+      - .env.docker
+    environment:
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8000"
+      PUBLIC_SCHEME: "https"
+      REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC: "false"
+      REDMINE_ALLOW_UNAUTHENTICATED_REVOKE: "false"
+      REDMINE_SECURITY_STRICT: "true"
+      ATTACHMENTS_DIR: "/app/data/attachments"
+    expose:
+      - "8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /var/tmp:rw,noexec,nosuid,nodev,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+    ulimits:
+      nproc: 512
+      nofile:
+        soft: 1024
+        hard: 2048
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - backend
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2.8
+    container_name: redmine-mcp-caddy
+    init: true
+    depends_on:
+      - redmine-mcp-server
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs/caddy:/var/log/caddy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+      - /var/tmp:rw,noexec,nosuid,nodev,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    ulimits:
+      nproc: 256
+      nofile:
+        soft: 1024
+        hard: 2048
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - edge
+      - backend
+
+networks:
+  edge:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

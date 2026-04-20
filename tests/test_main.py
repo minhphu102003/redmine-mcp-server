@@ -84,8 +84,13 @@ class TestMainFunction:
         """Test that main() configures settings and runs the server."""
         from redmine_mcp_server.main import main, app
 
-        # Call main - uvicorn.run is mocked so it won't block
-        main()
+        with patch.dict(
+            "os.environ",
+            {"REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC": "true"},
+            clear=False,
+        ):
+            # Call main - uvicorn.run is mocked so it won't block
+            main()
 
         # Verify server was started with our app (so custom routes are served)
         mock_uvicorn.run.assert_called_once()
@@ -93,3 +98,33 @@ class TestMainFunction:
         assert call_args[0][0] is app
         assert isinstance(call_args[1]["host"], str)
         assert isinstance(call_args[1]["port"], int)
+
+    @patch("redmine_mcp_server.main.uvicorn")
+    def test_main_rejects_public_legacy_by_default(self, mock_uvicorn):
+        """Legacy mode on public bind is blocked unless explicitly overridden."""
+        from redmine_mcp_server.main import main
+        from types import SimpleNamespace
+
+        parsed_args = SimpleNamespace(
+            transport="http",
+            host="0.0.0.0",
+            port=8000,
+        )
+
+        with (
+            patch("redmine_mcp_server.main.REDMINE_AUTH_MODE", "legacy"),
+            patch(
+                "argparse.ArgumentParser.parse_known_args",
+                return_value=(parsed_args, []),
+            ),
+            patch.dict(
+                "os.environ",
+                {"REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC": "false"},
+                clear=False,
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 2
+        mock_uvicorn.run.assert_not_called()

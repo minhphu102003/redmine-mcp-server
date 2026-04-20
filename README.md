@@ -107,15 +107,19 @@ The server runs on `http://localhost:8000` (for files/health) and handles MCP re
 | `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `PUBLIC_BASE_URL` | No | - | Preferred public base URL used for file download links (for example `https://mcp.example.com`) |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
 | `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
+| `PUBLIC_SCHEME` | No | `https` | URL scheme used for generated file links when `PUBLIC_BASE_URL` is not set |
 | `ATTACHMENTS_DIR` | No | `./attachments` | Directory for downloaded attachments |
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
-| `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
+| `REDMINE_SSL_CLIENT_CERT` | No | - | Path to client certificate for mutual TLS |
+| `REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC` | No | `false` | Allow running `REDMINE_AUTH_MODE=legacy` on public bind addresses (`0.0.0.0`/non-loopback). Keep `false` on VPS. |
+| `REDMINE_ALLOW_UNAUTHENTICATED_REVOKE` | No | `false` | Allow `/revoke` without `Authorization` header (trusted internal networks only). |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_ENFORCE_ISSUE_TEMPLATE` | No | `false` | Require `create_redmine_issue` descriptions to match configured template sections |
 | `REDMINE_ISSUE_DESCRIPTION_TEMPLATE` | No | built-in template | Markdown template exposed via MCP resource `redmine://issue-template/default` |
@@ -213,6 +217,10 @@ REDMINE_API_KEY=your_api_key
 # REDMINE_USERNAME=your_username
 # REDMINE_PASSWORD=your_password
 ```
+
+Security note for VPS/public deployments:
+- Avoid exposing legacy mode directly to the Internet.
+- By default, startup is blocked when legacy mode binds to a public host unless REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC=true.
 
 ### OAuth2 mode
 
@@ -543,6 +551,46 @@ Use the automated deployment script:
 chmod +x deploy.sh
 ./deploy.sh
 ```
+
+### VPS Deployment Behind Caddy (Recommended)
+
+For public Internet deployment, use `docker-compose.vps.yml` so only Caddy is exposed on ports `80/443`, while the MCP app stays internal.
+
+1. Edit [deploy/caddy/Caddyfile](./deploy/caddy/Caddyfile):
+- Replace `mcp.example.com` with your real domain.
+- Optionally enable `basicauth` for `/mcp`.
+
+2. Prepare secure env:
+```bash
+cp .env.docker.vps.example .env.docker
+```
+
+3. Set secure `.env.docker` values:
+- `REDMINE_AUTH_MODE=oauth` or `dynamic` (do not expose `legacy` publicly).
+- `REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC=false`
+- `REDMINE_ALLOW_UNAUTHENTICATED_REVOKE=false`
+- `PUBLIC_BASE_URL=https://your-domain`
+- `PUBLIC_SCHEME=https`
+- `REDMINE_SECURITY_STRICT=true`
+- `REDMINE_ALLOWED_HOSTS=your-redmine-hostname`
+
+4. Deploy:
+```bash
+docker compose -f docker-compose.vps.yml up -d --build
+```
+
+5. Verify:
+```bash
+curl -I https://your-domain/health
+curl -I https://your-domain/mcp
+docker compose -f docker-compose.vps.yml config
+```
+
+Botnet hardening checklist:
+- Keep host firewall open only for `22`, `80`, `443` (block direct `8000`).
+- Enable fail2ban (or equivalent) on SSH and reverse-proxy logs.
+- Keep Caddy and images updated (`docker compose pull` + redeploy).
+- Keep `REDMINE_MCP_READ_ONLY=true` if you only need read operations.
 
 ## Troubleshooting
 
