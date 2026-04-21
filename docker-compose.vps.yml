@@ -63,6 +63,8 @@ services:
     image: caddy:2.8
     container_name: redmine-mcp-caddy
     init: true
+    env_file:
+      - .env.docker
     depends_on:
       - redmine-mcp-server
     ports:

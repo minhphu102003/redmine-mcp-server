@@ -1,5 +1,5 @@
-# Replace with your real domain.
-mcp.example.com {
+# The domain is loaded automatically from PUBLIC_HOST in .env.docker
+{$PUBLIC_HOST} {
     encode gzip zstd
 
     # TLS is automatic with Let's Encrypt when DNS points to this VPS.
