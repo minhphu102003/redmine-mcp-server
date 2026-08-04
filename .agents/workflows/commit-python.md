@@ -1,43 +1,84 @@
----
-description: Quy trình kiểm tra, tạo nhánh & Commit Code cho Python (uv)
----
+# commit-python workflow
 
-# Quy trình tạo nhánh, kiểm tra & Push Code an toàn (Python)
+Mục tiêu: chuẩn hoá quy trình commit cho project Python, đảm bảo code sạch, test pass, message đúng convention (`feat:`, `fix:`, `chore:`...).
 
-Quy trình này áp dụng khi bạn đã code xong trên nhánh `dev` nhưng chưa commit, và muốn AI tự động sinh tên nhánh, check lỗi rồi đẩy lên.
+## 1) Chuẩn bị nhánh
 
-1. **[AI THỰC HIỆN] Phân tích code sửa đổi:**
-   - Trợ lý AI sẽ chạy `git status` và `git diff` để phân tích nội dung thay đổi.
-   - AI tự động đề xuất tên nhánh chuẩn (`feat/`, `fix/`, `chore/`, `refactor/`).
-   - Sinh ra Commit Message theo chuẩn Conventional Commits.
-   - **AI báo cáo thông tin này để bạn xác nhận trước khi thực hiện.**
-
-2. Chuyển sang nhánh mới (giữ lại các thay đổi chưa commit).
 ```bash
-git checkout -b {TÊN_NHÁNH_AI_ĐỀ_XUẤT}
+git checkout -b feat/<ten-ngan-gon>
+# hoặc fix/<ten-ngan-gon>, chore/<ten-ngan-gon>
 ```
 
-// turbo
-3. Định dạng mã nguồn bằng Black.
+## 2) Đồng bộ môi trường
+
 ```bash
-uv run black .
+uv sync
 ```
 
-// turbo
-4. Kiểm tra lỗi cú pháp bằng Flake8.
-```bash
-uv run flake8 .
-```
+## 3) Chạy quality gate trước commit
 
-// turbo
-5. Chạy bộ kiểm thử Pytest để đảm bảo không có lỗi logic. Nếu có lỗi sẽ dừng lại.
 ```bash
 uv run pytest
+# nếu có lint/typecheck thì chạy thêm
+# uv run ruff check .
+# uv run mypy .
 ```
 
-6. Add, Commit và Push lên Repository.
+## 4) Kiểm tra thay đổi
+
+```bash
+git status
+git diff
+```
+
+Checklist nhanh:
+- Không commit `.env`, secret, file tạm
+- Không có debug code thừa
+- Test liên quan đã cập nhật
+
+## 5) Commit theo convention
+
 ```bash
 git add .
-git commit -m "{COMMIT_MESSAGE_AI_SINH_RA}"
-git push -u origin {TÊN_NHÁNH_AI_ĐỀ_XUẤT}
+git commit -m "feat: <mo-ta-ngan-gon>"
 ```
+
+Ví dụ:
+- `feat: add answer question use case`
+- `fix: handle empty knowledge base safely`
+- `chore: reorganize app into clean architecture layers`
+
+## 6) Push và tạo PR
+
+```bash
+git push -u origin <branch-name>
+```
+
+Sau đó mở Pull Request vào `main` (không push thẳng `main`).
+
+## 7) Mẫu PR description
+
+```md
+## Summary
+- ...
+
+## Changes
+- ...
+
+## Verification
+- [x] uv run pytest
+- [ ] lint/typecheck (nếu có)
+
+## Risks
+- ...
+```
+
+## 8) Nếu cần amend commit
+
+```bash
+git add .
+git commit --amend
+git push --force-with-lease
+```
+
+> Chỉ dùng `--force-with-lease` trên nhánh feature của chính bạn.
