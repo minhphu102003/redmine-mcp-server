@@ -388,21 +388,29 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user.
 - `priority_id` (integer, optional): Filter by priority ID
 - `fixed_version_id` (integer, optional): Filter by target version/milestone ID
+- `parent_id` (integer, optional): Filter by parent issue ID — list subtasks of a specific task
 - `sort` (string, optional): Sort order (e.g., `"updated_on:desc"`)
 - `limit` (integer, optional): Maximum issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`
 - `fields` (array of strings, optional): List of field names to include in results. Default: all fields
-  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
+  - Available fields: `id`, `subject`, `description`, `project`, `parent`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
   - Special values: `["*"]` or `["all"]` for all fields
 
-**Returns:** List of issue dictionaries, or structured response with pagination metadata
+**Returns:** List of issue dictionaries, or structured response with pagination metadata.
+Each issue includes a `parent` key (`{"id", "subject"}` or `None`) so task
+hierarchy is visible.
 
 **Examples:**
 
 List all issues in a project:
 ```python
 list_redmine_issues(project_id="my-project")
+```
+
+List all subtasks of a task:
+```python
+list_redmine_issues(parent_id=42)
 ```
 
 Filter by multiple criteria:
@@ -566,10 +574,34 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 - `extra_fields` (object|string, optional): Additional Redmine fields as:
   - an object (`{"priority_id": 3, "tracker_id": 1}`), or
   - a serialized JSON object string
+- `parent_issue_id` (integer or string, optional): ID of an existing task to
+  create this issue as a subtask of. When omitted, a standalone task is created.
 
-**Returns:** Created issue dictionary
+**Returns:** Created issue dictionary (includes a `parent` key with the parent
+issue's `id`/`subject`, or `None` for standalone tasks).
 
 **Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`), the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
+
+**Creating a subtask of an existing task:**
+- When `parent_issue_id` is provided, the server first fetches the parent and
+  validates:
+  - the parent exists (otherwise a clear error is returned),
+  - the parent belongs to the same project (subtasks must share the parent's
+    project),
+  - the parent is not itself a subtask (Redmine supports at most two nesting
+    levels).
+- Only then is the issue created with `parent_issue_id` set.
+
+```python
+# Create a subtask under an existing task
+create_redmine_issue(
+    project_id=1,
+    subject="Implement refresh token flow",
+    description="Details...",
+    fields={"tracker_id": 2, "assigned_to_id": 5},
+    parent_issue_id=42,
+)
+```
 
 **Planning defaults:**
 - `done_ratio` defaults to `0` when omitted.

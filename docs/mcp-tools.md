@@ -268,6 +268,7 @@ List Redmine issues with flexible filtering and pagination support.
 | `assigned_to_id` | str/int | `None` | Filter by assignee (ID or `"me"`) |
 | `priority_id` | int | `None` | Filter by priority ID |
 | `fixed_version_id` | int | `None` | Filter by target version ID |
+| `parent_id` | int | `None` | Filter by parent issue ID (list subtasks of a task) |
 | `sort` | str | `None` | Sort expression (e.g. `"priority:desc"`) |
 | `limit` | int | `25` | Page size |
 | `offset` | int | `0` | Page offset |
@@ -310,6 +311,7 @@ Create a new issue in Redmine.
 | `description` | str | `""` | Issue description |
 | `fields` | dict/str | `None` | Structured fields (tracker, priority, assignee, custom fields...) |
 | `extra_fields` | dict/str | `None` | Extra custom fields |
+| `parent_issue_id` | int/str | `None` | ID of an existing task to create this issue as a subtask of (must be in the same project) |
 
 Behavior:
 
@@ -318,6 +320,11 @@ Behavior:
   `REDMINE_ENFORCE_ISSUE_TEMPLATE=true` (see `redmine://issue-template/default`).
 - Autofills required custom fields when autofill is enabled.
 - Supports strict input validation via `REDMINE_STRICT_ISSUE_CREATION_INPUTS`.
+- With `parent_issue_id`: the parent is fetched and validated first (must exist,
+  belong to the same project, and not already be a subtask — Redmine supports at
+  most two nesting levels). Without it, a standalone task is created.
+- Each returned issue includes a `parent` key (`{"id", "subject"}` or `None`),
+  so hierarchy is visible in results.
 
 **Returns:** `Dict` with the created issue.
 

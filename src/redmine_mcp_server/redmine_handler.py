@@ -30,9 +30,10 @@ import re
 import time
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from dotenv import load_dotenv
+from pydantic import Field
 
 # Load environment variables from .env file as early as possible
 # so that modules like .security (imported later) see the correct values.
@@ -601,8 +602,10 @@ def _is_read_only_mode() -> bool:
 
 
 _READ_ONLY_ERROR = {
-    "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
-    "Write operations are disabled."
+    "error": (
+        "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
+        "Write operations are disabled."
+    )
 }
 
 
@@ -762,17 +765,56 @@ async def _resolve_project_tracker_name(
 
 @mcp.tool()
 async def get_redmine_issue(
-    issue_id: int,
-    include_journals: bool = True,
-    include_attachments: bool = True,
-    include_custom_fields: bool = True,
-    journal_limit: Optional[int] = None,
-    journal_offset: int = 0,
-    include_watchers: bool = False,
-    include_relations: bool = False,
-    include_children: bool = False,
+    issue_id: Annotated[int, Field(description="ID of the Redmine issue to retrieve.")],
+    include_journals: Annotated[
+        bool,
+        Field(
+            description="Include the issue's comment/journal history. Defaults to True."
+        ),
+    ] = True,
+    include_attachments: Annotated[
+        bool,
+        Field(
+            description="Include attached files and their metadata. Defaults to True."
+        ),
+    ] = True,
+    include_custom_fields: Annotated[
+        bool,
+        Field(description="Include custom field values. Defaults to True."),
+    ] = True,
+    journal_limit: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Maximum number of journal entries to return (most recent). Omit for"
+                " all."
+            )
+        ),
+    ] = None,
+    journal_offset: Annotated[
+        int,
+        Field(description="Skip this many journal entries (for journal pagination)."),
+    ] = 0,
+    include_watchers: Annotated[
+        bool,
+        Field(description="Include watcher users of the issue."),
+    ] = False,
+    include_relations: Annotated[
+        bool,
+        Field(description="Include issue relations (related/linked issues)."),
+    ] = False,
+    include_children: Annotated[
+        bool,
+        Field(description="Include subtasks of the issue."),
+    ] = False,
 ) -> Dict[str, Any]:
-    """Retrieve a specific Redmine issue by ID."""
+    """Retrieve a single Redmine issue by ID with optional detail sections.
+
+    Use when you need the full picture of one task: description, project,
+    tracker, status, assignee, priority, dates, custom fields, files and
+    journals. Returns a dict including a parent key (the parent task, or
+    null for standalone issues).
+    """
     return await get_redmine_issue_impl(
         issue_id,
         include_journals,
@@ -794,7 +836,11 @@ async def get_redmine_issue(
 
 @mcp.tool()
 async def list_redmine_projects() -> List[Dict[str, Any]]:
-    """Lists all accessible projects in Redmine."""
+    """List all projects the current credential can access.
+
+    Call this first to discover available project IDs/identifiers before
+    creating issues or fetching project context.
+    """
     return await list_redmine_projects_impl(
         get_client=_get_redmine_client,
         handle_error=_handle_redmine_error,
@@ -803,10 +849,27 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 @mcp.tool()
 async def get_project_issue_context(
-    project_id: Union[str, int],
-    tracker_id: Optional[Union[str, int]] = None,
+    project_id: Annotated[
+        Union[str, int],
+        Field(
+            description="ID or identifier of the Redmine project to fetch context for."
+        ),
+    ],
+    tracker_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Restrict custom fields to this tracker only. Omit for all trackers."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Fetch complete issue-creation context for a project in one call."""
+    """Fetch complete issue-creation context for a project in one call.
+
+    Returns project info, trackers, categories, members, versions and custom
+    fields. Call this once before create_redmine_issue to learn the valid
+    tracker/priority/assignee/version values for that project.
+    """
     return await get_project_issue_context_impl(
         project_id,
         tracker_id,
@@ -823,20 +886,111 @@ async def get_project_issue_context(
 
 @mcp.tool()
 async def list_redmine_issues(
-    project_id: Optional[Union[int, str]] = None,
-    status_id: Optional[int] = None,
-    tracker_id: Optional[int] = None,
-    assigned_to_id: Optional[Union[int, str]] = None,
-    priority_id: Optional[int] = None,
-    fixed_version_id: Optional[int] = None,
-    sort: Optional[str] = None,
-    limit: Optional[int] = 25,
-    offset: int = 0,
-    include_pagination_info: bool = False,
-    fields: Optional[List[str]] = None,
-    filters: Optional[Dict[str, Any]] = None,
+    project_id: Annotated[
+        Optional[Union[int, str]],
+        Field(
+            description=(
+                "ID or identifier of the project to list issues from. Omit for all"
+                " accessible projects."
+            )
+        ),
+    ] = None,
+    status_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Filter by issue status ID (e.g. 1=New, 2=In Progress, 3=Resolved,"
+                " 5=Closed). Omit for any status."
+            )
+        ),
+    ] = None,
+    tracker_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Filter by tracker ID (e.g. 1=Bug, 2=Feature, 3=Task). Omit for any"
+                " tracker."
+            )
+        ),
+    ] = None,
+    assigned_to_id: Annotated[
+        Optional[Union[int, str]],
+        Field(description="Filter by assignee user ID. Omit for any assignee."),
+    ] = None,
+    priority_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Filter by priority ID (e.g. 3=Normal, 4=High, 5=Urgent). Omit for any"
+                " priority."
+            )
+        ),
+    ] = None,
+    fixed_version_id: Annotated[
+        Optional[int],
+        Field(
+            description="Filter by target version/milestone ID. Omit for any version."
+        ),
+    ] = None,
+    parent_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Only list issues whose parent task has this ID (i.e. its subtasks)."
+            )
+        ),
+    ] = None,
+    sort: Annotated[
+        Optional[str],
+        Field(
+            description="Sort order, e.g. 'priority:desc', 'updated_on:desc', 'id:asc'."
+        ),
+    ] = None,
+    limit: Annotated[
+        Optional[int],
+        Field(
+            description="Maximum number of issues to return (1-100). Defaults to 25."
+        ),
+    ] = 25,
+    offset: Annotated[
+        int,
+        Field(description="Pagination offset — skip this many issues."),
+    ] = 0,
+    include_pagination_info: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True, return {issues, total_count, limit, offset} instead of a"
+                " plain list."
+            )
+        ),
+    ] = False,
+    fields: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Issue fields to include per issue, e.g. ['id', 'subject', 'status']."
+                " Omit for the default set."
+            )
+        ),
+    ] = None,
+    filters: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description=(
+                "Extra Redmine query filters as a dict, e.g. {'parent_id': 123} or"
+                " {'category_id': 4}."
+            )
+        ),
+    ] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List Redmine issues with flexible filtering and pagination support."""
+    """List issues with flexible filters and pagination.
+
+    Use when you need to find tasks by project, status, assignee, priority or
+    version, or list the subtasks of a task via parent_id. Returns a list of
+    issues; every issue carries a parent key describing its parent task (null
+    for standalone issues).
+    """
     return await list_redmine_issues_impl(
         project_id,
         status_id,
@@ -844,6 +998,7 @@ async def list_redmine_issues(
         assigned_to_id,
         priority_id,
         fixed_version_id,
+        parent_id,
         sort,
         limit,
         offset,
@@ -859,16 +1014,66 @@ async def list_redmine_issues(
 
 @mcp.tool()
 async def search_redmine_issues(
-    query: str,
-    limit: Optional[int] = 25,
-    offset: int = 0,
-    include_pagination_info: bool = False,
-    fields: Optional[List[str]] = None,
-    scope: Optional[str] = None,
-    open_issues: bool = False,
-    options: Optional[Dict[str, Any]] = None,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Free-text search query matched against subject, description and notes."
+            )
+        ),
+    ],
+    limit: Annotated[
+        Optional[int],
+        Field(
+            description="Maximum number of issues to return (1-100). Defaults to 25."
+        ),
+    ] = 25,
+    offset: Annotated[
+        int,
+        Field(description="Pagination offset — skip this many issues."),
+    ] = 0,
+    include_pagination_info: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True, return {issues, total_count, limit, offset} instead of a"
+                " plain list."
+            )
+        ),
+    ] = False,
+    fields: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Issue fields to include per issue, e.g. ['id', 'subject', 'status']."
+                " Omit for the default set."
+            )
+        ),
+    ] = None,
+    scope: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Search scope: 'all' (default), 'my_project' (issues in your projects),"
+                " 'mine' (issues assigned to you)."
+            )
+        ),
+    ] = None,
+    open_issues: Annotated[
+        bool,
+        Field(description="When True, restrict results to open issues only."),
+    ] = False,
+    options: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Extra Redmine search options, e.g. {'titles_only': True}."),
+    ] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Search Redmine issues matching a query string with pagination support."""
+    """Search issues by free-text query with pagination support.
+
+    Use when the user asks to find tasks by keywords rather than by filters.
+    Returns a list of matching issues; every issue carries a parent key
+    describing its parent task (null for standalone issues).
+    """
     return await search_redmine_issues_impl(
         query,
         limit,
@@ -886,19 +1091,71 @@ async def search_redmine_issues(
 
 @mcp.tool()
 async def create_redmine_issue(
-    project_id: int,
-    subject: str,
-    description: str = "",
-    fields: Optional[Union[Dict[str, Any], str]] = None,
-    extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    project_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the project the issue is created in. Use list_redmine_projects"
+                " or get_project_issue_context to find it."
+            )
+        ),
+    ],
+    subject: Annotated[
+        str,
+        Field(description="Title of the issue."),
+    ],
+    description: Annotated[
+        str,
+        Field(
+            description=(
+                "Body/description of the issue. Supports Redmine Textile/Wiki markup."
+            )
+        ),
+    ] = "",
+    fields: Annotated[
+        Optional[Union[Dict[str, Any], str]],
+        Field(
+            description=(
+                "Structured issue fields: tracker_id, priority_id, assigned_to_id,"
+                " category_id, fixed_version_id, estimated_hours, start_date/due_date"
+                " (YYYY-MM-DD), done_ratio, and custom field values via"
+                " 'custom_fields': [{'id': X, 'value': Y}]."
+            )
+        ),
+    ] = None,
+    extra_fields: Annotated[
+        Optional[Union[Dict[str, Any], str]],
+        Field(
+            description=(
+                "Advanced fields passed through to Redmine that are not in `fields`."
+                " Rarely needed."
+            )
+        ),
+    ] = None,
+    parent_issue_id: Annotated[
+        Optional[Union[int, str]],
+        Field(
+            description=(
+                "Create this issue as a subtask of the task with this ID. The parent"
+                " must exist, be in the same project, and not itself be a subtask."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine."""
+    """Create a new issue, standalone or as a subtask of an existing task.
+
+    Use when the user asks to create/track a task. Pass parent_issue_id to
+    create the issue as a child of an existing task. Respects the issue
+    template when enforced by policy; returns the created issue including
+    its parent key.
+    """
     return await create_redmine_issue_impl(
         project_id,
         subject,
         description,
         fields,
         extra_fields,
+        parent_issue_id,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         parse_create_issue_fields=_issue_fields._parse_create_issue_fields,
@@ -924,15 +1181,60 @@ async def create_redmine_issue(
 
 @mcp.tool()
 async def create_redmine_issue_with_subtasks(
-    project_id: int,
-    parent_subject: str,
-    parent_description: str = "",
-    parent_fields: Optional[Union[Dict[str, Any], str]] = None,
-    parent_extra_fields: Optional[Union[Dict[str, Any], str]] = None,
-    subtasks: Optional[List[Dict[str, Any]]] = None,
-    stop_on_subtask_error: bool = False,
+    project_id: Annotated[
+        int,
+        Field(description="ID of the project for the parent issue and all subtasks."),
+    ],
+    parent_subject: Annotated[
+        str,
+        Field(description="Title of the parent issue."),
+    ],
+    parent_description: Annotated[
+        str,
+        Field(description="Body of the parent issue (Textile/Wiki markup supported)."),
+    ] = "",
+    parent_fields: Annotated[
+        Optional[Union[Dict[str, Any], str]],
+        Field(
+            description=(
+                "Structured fields for the parent issue (same keys as"
+                " create_redmine_issue.fields)."
+            )
+        ),
+    ] = None,
+    parent_extra_fields: Annotated[
+        Optional[Union[Dict[str, Any], str]],
+        Field(
+            description=(
+                "Advanced fields passed through to Redmine for the parent issue."
+            )
+        ),
+    ] = None,
+    subtasks: Annotated[
+        Optional[List[Dict[str, Any]]],
+        Field(
+            description=(
+                "List of subtask dicts, each with 'subject' (required) and optional"
+                " 'description', 'fields', 'extra_fields'."
+            )
+        ),
+    ] = None,
+    stop_on_subtask_error: Annotated[
+        bool,
+        Field(
+            description=(
+                "When True, abort remaining subtasks if one fails; otherwise continue"
+                " and report per-subtask results."
+            )
+        ),
+    ] = False,
 ) -> Dict[str, Any]:
-    """Create one parent issue and multiple subtasks in a single call."""
+    """Create one parent issue and multiple subtasks in a single call.
+
+    Use for work items that decompose into several child tasks. Each subtask
+    is created under the new parent in the same project; returns the parent
+    issue with per-subtask results.
+    """
     return await create_redmine_issue_with_subtasks_impl(
         project_id=project_id,
         parent_subject=parent_subject,
@@ -947,8 +1249,27 @@ async def create_redmine_issue_with_subtasks(
 
 
 @mcp.tool()
-async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
-    """Update an existing Redmine issue."""
+async def update_redmine_issue(
+    issue_id: Annotated[int, Field(description="ID of the issue to update.")],
+    fields: Annotated[
+        Dict[str, Any],
+        Field(
+            description=(
+                "Issue attributes to change, e.g. {'status_id': 3, 'assigned_to_id': 5,"
+                " 'priority_id': 4, 'subject': '...', 'description': '...',"
+                " 'fixed_version_id': ..., 'estimated_hours': ..., 'start_date':"
+                " 'YYYY-MM-DD', 'due_date': ..., 'done_ratio': ..., 'parent_issue_id':"
+                " ..., 'notes': 'comment to add', 'custom_fields': [{'id': X, 'value':"
+                " Y}]}. Omitted keys stay unchanged."
+            )
+        ),
+    ],
+) -> Dict[str, Any]:
+    """Update an existing Redmine issue.
+
+    Use to change status/assignee/priority/dates, add comments, or reparent
+    a task. Returns the updated issue including its parent key.
+    """
     return await update_redmine_issue_impl(
         issue_id,
         fields,
@@ -982,8 +1303,17 @@ async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str,
 
 
 @mcp.tool()
-async def get_redmine_issue_allowed_statuses(issue_id: int) -> Dict[str, Any]:
-    """Get allowed status transitions for a specific issue."""
+async def get_redmine_issue_allowed_statuses(
+    issue_id: Annotated[
+        int,
+        Field(description="ID of the issue whose allowed status transitions to fetch."),
+    ],
+) -> Dict[str, Any]:
+    """Get allowed status transitions for a specific issue.
+
+    Use before changing an issue's status with update_redmine_issue to learn
+    which statuses are reachable from the issue's current status.
+    """
     return await get_redmine_issue_allowed_statuses_impl(
         issue_id,
         get_client=_get_redmine_client,
@@ -994,12 +1324,37 @@ async def get_redmine_issue_allowed_statuses(issue_id: int) -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_redmine_project_workflow(
-    project_id: Union[str, int],
-    tracker_id: Optional[int] = None,
-    status_id: Optional[Union[int, str]] = None,
-    sample_limit: int = 25,
+    project_id: Annotated[
+        Union[str, int],
+        Field(description="ID or identifier of the project whose workflow to infer."),
+    ],
+    tracker_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Restrict the workflow sample to one tracker. Omit for all trackers."
+            )
+        ),
+    ] = None,
+    status_id: Annotated[
+        Optional[Union[int, str]],
+        Field(description="Restrict the workflow sample to issues with this status."),
+    ] = None,
+    sample_limit: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum number of issues sampled to infer the workflow. Defaults"
+                " to 25."
+            )
+        ),
+    ] = 25,
 ) -> Dict[str, Any]:
-    """Infer project workflow from issue-level allowed statuses (sample-based)."""
+    """Infer project workflow from issue-level allowed statuses (sample-based).
+
+    Use to get an approximate status-transition map for a project when the
+    exact per-status workflow is not available.
+    """
     return await get_redmine_project_workflow_impl(
         project_id,
         tracker_id,
@@ -1013,18 +1368,67 @@ async def get_redmine_project_workflow(
 
 @mcp.tool()
 async def get_issue_workflow_context(
-    mode: str = "issue",
-    issue_id: Optional[int] = None,
-    project_id: Optional[Union[str, int]] = None,
-    tracker_id: Optional[int] = None,
-    status_id: Optional[Union[int, str]] = None,
-    sample_limit: int = 25,
-    target_status_id: Optional[int] = None,
-    target_status_name: Optional[str] = None,
+    mode: Annotated[
+        Literal["issue", "transition_check", "project", "statuses"],
+        Field(
+            description=(
+                "Which workflow data to fetch: 'issue' = allowed transitions for an"
+                " issue; 'transition_check' = verify one specific target status;"
+                " 'project' = workflow snapshot for a project; 'statuses' = list all"
+                " statuses."
+            )
+        ),
+    ] = "issue",
+    issue_id: Annotated[
+        Optional[int],
+        Field(
+            description="Issue ID, required for modes 'issue' and 'transition_check'."
+        ),
+    ] = None,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Project ID or identifier, required for mode 'project'."),
+    ] = None,
+    tracker_id: Annotated[
+        Optional[int],
+        Field(description="Restrict the 'project' workflow snapshot to one tracker."),
+    ] = None,
+    status_id: Annotated[
+        Optional[Union[int, str]],
+        Field(
+            description=(
+                "Restrict the 'project' workflow snapshot to issues with this status."
+            )
+        ),
+    ] = None,
+    sample_limit: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum number of issues sampled for mode 'project'. Defaults to 25."
+            )
+        ),
+    ] = 25,
+    target_status_id: Annotated[
+        Optional[int],
+        Field(description="Target status ID to verify in mode 'transition_check'."),
+    ] = None,
+    target_status_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Target status name to verify in mode 'transition_check' (matched"
+                " case-insensitively)."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
     """Consolidated workflow context tool.
 
-    Supports statuses, issue transitions, and project workflow snapshots.
+    One entry point for status and workflow questions: pick the mode that
+    matches the task ('issue', 'transition_check', 'project' or 'statuses').
+    Returns mode-specific data; this tool replaces the legacy status/workflow
+    tools.
     """
     resolved_mode = (mode or "issue").strip().lower()
 
@@ -1046,7 +1450,7 @@ async def get_issue_workflow_context(
     if issue_id is None:
         return {
             "error": (
-                "issue_id is required for mode='issue' and " "mode='transition_check'."
+                "issue_id is required for mode='issue' and mode='transition_check'."
             )
         }
 
@@ -1110,21 +1514,85 @@ async def get_issue_workflow_context(
 
 @mcp.tool()
 async def manage_time_entries(
-    action: str,
-    time_entry_id: Optional[int] = None,
-    hours: Optional[float] = None,
-    project_id: Optional[Union[str, int]] = None,
-    issue_id: Optional[int] = None,
-    user_id: Optional[Union[str, int]] = None,
-    activity_id: Optional[int] = None,
-    comments: Optional[str] = None,
-    spent_on: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    limit: int = 25,
-    offset: int = 0,
+    action: Annotated[
+        Literal["list", "create", "update", "activities"],
+        Field(
+            description=(
+                "Operation to perform: 'list' time entries for a range, 'create' a new"
+                " entry, 'update' an existing entry, 'activities' list valid activity"
+                " types."
+            )
+        ),
+    ],
+    time_entry_id: Annotated[
+        Optional[int],
+        Field(description="ID of the entry to update (required when action='update')."),
+    ] = None,
+    hours: Annotated[
+        Optional[float],
+        Field(description="Hours spent, e.g. 1.5 (required when action='create')."),
+    ] = None,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Project ID or identifier for the entry (required when action='create'"
+                " and issue_id is not set)."
+            )
+        ),
+    ] = None,
+    issue_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Issue ID the entry is logged against (either project_id or issue_id is"
+                " required for 'create')."
+            )
+        ),
+    ] = None,
+    user_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Filter by user ID when action='list'."),
+    ] = None,
+    activity_id: Annotated[
+        Optional[int],
+        Field(
+            description="Activity type ID (see action='activities' for valid values)."
+        ),
+    ] = None,
+    comments: Annotated[
+        Optional[str],
+        Field(description="Work description for the entry."),
+    ] = None,
+    spent_on: Annotated[
+        Optional[str],
+        Field(description="Date the work was done (YYYY-MM-DD). Defaults to today."),
+    ] = None,
+    from_date: Annotated[
+        Optional[str],
+        Field(description="Start of the range when action='list' (YYYY-MM-DD)."),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Field(description="End of the range when action='list' (YYYY-MM-DD)."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(
+            description="Maximum number of entries when action='list'. Defaults to 25."
+        ),
+    ] = 25,
+    offset: Annotated[
+        int,
+        Field(description="Pagination offset when action='list'."),
+    ] = 0,
 ) -> Dict[str, Any]:
-    """Consolidated time-entry tool (list/create/update/activities)."""
+    """Consolidated time-entry tool (list/create/update/activities).
+
+    Use for all time logging: querying what was logged, adding hours, fixing
+    entries, and discovering valid activity types. Returns {'action': ...,
+    'data': ...}.
+    """
     resolved_action = (action or "").strip().lower()
 
     if resolved_action == "list":
@@ -1173,9 +1641,22 @@ async def manage_time_entries(
 
 @mcp.tool()
 async def get_redmine_attachment_download_url(
-    attachment_id: int,
+    attachment_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the attachment (found in get_redmine_issue results or issue"
+                " journals)."
+            )
+        ),
+    ],
 ) -> Dict[str, Any]:
-    """Get HTTP download URL for a Redmine attachment."""
+    """Get an HTTP download URL for a Redmine attachment.
+
+    Use to obtain a temporary download link for an attached file; the file is
+    fetched through this server so downloads work even when the Redmine
+    instance is not directly reachable by the agent.
+    """
     return await get_redmine_attachment_download_url_impl(
         attachment_id,
         ensure_cleanup_started=_ensure_cleanup_started,
@@ -1185,8 +1666,21 @@ async def get_redmine_attachment_download_url(
 
 
 @mcp.tool()
-async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str, Any]:
-    """Provide a summary of project status over the specified time period."""
+async def summarize_project_status(
+    project_id: Annotated[
+        int,
+        Field(description="ID of the project to summarize."),
+    ],
+    days: Annotated[
+        int,
+        Field(description="Look back window in days for the analysis. Defaults to 30."),
+    ] = 30,
+) -> Dict[str, Any]:
+    """Provide a summary of project status over the specified time period.
+
+    Use for high-level project health questions: issue counts by status,
+    recent activity and trends in the given window.
+    """
     return await summarize_project_status_impl(
         project_id,
         days,
@@ -1199,15 +1693,57 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
 
 @mcp.tool()
 async def generate_scrum_report(
-    report_type: str = "daily",
-    user_id: Optional[Union[str, int]] = None,
-    project_id: Optional[Union[str, int]] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    top_n_items: int = 7,
-    include_entries: bool = False,
+    report_type: Annotated[
+        Literal["daily", "weekly", "custom"],
+        Field(
+            description=(
+                "Report granularity: 'daily' for a day, 'weekly' for the last week,"
+                " 'custom' requires from_date and to_date."
+            )
+        ),
+    ] = "daily",
+    user_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Restrict the report to one user (defaults to the authenticated user)."
+            )
+        ),
+    ] = None,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Restrict the report to one project."),
+    ] = None,
+    from_date: Annotated[
+        Optional[str],
+        Field(
+            description="Start date (YYYY-MM-DD), required when report_type='custom'."
+        ),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Field(description="End date (YYYY-MM-DD), required when report_type='custom'."),
+    ] = None,
+    top_n_items: Annotated[
+        int,
+        Field(
+            description=(
+                "How many top issues/tasks to include in the report. Defaults to 7."
+            )
+        ),
+    ] = 7,
+    include_entries: Annotated[
+        bool,
+        Field(
+            description="When True, include the raw time entries in the report output."
+        ),
+    ] = False,
 ) -> Dict[str, Any]:
-    """Generate daily/weekly scrum report drafts from Redmine time entries."""
+    """Generate daily/weekly scrum report drafts from Redmine time entries.
+
+    Use for standup/daily-status questions: returns a draft report grouping
+    time entries by task with summaries.
+    """
     return await generate_scrum_report_impl(
         report_type=report_type,
         user_id=user_id,
@@ -1225,19 +1761,84 @@ async def generate_scrum_report(
 
 @mcp.tool()
 async def export_weekly_report_markdown(
-    user_id: Optional[Union[str, int]] = None,
-    project_id: Optional[Union[str, int]] = None,
-    top_n_items: int = 7,
-    template_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
-    file_name: Optional[str] = None,
-    unit_name: str = "TRUNG TÂM CSE",
-    reporter_name: str = "NGƯỜI BÁO CÁO",
-    location: str = "Đà Nẵng",
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    user_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Restrict the report to one user (defaults to the authenticated user)."
+            )
+        ),
+    ] = None,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Restrict the report to one project."),
+    ] = None,
+    top_n_items: Annotated[
+        int,
+        Field(description="How many top items to include. Defaults to 7."),
+    ] = 7,
+    template_path: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Path to a custom markdown template file. Omit for the built-in"
+                " template."
+            )
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Directory where the exported file is written. Defaults to the server's"
+                " reports directory."
+            )
+        ),
+    ] = None,
+    file_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Output file name (without extension). Defaults to an auto-generated"
+                " name."
+            )
+        ),
+    ] = None,
+    unit_name: Annotated[
+        str,
+        Field(
+            description=(
+                "Unit/organization name shown in the report header. Defaults to 'TRUNG"
+                " TÂM CSE'."
+            )
+        ),
+    ] = "TRUNG TÂM CSE",
+    reporter_name: Annotated[
+        str,
+        Field(
+            description=(
+                "Reporter name shown in the report. Defaults to 'NGƯỜI BÁO CÁO'."
+            )
+        ),
+    ] = "NGƯỜI BÁO CÁO",
+    location: Annotated[
+        str,
+        Field(description="Location shown in the report. Defaults to 'Đà Nẵng'."),
+    ] = "Đà Nẵng",
+    from_date: Annotated[
+        Optional[str],
+        Field(description="Custom start date (YYYY-MM-DD). Omit for the current week."),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Field(description="Custom end date (YYYY-MM-DD). Omit for the current week."),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Export weekly report markdown file from scrum report analytics."""
+    """Export the weekly report as a markdown file on the server.
+
+    Use when the user asks for a weekly report document rather than a chat
+    summary. Returns the path to the generated file.
+    """
     return await export_weekly_report_markdown_impl(
         generate_scrum_report_fn=generate_scrum_report,
         user_id=user_id,
@@ -1257,19 +1858,83 @@ async def export_weekly_report_markdown(
 
 @mcp.tool()
 async def export_weekly_report_docx(
-    user_id: Optional[Union[str, int]] = None,
-    project_id: Optional[Union[str, int]] = None,
-    top_n_items: int = 7,
-    template_path: Optional[str] = None,
-    output_dir: Optional[str] = None,
-    file_name: Optional[str] = None,
-    unit_name: str = "TRUNG TÂM CSE",
-    reporter_name: str = "NGƯỜI BÁO CÁO",
-    location: str = "Đà Nẵng",
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    user_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Restrict the report to one user (defaults to the authenticated user)."
+            )
+        ),
+    ] = None,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Restrict the report to one project."),
+    ] = None,
+    top_n_items: Annotated[
+        int,
+        Field(description="How many top items to include. Defaults to 7."),
+    ] = 7,
+    template_path: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Path to a custom docx template file. Omit for the built-in template."
+            )
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Directory where the exported file is written. Defaults to the server's"
+                " reports directory."
+            )
+        ),
+    ] = None,
+    file_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Output file name (without extension). Defaults to an auto-generated"
+                " name."
+            )
+        ),
+    ] = None,
+    unit_name: Annotated[
+        str,
+        Field(
+            description=(
+                "Unit/organization name shown in the report header. Defaults to 'TRUNG"
+                " TÂM CSE'."
+            )
+        ),
+    ] = "TRUNG TÂM CSE",
+    reporter_name: Annotated[
+        str,
+        Field(
+            description=(
+                "Reporter name shown in the report. Defaults to 'NGƯỜI BÁO CÁO'."
+            )
+        ),
+    ] = "NGƯỜI BÁO CÁO",
+    location: Annotated[
+        str,
+        Field(description="Location shown in the report. Defaults to 'Đà Nẵng'."),
+    ] = "Đà Nẵng",
+    from_date: Annotated[
+        Optional[str],
+        Field(description="Custom start date (YYYY-MM-DD). Omit for the current week."),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Field(description="Custom end date (YYYY-MM-DD). Omit for the current week."),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Export weekly report as .docx for client-facing sharing."""
+    """Export the weekly report as a .docx file for client-facing sharing.
+
+    Use when the user asks for a Word document version of the weekly report.
+    Returns the path to the generated file.
+    """
     return await export_weekly_report_docx_impl(
         generate_scrum_report_fn=generate_scrum_report,
         user_id=user_id,
@@ -1289,12 +1954,33 @@ async def export_weekly_report_docx(
 
 @mcp.tool()
 async def search_entire_redmine(
-    query: str,
-    resources: Optional[List[str]] = None,
-    limit: int = 100,
-    offset: int = 0,
+    query: Annotated[
+        str,
+        Field(description="Free-text search query sent to Redmine's global search."),
+    ],
+    resources: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Resource types to search: 'issues' and/or 'wiki-pages'. Omit for all."
+            )
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(description="Maximum number of results overall. Defaults to 100."),
+    ] = 100,
+    offset: Annotated[
+        int,
+        Field(description="Pagination offset — skip this many results."),
+    ] = 0,
 ) -> Dict[str, Any]:
-    """Search for issues and wiki pages across the Redmine instance."""
+    """Search issues and wiki pages across the Redmine instance.
+
+    Use for cross-project discovery when list_redmine_issues/search_redmine_issues
+    scoped to one project is not enough. Returns grouped results per resource
+    type.
+    """
     return await search_entire_redmine_impl(
         query,
         resources,
@@ -1310,12 +1996,34 @@ async def search_entire_redmine(
 
 @mcp.tool()
 async def get_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    version: Optional[int] = None,
-    include_attachments: bool = True,
+    project_id: Annotated[
+        Union[str, int],
+        Field(description="ID or identifier of the project that owns the wiki page."),
+    ],
+    wiki_page_title: Annotated[
+        str,
+        Field(
+            description=(
+                "Title of the wiki page (URL-encoded slug form, e.g. 'Project_Home')."
+            )
+        ),
+    ],
+    version: Annotated[
+        Optional[int],
+        Field(
+            description="Page version number to retrieve. Omit for the latest version."
+        ),
+    ] = None,
+    include_attachments: Annotated[
+        bool,
+        Field(description="Include the page's attachments. Defaults to True."),
+    ] = True,
 ) -> Dict[str, Any]:
-    """Retrieve full wiki page content from Redmine."""
+    """Retrieve full wiki page content from Redmine.
+
+    Use to read project documentation stored in a project wiki. Returns the
+    page text, metadata and optionally attachments.
+    """
     return await get_redmine_wiki_page_impl(
         project_id,
         wiki_page_title,
@@ -1330,12 +2038,33 @@ async def get_redmine_wiki_page(
 
 @mcp.tool()
 async def create_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    text: str,
-    comments: str = "",
+    project_id: Annotated[
+        Union[str, int],
+        Field(description="ID or identifier of the project that owns the wiki page."),
+    ],
+    wiki_page_title: Annotated[
+        str,
+        Field(
+            description=(
+                "Title of the new wiki page (URL-encoded slug form, e.g."
+                " 'Project_Home')."
+            )
+        ),
+    ],
+    text: Annotated[
+        str,
+        Field(description="Page content in Textile/Wiki markup."),
+    ],
+    comments: Annotated[
+        str,
+        Field(description="Edit comment describing the change."),
+    ] = "",
 ) -> Dict[str, Any]:
-    """Create a new wiki page in a Redmine project."""
+    """Create a new wiki page in a Redmine project.
+
+    Use to document project knowledge. Respects read-only mode; returns the
+    created page.
+    """
     return await create_redmine_wiki_page_impl(
         project_id,
         wiki_page_title,
@@ -1352,12 +2081,32 @@ async def create_redmine_wiki_page(
 
 @mcp.tool()
 async def update_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    text: str,
-    comments: str = "",
+    project_id: Annotated[
+        Union[str, int],
+        Field(description="ID or identifier of the project that owns the wiki page."),
+    ],
+    wiki_page_title: Annotated[
+        str,
+        Field(description="Title of the wiki page to update (URL-encoded slug form)."),
+    ],
+    text: Annotated[
+        str,
+        Field(
+            description=(
+                "New page content in Textile/Wiki markup (replaces the whole page)."
+            )
+        ),
+    ],
+    comments: Annotated[
+        str,
+        Field(description="Edit comment describing the change."),
+    ] = "",
 ) -> Dict[str, Any]:
-    """Update an existing wiki page in a Redmine project."""
+    """Update an existing wiki page in a Redmine project.
+
+    Use to revise project documentation. Respects read-only mode; returns the
+    updated page.
+    """
     return await update_redmine_wiki_page_impl(
         project_id,
         wiki_page_title,
@@ -1374,10 +2123,20 @@ async def update_redmine_wiki_page(
 
 @mcp.tool()
 async def delete_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
+    project_id: Annotated[
+        Union[str, int],
+        Field(description="ID or identifier of the project that owns the wiki page."),
+    ],
+    wiki_page_title: Annotated[
+        str,
+        Field(description="Title of the wiki page to delete (URL-encoded slug form)."),
+    ],
 ) -> Dict[str, Any]:
-    """Delete a wiki page from a Redmine project."""
+    """Delete a wiki page from a Redmine project.
+
+    Destructive: permanently removes the page. Respects read-only mode and
+    confirms the deletion result.
+    """
     return await delete_redmine_wiki_page_impl(
         project_id,
         wiki_page_title,
@@ -1391,15 +2150,40 @@ async def delete_redmine_wiki_page(
 
 @mcp.tool()
 async def list_time_entries(
-    project_id: Optional[Union[str, int]] = None,
-    issue_id: Optional[int] = None,
-    user_id: Optional[Union[str, int]] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    limit: int = 25,
-    offset: int = 0,
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Filter by project ID or identifier. Omit for all projects."),
+    ] = None,
+    issue_id: Annotated[
+        Optional[int],
+        Field(description="Filter by issue ID. Omit for all issues."),
+    ] = None,
+    user_id: Annotated[
+        Optional[Union[str, int]],
+        Field(description="Filter by user ID. Omit for all users."),
+    ] = None,
+    from_date: Annotated[
+        Optional[str],
+        Field(description="Start of the range (YYYY-MM-DD)."),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Field(description="End of the range (YYYY-MM-DD)."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(description="Maximum number of entries to return. Defaults to 25."),
+    ] = 25,
+    offset: Annotated[
+        int,
+        Field(description="Pagination offset — skip this many entries."),
+    ] = 0,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List time entries from Redmine with filtering and pagination."""
+    """List time entries from Redmine with filtering and pagination.
+
+    Use to answer questions about logged hours (who worked how long, on what,
+    in a date range).
+    """
     return await list_time_entries_impl(
         project_id,
         issue_id,
@@ -1416,14 +2200,49 @@ async def list_time_entries(
 
 @mcp.tool()
 async def create_time_entry(
-    hours: float,
-    project_id: Optional[Union[str, int]] = None,
-    issue_id: Optional[int] = None,
-    activity_id: Optional[int] = None,
-    comments: str = "",
-    spent_on: Optional[str] = None,
+    hours: Annotated[
+        float,
+        Field(description="Hours spent, e.g. 1.5 or 2."),
+    ],
+    project_id: Annotated[
+        Optional[Union[str, int]],
+        Field(
+            description=(
+                "Project ID or identifier the entry is logged against (required if"
+                " issue_id is not set)."
+            )
+        ),
+    ] = None,
+    issue_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Issue ID the entry is logged against (either project_id or issue_id is"
+                " required)."
+            )
+        ),
+    ] = None,
+    activity_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Activity type ID (use list_time_entry_activities for valid values)."
+            )
+        ),
+    ] = None,
+    comments: Annotated[
+        str,
+        Field(description="Work description for the entry."),
+    ] = "",
+    spent_on: Annotated[
+        Optional[str],
+        Field(description="Date the work was done (YYYY-MM-DD). Defaults to today."),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Create a new time entry in Redmine."""
+    """Create a new time entry in Redmine.
+
+    Use to log hours spent on a project or issue. Returns the created entry.
+    """
     return await create_time_entry_impl(
         hours,
         project_id,
@@ -1439,13 +2258,32 @@ async def create_time_entry(
 
 @mcp.tool()
 async def update_time_entry(
-    time_entry_id: int,
-    hours: Optional[float] = None,
-    activity_id: Optional[int] = None,
-    comments: Optional[str] = None,
-    spent_on: Optional[str] = None,
+    time_entry_id: Annotated[
+        int,
+        Field(description="ID of the time entry to update."),
+    ],
+    hours: Annotated[
+        Optional[float],
+        Field(description="New hours value, e.g. 1.5. Omit to keep current."),
+    ] = None,
+    activity_id: Annotated[
+        Optional[int],
+        Field(description="New activity type ID. Omit to keep current."),
+    ] = None,
+    comments: Annotated[
+        Optional[str],
+        Field(description="New work description. Omit to keep current."),
+    ] = None,
+    spent_on: Annotated[
+        Optional[str],
+        Field(description="New date (YYYY-MM-DD). Omit to keep current."),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Update an existing time entry in Redmine."""
+    """Update an existing time entry in Redmine.
+
+    Use to fix hours, activity type, comments or dates of a logged entry.
+    Returns the updated entry.
+    """
     return await update_time_entry_impl(
         time_entry_id,
         hours,

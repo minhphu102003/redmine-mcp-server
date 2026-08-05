@@ -46,6 +46,7 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
     status = getattr(issue, "status", None)
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
+    parent = getattr(issue, "parent", None)
 
     issue_dict = {
         "id": getattr(issue, "id", None),
@@ -53,6 +54,14 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
         "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
+        ),
+        "parent": (
+            {
+                "id": parent.id,
+                "subject": getattr(parent, "subject", ""),
+            }
+            if parent is not None
+            else None
         ),
         "status": (
             {"id": status.id, "name": status.name} if status is not None else None
@@ -105,6 +114,7 @@ def _issue_to_dict_selective(
         - subject: Issue subject/title
         - description: Issue description
         - project: Project info (dict with id and name)
+        - parent: Parent issue info (dict with id and subject, or None)
         - status: Status info (dict with id and name)
         - priority: Priority info (dict with id and name)
         - author: Author info (dict with id and name)
@@ -143,6 +153,14 @@ def _issue_to_dict_selective(
         "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
+        ),
+        "parent": (
+            {
+                "id": parent.id,
+                "subject": getattr(parent, "subject", ""),
+            }
+            if (parent := getattr(issue, "parent", None)) is not None
+            else None
         ),
         "status": (
             {"id": status.id, "name": status.name} if status is not None else None

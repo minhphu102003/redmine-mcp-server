@@ -142,6 +142,31 @@ class TestListRedmineIssues:
         call_kwargs = mock_redmine.issue.filter.call_args[1]
         assert call_kwargs.get("sort") == "updated_on:desc"
 
+    @pytest.mark.asyncio
+    async def test_list_subtasks_by_parent_id(self, mock_redmine):
+        """Test listing subtasks of a task via parent_id filter."""
+        mock_issues = self.create_mock_issues(3)
+        mock_redmine.issue.filter.return_value = mock_issues
+
+        result = await list_redmine_issues(parent_id=42)
+
+        assert isinstance(result, list)
+        assert len(result) == 3
+        call_kwargs = mock_redmine.issue.filter.call_args[1]
+        assert call_kwargs.get("parent_id") == 42
+
+    @pytest.mark.asyncio
+    async def test_list_subtasks_combined_with_project(self, mock_redmine):
+        """Test combining parent_id with project_id."""
+        mock_issues = self.create_mock_issues(2)
+        mock_redmine.issue.filter.return_value = mock_issues
+
+        await list_redmine_issues(project_id=1, parent_id=42)
+
+        call_kwargs = mock_redmine.issue.filter.call_args[1]
+        assert call_kwargs.get("parent_id") == 42
+        assert call_kwargs.get("project_id") == 1
+
     # --- Combined filters ---
 
     @pytest.mark.asyncio
