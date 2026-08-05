@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- **Consolidated project metadata tool**: new `get_project_issue_context` tool fetches trackers, issue categories, members, versions, and issue custom fields for a project in one call (sections fetched concurrently, per-section error isolation, optional `tracker_id` filter for custom fields)
+- **Removed legacy tools**: `list_project_trackers`, `list_project_issue_categories`, `list_project_members`, `list_redmine_versions`, and `list_project_issue_custom_fields` are removed from the MCP surface and replaced by `get_project_issue_context` (their internal implementations remain available for reuse)
 
 ## [1.1.0] - 2026-03-21
 ### Fixed
