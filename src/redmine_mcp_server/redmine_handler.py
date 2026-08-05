@@ -772,7 +772,13 @@ async def get_redmine_issue(
     include_relations: bool = False,
     include_children: bool = False,
 ) -> Dict[str, Any]:
-    """Retrieve a specific Redmine issue by ID."""
+    """Retrieve a specific Redmine issue by ID, including its parent key.
+
+    Use this when you need full issue details (description, project, tracker,
+    status, assignee, priority, dates, custom fields, attached files). Enable
+    include_journals to see the comment history and include_children to see
+    its subtasks.
+    """
     return await get_redmine_issue_impl(
         issue_id,
         include_journals,
@@ -794,7 +800,11 @@ async def get_redmine_issue(
 
 @mcp.tool()
 async def list_redmine_projects() -> List[Dict[str, Any]]:
-    """Lists all accessible projects in Redmine."""
+    """List all projects the current credential can access.
+
+    Call this first to discover available project IDs/identifiers before
+    creating issues or fetching project context.
+    """
     return await list_redmine_projects_impl(
         get_client=_get_redmine_client,
         handle_error=_handle_redmine_error,
@@ -806,7 +816,12 @@ async def get_project_issue_context(
     project_id: Union[str, int],
     tracker_id: Optional[Union[str, int]] = None,
 ) -> Dict[str, Any]:
-    """Fetch complete issue-creation context for a project in one call."""
+    """Fetch complete issue-creation context for a project in one call.
+
+    Returns project info, trackers, categories, members, versions and custom
+    fields (optionally narrowed to one tracker_id). Call this once per project
+    before create_redmine_issue instead of running separate lookups.
+    """
     return await get_project_issue_context_impl(
         project_id,
         tracker_id,
@@ -837,7 +852,14 @@ async def list_redmine_issues(
     fields: Optional[List[str]] = None,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List Redmine issues with flexible filtering and pagination support."""
+    """List issues with flexible filters and pagination.
+
+    Pass parent_id to list the subtasks of a specific task, or project_id /
+    status_id / tracker_id / assigned_to_id / priority_id / fixed_version_id
+    to narrow the result. Use fields to trim payloads and
+    include_pagination_info to get totals. Every issue carries a parent key
+    describing its parent task (null for standalone issues).
+    """
     return await list_redmine_issues_impl(
         project_id,
         status_id,
@@ -870,7 +892,12 @@ async def search_redmine_issues(
     open_issues: bool = False,
     options: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Search Redmine issues matching a query string with pagination support."""
+    """Search issues by free-text query with pagination support.
+
+    Use query for text matching on subject/description and scope to restrict
+    to a project or set open_issues=True for only open issues. Every issue
+    carries a parent key describing its parent task (null if standalone).
+    """
     return await search_redmine_issues_impl(
         query,
         limit,
@@ -895,7 +922,15 @@ async def create_redmine_issue(
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
     parent_issue_id: Optional[Union[int, str]] = None,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine, optionally as a subtask of an existing issue."""
+    """Create a new issue, standalone or as a subtask of an existing task.
+
+    Pass parent_issue_id to create the issue as a child of an existing task;
+    the parent must exist, be in the same project, and not itself be a
+    subtask. Use fields for structured data (tracker_id, priority_id,
+    assigned_to_id, category_id, fixed_version_id, estimated_hours,
+    start_date, due_date, custom fields) and extra_fields for advanced keys.
+    Respects the issue template when enforced by policy.
+    """
     return await create_redmine_issue_impl(
         project_id,
         subject,
@@ -936,7 +971,12 @@ async def create_redmine_issue_with_subtasks(
     subtasks: Optional[List[Dict[str, Any]]] = None,
     stop_on_subtask_error: bool = False,
 ) -> Dict[str, Any]:
-    """Create one parent issue and multiple subtasks in a single call."""
+    """Create one parent issue and multiple subtasks in a single call.
+
+    Use this for work items that decompose into several child tasks. Each
+    subtask is created under the new parent and inherits its project; use
+    stop_on_subtask_error to abort remaining subtasks when one fails.
+    """
     return await create_redmine_issue_with_subtasks_impl(
         project_id=project_id,
         parent_subject=parent_subject,
@@ -952,7 +992,14 @@ async def create_redmine_issue_with_subtasks(
 
 @mcp.tool()
 async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
-    """Update an existing Redmine issue."""
+    """Update an existing Redmine issue.
+
+    Pass fields with any subset of issue attributes, e.g. status_id,
+    assigned_to_id, priority_id, subject, description, category_id,
+    fixed_version_id, estimated_hours, start_date, due_date, done_ratio,
+    parent_issue_id or custom field values. Omitting a field leaves it
+    unchanged.
+    """
     return await update_redmine_issue_impl(
         issue_id,
         fields,
@@ -1028,7 +1075,10 @@ async def get_issue_workflow_context(
 ) -> Dict[str, Any]:
     """Consolidated workflow context tool.
 
-    Supports statuses, issue transitions, and project workflow snapshots.
+    Modes: 'issue' (allowed status transitions for an issue), 'transition_check'
+    (verify one target status/name is allowed), 'project' (project workflow
+    snapshot), 'statuses' (all issue statuses). Pick the mode that matches the
+    task; this tool replaces the four legacy status/workflow tools.
     """
     resolved_mode = (mode or "issue").strip().lower()
 
@@ -1128,7 +1178,13 @@ async def manage_time_entries(
     limit: int = 25,
     offset: int = 0,
 ) -> Dict[str, Any]:
-    """Consolidated time-entry tool (list/create/update/activities)."""
+    """Consolidated time-entry tool (list/create/update/activities).
+
+    action='list' logs effort for a range (from_date/to_date, optional
+    project_id/issue_id/user_id); action='create' requires hours (+optional
+    activity_id, comments, spent_on); action='update' requires time_entry_id;
+    action='activities' lists valid activity types.
+    """
     resolved_action = (action or "").strip().lower()
 
     if resolved_action == "list":
