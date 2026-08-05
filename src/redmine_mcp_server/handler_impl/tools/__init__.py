@@ -27,6 +27,7 @@ from .projects import (
     list_redmine_projects_impl,
     list_redmine_versions_impl,
 )
+from .project_context import get_project_issue_context_impl
 from .time_entries import (
     create_time_entry_impl,
     list_time_entries_impl,
@@ -76,4 +77,5 @@ __all__ = [
     "generate_scrum_report_impl",
     "export_weekly_report_markdown_impl",
     "export_weekly_report_docx_impl",
+    "get_project_issue_context_impl",
 ]

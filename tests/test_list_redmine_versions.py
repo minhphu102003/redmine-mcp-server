@@ -1,12 +1,9 @@
 """
-Test cases for list_redmine_versions tool.
-
-TDD RED phase: Tests written before implementation.
-Follows 4 TDD cycles from tdd-plan-list-redmine-versions.md.
+Test cases for list_redmine_versions_impl.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock
 from datetime import date, datetime
 import os
 import sys
@@ -15,8 +12,11 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
+    _handle_redmine_error,
     _version_to_dict,
-    list_redmine_versions,
+)
+from redmine_mcp_server.handler_impl.tools.projects import (  # noqa: E402
+    list_redmine_versions_impl,
 )
 
 
@@ -136,58 +136,68 @@ class TestVersionToDict:
 
 
 class TestListRedmineVersions:
-    """Test cases for list_redmine_versions tool."""
+    """Test cases for list_redmine_versions_impl."""
 
     @pytest.fixture
-    def mock_redmine(self):
+    def mock_client(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
-            yield mock
+        return Mock()
+
+    def _deps(self, client):
+        """Build injected dependencies for the impl."""
+        return {
+            "ensure_cleanup_started": AsyncMock(),
+            "get_client": lambda: client,
+            "version_to_dict": _version_to_dict,
+            "handle_error": _handle_redmine_error,
+        }
 
     @pytest.mark.asyncio
-    async def test_list_versions_by_project_id(self, mock_redmine):
+    async def test_list_versions_by_project_id(self, mock_client):
         """Test listing versions for a project by numeric ID."""
         mock_versions = [
             create_mock_version(version_id=1, name="v1.0"),
             create_mock_version(version_id=2, name="v2.0"),
         ]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert len(result) == 2
         assert result[0]["name"] == "v1.0"
         assert result[1]["name"] == "v2.0"
-        mock_redmine.version.filter.assert_called_once_with(project_id=1)
+        mock_client.version.filter.assert_called_once_with(project_id=1)
 
     @pytest.mark.asyncio
-    async def test_list_versions_by_string_identifier(self, mock_redmine):
+    async def test_list_versions_by_string_identifier(self, mock_client):
         """Test listing versions using string project identifier."""
         mock_versions = [create_mock_version()]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id="my-project")
+        result = await list_redmine_versions_impl(
+            "my-project", **self._deps(mock_client)
+        )
 
-        mock_redmine.version.filter.assert_called_once_with(project_id="my-project")
+        mock_client.version.filter.assert_called_once_with(project_id="my-project")
         assert len(result) == 1
 
     @pytest.mark.asyncio
-    async def test_list_versions_empty_result(self, mock_redmine):
+    async def test_list_versions_empty_result(self, mock_client):
         """Test listing versions when project has none."""
-        mock_redmine.version.filter.return_value = []
+        mock_client.version.filter.return_value = []
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_version_dict_structure(self, mock_redmine):
+    async def test_version_dict_structure(self, mock_client):
         """Test that returned dicts have expected keys."""
         mock_versions = [create_mock_version(version_id=1, name="v1.0", status="open")]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         version = result[0]
         expected_keys = {
@@ -204,118 +214,125 @@ class TestListRedmineVersions:
         }
         assert set(version.keys()) == expected_keys
 
-    # ── Cycle 3: Status filtering ───────────────────────────────────
+    # ── Status filtering ─────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_filter_open_versions(self, mock_redmine):
+    async def test_filter_open_versions(self, mock_client):
         """Test filtering to only open versions."""
         mock_versions = [
             create_mock_version(version_id=1, name="v1.0", status="open"),
             create_mock_version(version_id=2, name="v2.0", status="closed"),
             create_mock_version(version_id=3, name="v3.0", status="open"),
         ]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1, status_filter="open")
+        result = await list_redmine_versions_impl(
+            1, status_filter="open", **self._deps(mock_client)
+        )
 
         assert len(result) == 2
         assert all(v["status"] == "open" for v in result)
 
     @pytest.mark.asyncio
-    async def test_filter_closed_versions(self, mock_redmine):
+    async def test_filter_closed_versions(self, mock_client):
         """Test filtering to only closed versions."""
         mock_versions = [
             create_mock_version(version_id=1, status="open"),
             create_mock_version(version_id=2, status="closed"),
         ]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1, status_filter="closed")
+        result = await list_redmine_versions_impl(
+            1, status_filter="closed", **self._deps(mock_client)
+        )
 
         assert len(result) == 1
         assert result[0]["status"] == "closed"
 
     @pytest.mark.asyncio
-    async def test_filter_locked_versions(self, mock_redmine):
+    async def test_filter_locked_versions(self, mock_client):
         """Test filtering to only locked versions."""
         mock_versions = [
             create_mock_version(version_id=1, status="open"),
             create_mock_version(version_id=2, status="locked"),
         ]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1, status_filter="locked")
+        result = await list_redmine_versions_impl(
+            1, status_filter="locked", **self._deps(mock_client)
+        )
 
         assert len(result) == 1
         assert result[0]["status"] == "locked"
 
     @pytest.mark.asyncio
-    async def test_no_status_filter_returns_all(self, mock_redmine):
+    async def test_no_status_filter_returns_all(self, mock_client):
         """Test that None status_filter returns all versions."""
         mock_versions = [
             create_mock_version(version_id=1, status="open"),
             create_mock_version(version_id=2, status="closed"),
             create_mock_version(version_id=3, status="locked"),
         ]
-        mock_redmine.version.filter.return_value = mock_versions
+        mock_client.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         assert len(result) == 3
 
     @pytest.mark.asyncio
-    async def test_invalid_status_filter_returns_error(self, mock_redmine):
+    async def test_invalid_status_filter_returns_error(self, mock_client):
         """Test that invalid status_filter returns error dict."""
-        result = await list_redmine_versions(project_id=1, status_filter="invalid")
+        result = await list_redmine_versions_impl(
+            1, status_filter="invalid", **self._deps(mock_client)
+        )
 
         assert len(result) == 1
         assert "error" in result[0]
         assert "invalid" in result[0]["error"].lower()
 
-    # ── Cycle 4: Error handling ─────────────────────────────────────
+    # ── Error handling ───────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
-        with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
-            side_effect=RuntimeError("No Redmine authentication available"),
-        ):
-            result = await list_redmine_versions(project_id=1)
+        deps = self._deps(Mock())
+        deps["get_client"] = lambda: None
+
+        result = await list_redmine_versions_impl(1, **deps)
 
         assert isinstance(result, list)
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_api_error_returns_error(self, mock_redmine):
+    async def test_api_error_returns_error(self, mock_client):
         """Test error handling when API call fails."""
-        mock_redmine.version.filter.side_effect = Exception("Connection refused")
+        mock_client.version.filter.side_effect = Exception("Connection refused")
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_project_not_found_error(self, mock_redmine):
+    async def test_project_not_found_error(self, mock_client):
         """Test error handling when project doesn't exist."""
         from redminelib.exceptions import ResourceNotFoundError
 
-        mock_redmine.version.filter.side_effect = ResourceNotFoundError()
+        mock_client.version.filter.side_effect = ResourceNotFoundError()
 
-        result = await list_redmine_versions(project_id=999)
+        result = await list_redmine_versions_impl(999, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_forbidden_error(self, mock_redmine):
+    async def test_forbidden_error(self, mock_client):
         """Test error handling when user lacks permission."""
         from redminelib.exceptions import ForbiddenError
 
-        mock_redmine.version.filter.side_effect = ForbiddenError()
+        mock_client.version.filter.side_effect = ForbiddenError()
 
-        result = await list_redmine_versions(project_id=1)
+        result = await list_redmine_versions_impl(1, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert "error" in result[0]
