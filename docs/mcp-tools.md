@@ -335,7 +335,8 @@ Behavior:
 - Each returned issue includes a `parent` key (`{"id", "subject"}` or `None`),
   so hierarchy is visible in results.
 
-**Returns:** `Dict` with the created issue.
+**Returns:** `Dict` with the created issue, including a `url` key with the web
+link to the issue (e.g. `https://redmine.example.com/issues/42`).
 
 ---
 
@@ -365,7 +366,8 @@ fields are **required** for the parent and for **every** subtask.
 Subtasks missing any required field are reported in `failed_subtasks`, not
 created.
 
-**Returns:** `Dict` with parent issue plus per-subtask results.
+**Returns:** `Dict` with parent issue plus per-subtask results. The parent and
+each created subtask include a `url` key with the web link to the issue.
 
 ---
 

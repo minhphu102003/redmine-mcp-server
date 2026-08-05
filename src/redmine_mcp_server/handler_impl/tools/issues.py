@@ -497,6 +497,16 @@ async def _validate_parent_issue(
     return None
 
 
+def _issue_web_url(client: Any, issue_id: Any) -> Optional[str]:
+    """Build the web URL for an issue from the Redmine client base URL."""
+    base_url = getattr(client, "url", None)
+    if not isinstance(base_url, str) or not base_url.startswith(
+        ("http://", "https://")
+    ):
+        return None
+    return f"{base_url.rstrip('/')}/issues/{issue_id}"
+
+
 async def create_redmine_issue_impl(
     project_id: int,
     subject: str,
@@ -585,7 +595,11 @@ async def create_redmine_issue_impl(
             description=description,
             **issue_fields,
         )
-        return issue_to_dict(issue)
+        result = issue_to_dict(issue)
+        web_url = _issue_web_url(client, issue.id)
+        if web_url is not None:
+            result["url"] = web_url
+        return result
     except validation_error as e:
         if not is_required_custom_field_autofill_enabled():
             return handle_error(e, f"creating issue in project {project_id}", None)
@@ -615,7 +629,11 @@ async def create_redmine_issue_impl(
                 description=description,
                 **retry_fields,
             )
-            return issue_to_dict(issue)
+            result = issue_to_dict(issue)
+            web_url = _issue_web_url(client, issue.id)
+            if web_url is not None:
+                result["url"] = web_url
+            return result
         except Exception as retry_error:
             return handle_error(
                 retry_error, f"creating issue in project {project_id}", None

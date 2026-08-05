@@ -596,7 +596,8 @@ Blocked when `REDMINE_MCP_READ_ONLY=true`.
   create this issue as a subtask of. When omitted, a standalone task is created
 
 **Returns:** Created issue dictionary (includes a `parent` key with the parent
-issue's `id`/`subject`, or `None` for standalone tasks).
+issue's `id`/`subject`, or `None` for standalone tasks, and a `url` key with
+the web link to the created issue, e.g. `https://redmine.example.com/issues/42`).
 
 **Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`), the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
@@ -702,6 +703,9 @@ Blocked when `REDMINE_MCP_READ_ONLY=true`.
 - `created_subtasks`
 - `failed_subtasks`
 - `summary`
+
+The parent and each created subtask include a `url` key with the web link to
+the issue (e.g. `https://redmine.example.com/issues/42`).
 
 **Behavior notes:**
 - Each subtask is forced to use `parent_issue_id=<created_parent_id>`.
