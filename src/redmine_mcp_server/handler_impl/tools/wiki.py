@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Union
 
 HandleErrorFn = Callable[
@@ -24,15 +25,18 @@ async def get_redmine_wiki_page_impl(
     """Retrieve full wiki page content from Redmine."""
     try:
         await ensure_cleanup_started()
+        client = get_client()
 
         if version:
-            wiki_page = get_client().wiki_page.get(
+            wiki_page = await asyncio.to_thread(
+                client.wiki_page.get,
                 wiki_page_title,
                 project_id=project_id,
                 version=version,
             )
         else:
-            wiki_page = get_client().wiki_page.get(
+            wiki_page = await asyncio.to_thread(
+                client.wiki_page.get,
                 wiki_page_title,
                 project_id=project_id,
             )
@@ -65,7 +69,9 @@ async def create_redmine_wiki_page_impl(
 
     try:
         await ensure_cleanup_started()
-        wiki_page = get_client().wiki_page.create(
+        client = get_client()
+        wiki_page = await asyncio.to_thread(
+            client.wiki_page.create,
             project_id=project_id,
             title=wiki_page_title,
             text=text,
@@ -99,13 +105,17 @@ async def update_redmine_wiki_page_impl(
 
     try:
         await ensure_cleanup_started()
-        get_client().wiki_page.update(
+        client = get_client()
+        await asyncio.to_thread(
+            client.wiki_page.update,
             wiki_page_title,
             project_id=project_id,
             text=text,
             comments=comments if comments else None,
         )
-        wiki_page = get_client().wiki_page.get(wiki_page_title, project_id=project_id)
+        wiki_page = await asyncio.to_thread(
+            client.wiki_page.get, wiki_page_title, project_id=project_id
+        )
         return wiki_page_to_dict(wiki_page, True)
     except Exception as e:
         return handle_error(
@@ -131,7 +141,10 @@ async def delete_redmine_wiki_page_impl(
 
     try:
         await ensure_cleanup_started()
-        get_client().wiki_page.delete(wiki_page_title, project_id=project_id)
+        client = get_client()
+        await asyncio.to_thread(
+            client.wiki_page.delete, wiki_page_title, project_id=project_id
+        )
         return {
             "success": True,
             "title": wiki_page_title,

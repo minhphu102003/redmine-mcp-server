@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -63,7 +64,7 @@ async def get_redmine_attachment_download_url_impl(
     await ensure_cleanup_started()
 
     try:
-        attachment = get_client().attachment.get(attachment_id)
+        attachment = await asyncio.to_thread(get_client().attachment.get, attachment_id)
 
         attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
         expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
