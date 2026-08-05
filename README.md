@@ -488,25 +488,31 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 24 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 28 tools for interacting with Redmine. For a comprehensive summary, see [MCP Tools](./docs/mcp-tools.md); for detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (7 tools)
+- **Project Management** (2 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
-  - [`list_project_trackers`](docs/tool-reference.md#list_project_trackers) - List trackers enabled for a project (Bug, Task, Feature...)
-  - [`list_project_issue_categories`](docs/tool-reference.md#list_project_issue_categories) - List issue categories in a project (Frontend, Backend...)
-  - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
-  - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
-  - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
-- **Issue Operations** (6 tools)
+- **Issue Operations** (9 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`create_redmine_issue_with_subtasks`](docs/tool-reference.md#create_redmine_issue_with_subtasks) - Create one parent task and multiple subtasks in one call
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`list_redmine_issue_statuses`](docs/mcp-tools.md#list_redmine_issue_statuses) - List all issue statuses defined in Redmine
+  - [`get_redmine_issue_allowed_statuses`](docs/mcp-tools.md#get_redmine_issue_allowed_statuses) - Get allowed status transitions for an issue
+  - [`get_redmine_project_workflow`](docs/mcp-tools.md#get_redmine_project_workflow) - Infer project workflow from sampled issues
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
+
+- **Consolidated Tools** (6 tools, recommended for agent workflows)
+  - [`get_issue_workflow_context`](docs/mcp-tools.md#get_issue_workflow_context) - Unified status/workflow context (statuses, issue, project, transition check)
+  - [`manage_time_entries`](docs/mcp-tools.md#manage_time_entries) - Unified time logging (list, create, update, activities)
+  - [`get_project_issue_context`](docs/mcp-tools.md#get_project_issue_context) - Complete project context (trackers, categories, members, versions, custom fields) in one call - replaces `list_project_trackers`, `list_project_issue_categories`, `list_project_members`, `list_redmine_versions`, and `list_project_issue_custom_fields`
+  - [`generate_scrum_report`](docs/mcp-tools.md#generate_scrum_report) - Generate daily/weekly/custom scrum report drafts
+  - [`export_weekly_report_markdown`](docs/mcp-tools.md#export_weekly_report_markdown) - Export weekly report as a markdown file
+  - [`export_weekly_report_docx`](docs/mcp-tools.md#export_weekly_report_docx) - Export weekly report as a .docx file
 
 - **Time Tracking** (4 tools)
   - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range

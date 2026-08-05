@@ -84,18 +84,14 @@ from .handler_impl.tools import (  # noqa: E402
     export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
     get_redmine_attachment_download_url_impl,
+    get_project_issue_context_impl,
     get_redmine_issue_impl,
     get_redmine_issue_allowed_statuses_impl,
     get_redmine_project_workflow_impl,
     get_redmine_wiki_page_impl,
     list_redmine_issue_statuses_impl,
-    list_project_issue_categories_impl,
-    list_project_issue_custom_fields_impl,
-    list_project_members_impl,
-    list_project_trackers_impl,
     list_redmine_issues_impl,
     list_redmine_projects_impl,
-    list_redmine_versions_impl,
     list_time_entries_impl,
     list_time_entry_activities_impl,
     search_entire_redmine_impl,
@@ -806,59 +802,21 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
-async def list_project_issue_custom_fields(
-    project_id: Union[str, int], tracker_id: Optional[Union[str, int]] = None
-) -> List[Dict[str, Any]]:
-    """List issue custom fields configured for a project."""
-    return await list_project_issue_custom_fields_impl(
+async def get_project_issue_context(
+    project_id: Union[str, int],
+    tracker_id: Optional[Union[str, int]] = None,
+) -> Dict[str, Any]:
+    """Fetch complete issue-creation context for a project in one call."""
+    return await get_project_issue_context_impl(
         project_id,
         tracker_id,
         ensure_cleanup_started=_ensure_cleanup_started,
         get_client=_get_redmine_client,
         custom_field_applies_to_tracker=_issue_fields._custom_field_applies_to_tracker,
         custom_field_to_dict=_issue_fields._custom_field_to_dict,
-        handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
-async def list_project_trackers(project_id: Union[str, int]) -> List[Dict[str, Any]]:
-    """List trackers available for creating issues in a project."""
-    return await list_project_trackers_impl(
-        project_id,
-        ensure_cleanup_started=_ensure_cleanup_started,
-        get_client=_get_redmine_client,
-        wrap_content=wrap_insecure_content,
-        handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
-async def list_project_issue_categories(
-    project_id: Union[str, int],
-) -> List[Dict[str, Any]]:
-    """List issue categories available in a project."""
-    return await list_project_issue_categories_impl(
-        project_id,
-        ensure_cleanup_started=_ensure_cleanup_started,
-        get_client=_get_redmine_client,
-        wrap_content=wrap_insecure_content,
-        handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
-async def list_redmine_versions(
-    project_id: Union[str, int],
-    status_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """List versions (roadmap milestones) for a Redmine project."""
-    return await list_redmine_versions_impl(
-        project_id,
-        status_filter,
-        ensure_cleanup_started=_ensure_cleanup_started,
-        get_client=_get_redmine_client,
+        membership_to_dict=_membership_to_dict,
         version_to_dict=_version_to_dict,
+        wrap_content=wrap_insecure_content,
         handle_error=_handle_redmine_error,
     )
 
@@ -1427,19 +1385,6 @@ async def delete_redmine_wiki_page(
         ensure_cleanup_started=_ensure_cleanup_started,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
-        handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
-async def list_project_members(
-    project_id: Union[str, int],
-) -> List[Dict[str, Any]]:
-    """List members of a Redmine project."""
-    return await list_project_members_impl(
-        project_id,
-        get_client=_get_redmine_client,
-        membership_to_dict=_membership_to_dict,
         handle_error=_handle_redmine_error,
     )
 

@@ -1,16 +1,17 @@
 """
-Test cases for list_project_members tool.
+Test cases for list_project_members_impl.
 
 Tests for listing project memberships including users, groups, and roles.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from redmine_mcp_server.redmine_handler import (
-    list_project_members,
+    _handle_redmine_error,
     _membership_to_dict,
 )
+from redmine_mcp_server.handler_impl.tools.projects import list_project_members_impl
 
 
 def make_mock_with_name(id_val, name_val):
@@ -124,13 +125,12 @@ class TestMembershipToDict:
 
 
 class TestListProjectMembers:
-    """Test cases for list_project_members tool."""
+    """Test cases for list_project_members_impl."""
 
     @pytest.fixture
-    def mock_redmine(self):
+    def mock_client(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
-            yield mock
+        return Mock()
 
     def create_mock_membership(
         self, membership_id=1, user_id=5, user_name="John Doe", is_group=False
@@ -151,47 +151,57 @@ class TestListProjectMembers:
 
         return mock_membership
 
+    def _deps(self, client):
+        """Build injected dependencies for the impl."""
+        return {
+            "get_client": lambda: client,
+            "membership_to_dict": _membership_to_dict,
+            "handle_error": _handle_redmine_error,
+        }
+
     @pytest.mark.asyncio
-    async def test_list_members_by_project_id(self, mock_redmine):
+    async def test_list_members_by_project_id(self, mock_client):
         """Test listing project members by numeric project ID."""
         mock_memberships = [
             self.create_mock_membership(1, 5, "John Doe"),
             self.create_mock_membership(2, 6, "Jane Smith"),
         ]
-        mock_redmine.project_membership.filter.return_value = mock_memberships
+        mock_client.project_membership.filter.return_value = mock_memberships
 
-        result = await list_project_members(project_id=10)
+        result = await list_project_members_impl(10, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert len(result) == 2
         assert result[0]["user"]["name"] == "John Doe"
         assert result[1]["user"]["name"] == "Jane Smith"
-        mock_redmine.project_membership.filter.assert_called_once_with(project_id=10)
+        mock_client.project_membership.filter.assert_called_once_with(project_id=10)
 
     @pytest.mark.asyncio
-    async def test_list_members_by_project_identifier(self, mock_redmine):
+    async def test_list_members_by_project_identifier(self, mock_client):
         """Test listing project members by string project identifier."""
         mock_memberships = [self.create_mock_membership(1, 5, "John Doe")]
-        mock_redmine.project_membership.filter.return_value = mock_memberships
+        mock_client.project_membership.filter.return_value = mock_memberships
 
-        result = await list_project_members(project_id="my-project")
+        result = await list_project_members_impl(
+            "my-project", **self._deps(mock_client)
+        )
 
         assert isinstance(result, list)
         assert len(result) == 1
-        mock_redmine.project_membership.filter.assert_called_once_with(
+        mock_client.project_membership.filter.assert_called_once_with(
             project_id="my-project"
         )
 
     @pytest.mark.asyncio
-    async def test_list_members_includes_groups(self, mock_redmine):
+    async def test_list_members_includes_groups(self, mock_client):
         """Test that group memberships are included."""
         mock_memberships = [
             self.create_mock_membership(1, 5, "John Doe", is_group=False),
             self.create_mock_membership(2, 15, "Dev Team", is_group=True),
         ]
-        mock_redmine.project_membership.filter.return_value = mock_memberships
+        mock_client.project_membership.filter.return_value = mock_memberships
 
-        result = await list_project_members(project_id=10)
+        result = await list_project_members_impl(10, **self._deps(mock_client))
 
         assert len(result) == 2
         # First is a user
@@ -203,11 +213,11 @@ class TestListProjectMembers:
         assert result[1]["group"]["name"] == "Dev Team"
 
     @pytest.mark.asyncio
-    async def test_list_members_empty_project(self, mock_redmine):
+    async def test_list_members_empty_project(self, mock_client):
         """Test listing members of a project with no members."""
-        mock_redmine.project_membership.filter.return_value = []
+        mock_client.project_membership.filter.return_value = []
 
-        result = await list_project_members(project_id=10)
+        result = await list_project_members_impl(10, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert len(result) == 0
@@ -215,37 +225,36 @@ class TestListProjectMembers:
     @pytest.mark.asyncio
     async def test_list_members_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
-        with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
-            side_effect=RuntimeError("No Redmine authentication available"),
-        ):
-            result = await list_project_members(project_id=10)
+        deps = self._deps(Mock())
+        deps["get_client"] = lambda: None
+
+        result = await list_project_members_impl(10, **deps)
 
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_list_members_project_not_found(self, mock_redmine):
+    async def test_list_members_project_not_found(self, mock_client):
         """Test error when project is not found."""
         from redminelib.exceptions import ResourceNotFoundError
 
-        mock_redmine.project_membership.filter.side_effect = ResourceNotFoundError()
+        mock_client.project_membership.filter.side_effect = ResourceNotFoundError()
 
-        result = await list_project_members(project_id=999)
+        result = await list_project_members_impl(999, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_list_members_forbidden(self, mock_redmine):
+    async def test_list_members_forbidden(self, mock_client):
         """Test error when user lacks permission."""
         from redminelib.exceptions import ForbiddenError
 
-        mock_redmine.project_membership.filter.side_effect = ForbiddenError()
+        mock_client.project_membership.filter.side_effect = ForbiddenError()
 
-        result = await list_project_members(project_id=10)
+        result = await list_project_members_impl(10, **self._deps(mock_client))
 
         assert isinstance(result, list)
         assert len(result) == 1
@@ -253,7 +262,7 @@ class TestListProjectMembers:
         assert "Access denied" in result[0]["error"]
 
     @pytest.mark.asyncio
-    async def test_list_members_includes_roles(self, mock_redmine):
+    async def test_list_members_includes_roles(self, mock_client):
         """Test that roles are included in membership data."""
         mock_membership = Mock()
         mock_membership.id = 1
@@ -264,9 +273,9 @@ class TestListProjectMembers:
             make_mock_with_name(3, "Developer"),
             make_mock_with_name(4, "Reporter"),
         ]
-        mock_redmine.project_membership.filter.return_value = [mock_membership]
+        mock_client.project_membership.filter.return_value = [mock_membership]
 
-        result = await list_project_members(project_id=10)
+        result = await list_project_members_impl(10, **self._deps(mock_client))
 
         assert len(result) == 1
         assert len(result[0]["roles"]) == 2

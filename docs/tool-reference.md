@@ -242,82 +242,29 @@ Lists all accessible projects in the Redmine instance.
 
 ---
 
-### `list_project_issue_custom_fields`
+### `get_project_issue_context`
 
-List issue custom fields configured for a project, including allowed values and tracker bindings.
+Complete issue-creation context for a project in one call: trackers, issue
+categories, members, versions, and issue custom fields (optionally filtered by
+tracker). This is the single recommended entry point for gathering project
+metadata before creating issues — it replaces the former separate
+`list_project_trackers`, `list_project_issue_categories`, `list_project_members`,
+`list_redmine_versions`, and `list_project_issue_custom_fields` lookups.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
-- `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID
+- `tracker_id` (integer or string, optional): Restrict custom fields to those applicable to the given tracker
 
-**Returns:** List of custom field metadata dictionaries
+**Returns:** Dict with `project`, `tracker_id`, `trackers`, `categories`,
+`members`, `versions`, `custom_fields`, and `required_custom_fields` sections.
+Each section is fetched concurrently; a failed section returns its own error
+dict without failing the others.
 
 **Example:**
-```json
-[
-  {
-    "id": 6,
-    "name": "Size",
-    "field_format": "list",
-    "is_required": false,
-    "multiple": false,
-    "default_value": "M",
-    "possible_values": ["S", "M", "L"],
-    "trackers": [{"id": 5, "name": "Bug"}]
-  }
-]
-```
-
-**Example with tracker filter:**
 ```python
-list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
-```
-
----
-
-### `list_project_trackers`
-
-List trackers enabled for a project (for example Bug, Task, Feature).
-
-**Parameters:**
-- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
-
-**Returns:** List of tracker dictionaries (`id`, `name`)
-
-**Example:**
-```json
-[
-  {"id": 1, "name": "Bug"},
-  {"id": 2, "name": "Task"},
-  {"id": 3, "name": "Feature"}
-]
-```
-
----
-
-### `list_project_issue_categories`
-
-List issue categories configured for a project (for example Frontend, Backend).
-
-**Parameters:**
-- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
-
-**Returns:** List of category dictionaries (`id`, `name`, optional `assigned_to`)
-
-**Example:**
-```json
-[
-  {
-    "id": 12,
-    "name": "Backend",
-    "assigned_to": {"id": 5, "name": "Alice"}
-  },
-  {
-    "id": 13,
-    "name": "Frontend",
-    "assigned_to": null
-  }
-]
+context = await get_project_issue_context(project_id="my-project")
+# context["project"]["id"], context["trackers"], context["categories"],
+# context["members"], context["versions"], context["custom_fields"]
 ```
 
 ---
@@ -352,87 +299,6 @@ Provide a comprehensive summary of project status based on issue activity over a
     "Resolved": 12
   }
 }
-```
-
----
-
-### `list_redmine_versions`
-
-List versions (roadmap milestones) for a Redmine project. Useful for discovering target version IDs to use with `list_redmine_issues(fixed_version_id=...)`.
-
-**Parameters:**
-- `project_id` (integer or string, required): The project ID (numeric) or identifier (string)
-- `status_filter` (string, optional): Filter by version status. Allowed values: `open`, `locked`, `closed`. Default: all versions
-
-**Returns:** List of version dictionaries
-
-**Example:**
-```json
-[
-  {
-    "id": 1,
-    "name": "v1.0",
-    "description": "First release",
-    "status": "open",
-    "due_date": "2026-03-01",
-    "sharing": "none",
-    "wiki_page_title": "",
-    "project": {"id": 1, "name": "My Project"},
-    "created_on": "2026-01-01T10:00:00",
-    "updated_on": "2026-02-01T14:30:00"
-  }
-]
-```
-
-**Usage with issue filtering:**
-```python
-# First, find versions for a project
-versions = list_redmine_versions(project_id="my-project", status_filter="open")
-# Then, list issues assigned to that version
-issues = list_redmine_issues(fixed_version_id=versions[0]["id"])
-```
-
----
-
-### `list_project_members`
-
-List all members (users and groups) of a Redmine project along with their assigned roles.
-
-**Parameters:**
-- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
-
-**Returns:** List of membership dictionaries containing user/group info and roles
-
-**Example:**
-```json
-[
-  {
-    "id": 1,
-    "user": {"id": 5, "name": "John Doe"},
-    "group": null,
-    "project": {"id": 10, "name": "My Project"},
-    "roles": [{"id": 3, "name": "Developer"}]
-  },
-  {
-    "id": 2,
-    "user": null,
-    "group": {"id": 15, "name": "Dev Team"},
-    "project": {"id": 10, "name": "My Project"},
-    "roles": [{"id": 4, "name": "Manager"}]
-  }
-]
-```
-
-**Usage:**
-```python
-# List members by project ID
-members = list_project_members(project_id=10)
-
-# List members by project identifier
-members = list_project_members(project_id="my-project")
-
-# Get all developers in a project
-devs = [m for m in members if any(r["name"] == "Developer" for r in m["roles"])]
 ```
 
 ---

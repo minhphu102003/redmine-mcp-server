@@ -1,21 +1,23 @@
 """
-Test cases for list_project_issue_custom_fields tool.
+Test cases for list_project_issue_custom_fields_impl.
 """
 
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    list_project_issue_custom_fields,
-)
+from redmine_mcp_server.redmine_handler import _handle_redmine_error  # noqa: E402
 from redmine_mcp_server.handler_impl.issue_fields import (  # noqa: E402
+    _custom_field_applies_to_tracker,
     _custom_field_to_dict,
+)
+from redmine_mcp_server.handler_impl.tools.projects import (  # noqa: E402
+    list_project_issue_custom_fields_impl,
 )
 
 
@@ -69,36 +71,47 @@ class TestCustomFieldToDict:
 
 
 class TestListProjectIssueCustomFields:
-    """Unit tests for list_project_issue_custom_fields tool."""
+    """Unit tests for list_project_issue_custom_fields_impl."""
 
     @pytest.fixture
-    def mock_redmine(self):
+    def mock_client(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
-            yield mock
+        return Mock()
+
+    def _deps(self, client):
+        """Build injected dependencies for the impl."""
+        return {
+            "ensure_cleanup_started": AsyncMock(),
+            "get_client": lambda: client,
+            "custom_field_applies_to_tracker": _custom_field_applies_to_tracker,
+            "custom_field_to_dict": _custom_field_to_dict,
+            "handle_error": _handle_redmine_error,
+        }
 
     @pytest.mark.asyncio
-    async def test_list_project_issue_custom_fields_success(self, mock_redmine):
+    async def test_list_project_issue_custom_fields_success(self, mock_client):
         """Returns project custom fields with metadata."""
         custom_field = create_mock_custom_field()
         project = Mock()
         project.issue_custom_fields = [custom_field]
-        mock_redmine.project.get.return_value = project
+        mock_client.project.get.return_value = project
 
-        result = await list_project_issue_custom_fields(project_id=41)
+        result = await list_project_issue_custom_fields_impl(
+            41, **self._deps(mock_client)
+        )
 
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["id"] == 6
         assert result[0]["name"] == "Size"
         assert result[0]["possible_values"] == ["S", "M"]
-        mock_redmine.project.get.assert_called_once_with(
+        mock_client.project.get.assert_called_once_with(
             41, include="issue_custom_fields"
         )
 
     @pytest.mark.asyncio
     async def test_list_project_issue_custom_fields_filters_by_tracker(
-        self, mock_redmine
+        self, mock_client
     ):
         """Tracker filtering keeps matching and global (unrestricted) custom fields."""
         tracker_bug = Mock()
@@ -119,16 +132,18 @@ class TestListProjectIssueCustomFields:
 
         project = Mock()
         project.issue_custom_fields = [for_bug, for_feature, global_field]
-        mock_redmine.project.get.return_value = project
+        mock_client.project.get.return_value = project
 
-        result = await list_project_issue_custom_fields(project_id=41, tracker_id=5)
+        result = await list_project_issue_custom_fields_impl(
+            41, 5, **self._deps(mock_client)
+        )
 
         assert len(result) == 2
         assert {field["id"] for field in result} == {10, 12}
 
     @pytest.mark.asyncio
     async def test_list_project_issue_custom_fields_accepts_string_tracker_id(
-        self, mock_redmine
+        self, mock_client
     ):
         """String tracker IDs are accepted when parseable as integers."""
         tracker_bug = Mock()
@@ -138,43 +153,50 @@ class TestListProjectIssueCustomFields:
         field = create_mock_custom_field(field_id=10, trackers=[tracker_bug])
         project = Mock()
         project.issue_custom_fields = [field]
-        mock_redmine.project.get.return_value = project
+        mock_client.project.get.return_value = project
 
-        result = await list_project_issue_custom_fields(
-            project_id="pipeline", tracker_id="5"
+        result = await list_project_issue_custom_fields_impl(
+            "pipeline", "5", **self._deps(mock_client)
         )
 
         assert len(result) == 1
         assert result[0]["id"] == 10
-        mock_redmine.project.get.assert_called_once_with(
+        mock_client.project.get.assert_called_once_with(
             "pipeline", include="issue_custom_fields"
         )
 
     @pytest.mark.asyncio
     async def test_list_project_issue_custom_fields_invalid_tracker_id(
-        self, mock_redmine
+        self, mock_client
     ):
         """Invalid tracker IDs should return a clear validation error."""
-        result = await list_project_issue_custom_fields(project_id=41, tracker_id="abc")
+        result = await list_project_issue_custom_fields_impl(
+            41, "abc", **self._deps(mock_client)
+        )
 
         assert len(result) == 1
         assert "error" in result[0]
         assert "Invalid tracker_id" in result[0]["error"]
-        mock_redmine.project.get.assert_not_called()
+        mock_client.project.get.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_list_project_issue_custom_fields_no_client(self):
         """Returns initialization error when Redmine client is unavailable."""
-        result = await list_project_issue_custom_fields(project_id=41)
+        deps = self._deps(Mock())
+        deps["get_client"] = lambda: None
+
+        result = await list_project_issue_custom_fields_impl(41, **deps)
+
         assert isinstance(result, list) and "error" in result[0]
 
     @pytest.mark.asyncio
-    async def test_list_project_issue_custom_fields_error(self, mock_redmine):
+    async def test_list_project_issue_custom_fields_error(self, mock_client):
         """API errors are returned in standard error format."""
-        mock_redmine.project.get.side_effect = Exception("Boom")
+        mock_client.project.get.side_effect = Exception("Boom")
 
-        result = await list_project_issue_custom_fields(project_id=41)
+        result = await list_project_issue_custom_fields_impl(
+            41, **self._deps(mock_client)
+        )
 
         assert len(result) == 1
         assert "error" in result[0]

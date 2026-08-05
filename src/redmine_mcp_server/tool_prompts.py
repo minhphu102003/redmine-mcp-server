@@ -116,52 +116,29 @@ def list_redmine_projects_prompt() -> str:
     )
 
 
-def list_project_issue_custom_fields_prompt(
+def get_project_issue_context_prompt(
     project_id: Union[str, int], tracker_id: Optional[Union[str, int]] = None
 ) -> str:
-    """Playbook for calling list_project_issue_custom_fields."""
-    tracker_hint = tracker_id if tracker_id is not None else "optional"
+    """Playbook for calling get_project_issue_context."""
     return _render_tool_prompt(
-        tool_name="list_project_issue_custom_fields",
-        objective="Inspect custom fields for issue create/update in a project.",
-        required_inputs=[f"project_id={project_id}", f"tracker_id={tracker_hint}"],
-        pre_checks=["Use tracker_id to narrow required fields for a specific tracker."],
-        result_shape="List[custom_field] including required flag and allowed values.",
-    )
-
-
-def list_redmine_versions_prompt(project_id: Union[str, int]) -> str:
-    """Playbook for calling list_redmine_versions."""
-    return _render_tool_prompt(
-        tool_name="list_redmine_versions",
-        objective="List milestones/versions for planning or filtering issues.",
-        required_inputs=[f"project_id={project_id}", "status_filter (optional)."],
-        result_shape="List[version] with status and due-date metadata.",
-    )
-
-
-def list_project_trackers_prompt(project_id: Union[str, int]) -> str:
-    """Playbook for calling list_project_trackers."""
-    return _render_tool_prompt(
-        tool_name="list_project_trackers",
-        objective="List tracker types available for issue creation in a project.",
-        required_inputs=[f"project_id={project_id}"],
-        pre_checks=["Call before create_redmine_issue to pick a valid tracker_id."],
-        result_shape="List[tracker] with id and name.",
-    )
-
-
-def list_project_issue_categories_prompt(project_id: Union[str, int]) -> str:
-    """Playbook for calling list_project_issue_categories."""
-    return _render_tool_prompt(
-        tool_name="list_project_issue_categories",
-        objective="List available issue categories in a project.",
-        required_inputs=[f"project_id={project_id}"],
-        pre_checks=[
-            "Use before create_redmine_issue/update_redmine_issue "
-            "to select category_id."
+        tool_name="get_project_issue_context",
+        objective=(
+            "Fetch complete project context (project info, trackers, categories, "
+            "members, versions, custom fields) in a single call before creating issues."
+        ),
+        required_inputs=[
+            f"project_id={project_id}",
+            "tracker_id optional to restrict custom fields to one tracker.",
         ],
-        result_shape="List[category] with id, name, and optional assigned_to.",
+        recommended_resources=[f"redmine://issue-contract/{project_id}"],
+        pre_checks=[
+            "Call this once per project before create_redmine_issue; "
+            "it replaces 5 separate project lookup calls."
+        ],
+        result_shape=(
+            "Dict with project, trackers, categories, members, versions, "
+            "custom_fields and required_custom_fields."
+        ),
     )
 
 
@@ -237,8 +214,8 @@ def create_redmine_issue_with_subtasks_prompt(project_id: Union[str, int]) -> st
             f"redmine://issue-contract/{project_id}",
         ],
         pre_checks=[
-            "Use list_project_trackers/list_project_issue_categories "
-            "to choose valid IDs.",
+            "Use get_project_issue_context to fetch trackers, "
+            "categories, and custom fields in one call.",
             "Each subtask can pass fields/extra_fields "
             "and auto-inherits parent_issue_id.",
         ],
@@ -539,16 +516,6 @@ def delete_redmine_wiki_page_prompt(
     )
 
 
-def list_project_members_prompt(project_id: Union[str, int]) -> str:
-    """Playbook for calling list_project_members."""
-    return _render_tool_prompt(
-        tool_name="list_project_members",
-        objective="List project members and role assignments.",
-        required_inputs=[f"project_id={project_id}"],
-        result_shape="List[membership] entries with user and role data.",
-    )
-
-
 def list_time_entries_prompt(project_id: Optional[Union[str, int]] = None) -> str:
     """Playbook for calling list_time_entries."""
     scope = project_id if project_id is not None else "all accessible scope"
@@ -623,16 +590,7 @@ _PROMPT_REGISTRY: List[tuple[str, Callable[..., str]]] = [
     ("redmine_server_operating_prompt", redmine_server_operating_prompt),
     ("get_redmine_issue_prompt", get_redmine_issue_prompt),
     ("list_redmine_projects_prompt", list_redmine_projects_prompt),
-    (
-        "list_project_issue_custom_fields_prompt",
-        list_project_issue_custom_fields_prompt,
-    ),
-    ("list_project_trackers_prompt", list_project_trackers_prompt),
-    (
-        "list_project_issue_categories_prompt",
-        list_project_issue_categories_prompt,
-    ),
-    ("list_redmine_versions_prompt", list_redmine_versions_prompt),
+    ("get_project_issue_context_prompt", get_project_issue_context_prompt),
     ("list_redmine_issues_prompt", list_redmine_issues_prompt),
     ("search_redmine_issues_prompt", search_redmine_issues_prompt),
     ("create_redmine_issue_prompt", create_redmine_issue_prompt),
@@ -662,7 +620,6 @@ _PROMPT_REGISTRY: List[tuple[str, Callable[..., str]]] = [
     ("create_redmine_wiki_page_prompt", create_redmine_wiki_page_prompt),
     ("update_redmine_wiki_page_prompt", update_redmine_wiki_page_prompt),
     ("delete_redmine_wiki_page_prompt", delete_redmine_wiki_page_prompt),
-    ("list_project_members_prompt", list_project_members_prompt),
     ("list_time_entries_prompt", list_time_entries_prompt),
     ("create_time_entry_prompt", create_time_entry_prompt),
     ("update_time_entry_prompt", update_time_entry_prompt),
