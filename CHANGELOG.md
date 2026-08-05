@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **`redmine-issue-workflow` agent skill**: a user-facing skill at `skills/redmine-issue-workflow/` that teaches AI agents the exact workflow for creating a Redmine issue from a GitHub commit (live-data verification, author→member mapping, `[FE/BE/Devops]` naming, English description template). The folder includes a README with installation steps for opencode/Claude Code plus GitHub CLI (`gh`) install and OAuth login instructions
+
 ### Changed
 - **`get_project_issue_context` now returns `statuses`**: the consolidated project context includes all issue statuses defined in Redmine (`id`, `name`, `is_closed`), fetched concurrently with the other sections, so agents can pick a valid `status_id` before creating an issue without a separate `list_redmine_issue_statuses` call
 - **Issue web links in create results**: `create_redmine_issue` now returns a `url` key on the created issue (built from the Redmine client base URL, e.g. `https://redmine.example.com/issues/42`); `create_redmine_issue_with_subtasks` inherits it on the parent and every created subtask, so agents can hand the user a clickable link right after creation

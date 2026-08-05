@@ -1,0 +1,159 @@
+# redmine-issue-workflow skill
+
+A user-facing agent skill that teaches **any AI agent** (opencode, Claude Code, Cursor, ...) the exact workflow for creating a Redmine issue from a GitHub commit: verify live Redmine data, map the commit author to a Redmine member, apply the `[FE/BE/Devops]` naming rule and fill the standard English description template.
+
+> Agent (LLM) instruction file: [`SKILL.md`](./SKILL.md). This README is for **humans** — installation, how the skill works, and GitHub CLI (`gh`) setup.
+
+---
+
+## 1. How the skill works
+
+The skill is a single Markdown file with frontmatter (`name` + `description`). When you ask your agent to create a Redmine issue from a commit, the agent loads the skill and follows its 7 steps:
+
+| Step | What happens |
+|---|---|
+| 1 | **Gather Redmine context** — list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues |
+| 2 | **Read the GitHub repo** — authenticate with `gh` for private repos, clone to a temp dir, read commits via `git log` |
+| 3 | **Map commit → issue** — author → Redmine member, files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
+| 4 | **Ask before create** — every parameter is confirmed with you using live option lists (tracker/status/priority/assignee) |
+| 5 | **Create** — `create_redmine_issue` with all 11 required fields, then verify the returned values |
+| 6 | **Description** — 8-section English template (Context, User story, Scope, Proposed solution, Related data, Acceptance criteria, Success measurement, PR link) |
+| 7 | **Gotchas checklist** — no hardcoded IDs, no guessing, private-repo auth via `gh` |
+
+Key rule: **nothing is assumed** — every ID/name is fetched live from Redmine in the current session, and defaults are only proposals confirmed with you first.
+
+---
+
+## 2. Installation
+
+This repo ships the skill at `skills/redmine-issue-workflow/` as a **distribution copy**. It is not auto-loaded from here — copy the `redmine-issue-workflow` folder into the skills directory of **your own agent**, then restart the agent.
+
+### Copy into your agent
+
+| Agent | Copy to |
+|---|---|
+| opencode (per project) | `.opencode/skills/redmine-issue-workflow/` inside the project where you want the skill |
+| opencode (all projects) | `~/.config/opencode/skills/redmine-issue-workflow/` (Windows: `%USERPROFILE%\.config\opencode\skills\redmine-issue-workflow\`) |
+| Claude Code | `.claude/skills/redmine-issue-workflow/` (project) or `~/.claude/skills/redmine-issue-workflow/` (all projects) |
+
+Example for opencode (project-level), from the project you want the skill in:
+
+```bash
+cp -r <path-to-this-repo>/skills/redmine-issue-workflow .opencode/skills/
+```
+
+Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup. Verify with: ask your agent "list your skills" or check that `redmine-issue-workflow` appears.
+
+### Prerequisites
+
+- A running Redmine MCP server (see the server repo [README](../../README.md)) — the skill talks to Redmine through your agent's MCP tools.
+- `gh` CLI installed and authenticated (below) — required for private GitHub repos.
+- Read access to the target GitHub repo via `gh`.
+
+---
+
+## 3. Install GitHub CLI (`gh`)
+
+### Windows
+
+```powershell
+winget install --id GitHub.cli
+```
+
+Alternatives: `choco install gh` (Chocolatey) or download the MSI from <https://github.com/cli/cli/releases>.
+
+After install, open a **new** terminal and check:
+
+```powershell
+gh --version
+```
+
+### macOS
+
+```bash
+brew install gh
+```
+
+### Linux
+
+```bash
+# Debian/Ubuntu (official repo)
+sudo mkdir -p -m 755 /etc/apt/keyrings
+wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install gh
+
+# or Fedora/RHEL: sudo dnf install 'dnf-command(config-manager)' && sudo dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo && sudo dnf install gh
+```
+
+---
+
+## 4. Authenticate `gh` with GitHub (OAuth)
+
+The skill needs `gh` authenticated so your agent can read private repos (commits, PRs) on your behalf. `gh` uses **GitHub OAuth** with the device flow (you authorize in a browser, no passwords or tokens pasted).
+
+```bash
+gh auth login
+```
+
+Answer the prompts **exactly** like this:
+
+1. `What account do you want to log into?` → **GitHub.com**
+2. `What is your preferred protocol for Git operations?` → **HTTPS**
+3. `Authenticate Git with your GitHub credentials?` → **Yes**
+4. `How would you like to authenticate GitHub CLI?` → **Login with a web browser** (this is the OAuth device flow)
+5. Copy the one-time code shown (e.g. `XXXX-XXXX`), press Enter — your browser opens `https://github.com/login/device`; paste the code and click **Authorize github**.
+6. You may be asked for your GitHub password and a 2FA code in the browser — after authorizing, the terminal shows `✓ Logged in as <your-username>`.
+
+> The browser step is the OAuth authorization. The token `gh` stores is scoped to **`repo`** by default (read/write private repos) plus `read:org` — exactly what the workflow needs. `gh auth login` also runs `git config --global credential.helper` so plain `git clone` of private repos works in future terminals.
+
+### Verify the login
+
+```bash
+gh auth status
+gh api user
+```
+
+- `gh auth status` must show `Logged in to github.com as <user>` and `Token scopes: 'repo', 'read:org', 'gist'` (read-only vs read-write is fine either way).
+- If you see `not logged in`, re-run `gh auth login`.
+
+### Alternative: personal access token (PAT)
+
+If the browser flow is unavailable (e.g. headless server), use a PAT:
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Tokens (classic)** → **Generate new token**.
+2. Select scopes: **`repo`** (all private repos) and **`read:org`**.
+3. Copy the token, then `gh auth login` → choose **Paste an authentication token** → paste it.
+
+Security notes:
+
+- Never paste a token in chat, issues, or commits; if it leaks, **revoke it immediately** at <https://github.com/settings/tokens>.
+- `gh` stores the token in `~/.config/gh/hosts.yml` (Windows: `%APPDATA%\GitHub CLI\hosts.yml`) — never commit this file.
+- To check which repos your agent can read before asking for an issue: `gh repo view <owner>/<repo>`.
+
+---
+
+## 5. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Skill not triggering | Restart the agent; confirm the skill file has `name` + `description` frontmatter; check the install path in section 2 |
+| `gh` not found by the agent | The agent's shell needs a new environment — restart the agent after installing `gh` |
+| `gh auth status` → `not logged in` | Re-run `gh auth login` (section 4) |
+| `gh repo view` → 404 | You have no access to that repo, or login lacks `repo` scope — check `gh auth status` and re-login |
+| `get_project_issue_context` has no `statuses` | Server is an older version — update it, or rely on the skill's fallback (`list_redmine_issue_statuses`) |
+| Redmine asks for priority but none shown | The skill derives priorities from existing issues (`list_redmine_issues`) — requires read access on Redmine |
+
+---
+
+## 6. Keeping the skill up to date
+
+The skill tracks the server's behavior (e.g. `get_project_issue_context` returning `statuses`). Update by pulling this repo:
+
+```bash
+git pull --rebase
+# re-copy the folder into your agent (section 2)
+```
+
+For changes to take effect, **restart the agent** afterwards.

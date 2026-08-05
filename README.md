@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
-## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md) | [AI Agent Integrations](./docs/integrations.md)
+## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md) | [AI Agent Integrations](./docs/integrations.md) | [Issue Workflow Skill](./skills/redmine-issue-workflow/README.md)
 
 ## Features
 
