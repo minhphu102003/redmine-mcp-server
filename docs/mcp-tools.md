@@ -350,18 +350,24 @@ Create one parent issue and multiple subtasks in a single call.
 
 ### `update_redmine_issue`
 
-Update an existing Redmine issue.
+Update an existing Redmine issue, optionally logging worked time against it.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `issue_id` | int | (required) | Issue ID |
-| `fields` | dict | (required) | Fields to update (custom fields can be set by name, e.g. `{"size": "S"}`) |
+| `fields` | dict | (required) | Fields to update (custom fields can be set by name, e.g. `{"size": "S"}`; may be empty when only logging time) |
+| `spent_hours` | float | None | Hours to log as a time entry on this issue (must be > 0); requires no other field changes |
+| `activity_id` | int | None | Activity type ID for the logged time entry (see `list_time_entry_activities`) |
+| `time_comments` | str | None | Work description for the logged time entry (distinct from `notes`) |
+| `spent_on` | str | None | Date the work was done (YYYY-MM-DD), defaults to today |
 
 Behavior: respects read-only mode, autofills required custom fields when
 enabled, and disambiguates ambiguous status names instead of silently picking
-the first match.
+the first match. When `spent_hours` is set, a time entry is created on the
+issue after a successful update; a logging failure keeps the update and
+returns the error under `time_entry` with `time_entry_error: true`.
 
-**Returns:** `Dict` with the updated issue.
+**Returns:** `Dict` with the updated issue, plus a `time_entry` key when `spent_hours` was provided.
 
 ---
 

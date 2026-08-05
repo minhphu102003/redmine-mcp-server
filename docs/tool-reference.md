@@ -678,13 +678,17 @@ create_redmine_issue_with_subtasks(
 
 ### `update_redmine_issue`
 
-Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_READ_ONLY=true`.
+Updates an existing issue with the provided fields, and optionally logs worked time against it in the same call. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `issue_id` (integer, required): ID of the issue to update
-- `fields` (object, required): Dictionary of fields to update
+- `fields` (object, required): Dictionary of fields to update. May be empty when only logging time
+- `spent_hours` (number, optional): Hours to log as a time entry on this issue (e.g. `1.5`). Must be a positive number. When set, a time entry is created on the issue after a successful update
+- `activity_id` (integer, optional): Activity type ID for the logged time entry (use `list_time_entry_activities` to discover valid values)
+- `time_comments` (string, optional): Work description for the logged time entry (distinct from the issue `notes` comment)
+- `spent_on` (string, optional): Date the work was done (YYYY-MM-DD). Defaults to today
 
-**Returns:** Updated issue dictionary
+**Returns:** Updated issue dictionary. When `spent_hours` is provided, the created time entry is included under the `time_entry` key. If logging fails after a successful issue update, the update is kept and the result contains `time_entry` with an `error` key plus `time_entry_error: true`.
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
 You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
@@ -715,6 +719,16 @@ update_redmine_issue(
     fields={
         "size": "S"
     }
+)
+
+# Update the issue and log 1.5 hours of work in one call
+update_redmine_issue(
+    issue_id=123,
+    fields={"status_id": 3},
+    spent_hours=1.5,
+    activity_id=9,
+    time_comments="Implemented the fix",
+    spent_on="2026-08-05",
 )
 ```
 
