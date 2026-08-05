@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable, Dict, List, Optional, Union
 
 HandleErrorFn = Callable[
@@ -41,7 +42,10 @@ async def list_time_entries_impl(
         if to_date is not None:
             filters["to_date"] = to_date
 
-        time_entries = get_client().time_entry.filter(**filters)
+        client = get_client()
+        time_entries = await asyncio.to_thread(
+            lambda: list(client.time_entry.filter(**filters))
+        )
         return [time_entry_to_dict(time_entry) for time_entry in time_entries]
     except Exception as e:
         return [handle_error(e, "listing time entries", None)]
@@ -79,7 +83,8 @@ async def create_time_entry_impl(
         if spent_on is not None:
             params["spent_on"] = spent_on
 
-        time_entry = get_client().time_entry.create(**params)
+        client = get_client()
+        time_entry = await asyncio.to_thread(client.time_entry.create, **params)
         return time_entry_to_dict(time_entry)
     except Exception as e:
         context: dict[str, Any] = {}
@@ -120,8 +125,8 @@ async def update_time_entry_impl(
             return {"error": "No fields provided for update."}
 
         client = get_client()
-        client.time_entry.update(time_entry_id, **params)
-        updated_entry = client.time_entry.get(time_entry_id)
+        await asyncio.to_thread(client.time_entry.update, time_entry_id, **params)
+        updated_entry = await asyncio.to_thread(client.time_entry.get, time_entry_id)
         return time_entry_to_dict(updated_entry)
     except Exception as e:
         return handle_error(
@@ -138,7 +143,10 @@ async def list_time_entry_activities_impl(
 ) -> List[Dict[str, Any]]:
     """List available time entry activities from Redmine."""
     try:
-        activities = get_client().enumeration.filter(resource="time_entry_activities")
+        client = get_client()
+        activities = await asyncio.to_thread(
+            lambda: list(client.enumeration.filter(resource="time_entry_activities"))
+        )
         return [
             {
                 "id": getattr(activity, "id", None),

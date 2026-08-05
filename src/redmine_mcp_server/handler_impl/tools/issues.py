@@ -339,20 +339,14 @@ async def list_redmine_issues_impl(
         ]
 
         if include_pagination_info:
-            total_count: int
+            total_count: Optional[int] = None
             try:
                 total_count = await asyncio.to_thread(
                     lambda: client.issue.filter(**filters, limit=1).total_count
                 )
                 logger.debug("Got total count from separate query: %s", total_count)
             except Exception as e:
-                logger.warning(
-                    "Could not get total count: %s, using estimated value", e
-                )
-                if len(result_issues) == fetch_limit:
-                    total_count = offset + len(result_issues) + 1
-                else:
-                    total_count = offset + len(result_issues)
+                logger.warning("Could not get total count: %s, omitting total", e)
 
             return {
                 "issues": result_issues,
@@ -584,10 +578,23 @@ async def update_redmine_issue_impl(
         name = str(update_fields.pop("status_name")).lower()
         try:
             statuses = await asyncio.to_thread(get_client().issue_status.all)
-            for status in statuses:
-                if getattr(status, "name", "").lower() == name:
-                    update_fields["status_id"] = status.id
-                    break
+            matches = [
+                status
+                for status in statuses
+                if getattr(status, "name", "").lower() == name
+            ]
+            if len(matches) == 1:
+                update_fields["status_id"] = matches[0].id
+            elif len(matches) > 1:
+                return handle_error(
+                    ValueError(
+                        f"Ambiguous status name '{name}': "
+                        f"multiple statuses match (IDs: "
+                        f"{', '.join(str(s.id) for s in matches)})"
+                    ),
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
         except Exception as e:
             logger.warning("Error resolving status name '%s': %s", name, e)
 

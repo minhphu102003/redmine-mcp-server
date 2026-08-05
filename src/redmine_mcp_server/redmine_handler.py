@@ -467,14 +467,17 @@ async def _resolve_status_id_by_name(status_name: str) -> Optional[int]:
 
     client = _get_redmine_client(strict=False)
     if client is None:
+        _cache_set(_STATUS_ID_CACHE, cache_key, None)
         return None
     try:
         statuses = await asyncio.to_thread(client.issue_status.all)
     except Exception:
+        _cache_set(_STATUS_ID_CACHE, cache_key, None)
         return None
     try:
         iterator = iter(statuses)
     except TypeError:
+        _cache_set(_STATUS_ID_CACHE, cache_key, None)
         return None
     expected = status_name.strip().lower()
     for status in iterator:
@@ -495,14 +498,17 @@ async def _resolve_priority_id_by_name(priority_name: str) -> Optional[int]:
 
     client = _get_redmine_client(strict=False)
     if client is None:
+        _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
         return None
     try:
         priorities = await asyncio.to_thread(client.issue_priority.all)
     except Exception:
+        _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
         return None
     try:
         iterator = iter(priorities)
     except TypeError:
+        _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
         return None
     expected = priority_name.strip().lower()
     for priority in iterator:
@@ -1270,6 +1276,8 @@ async def export_weekly_report_markdown(
     unit_name: str = "TRUNG TÂM CSE",
     reporter_name: str = "NGƯỜI BÁO CÁO",
     location: str = "Đà Nẵng",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Export weekly report markdown file from scrum report analytics."""
     return await export_weekly_report_markdown_impl(
@@ -1283,6 +1291,8 @@ async def export_weekly_report_markdown(
         unit_name=unit_name,
         reporter_name=reporter_name,
         location=location,
+        from_date=from_date,
+        to_date=to_date,
         handle_error=_handle_redmine_error,
     )
 
@@ -1298,6 +1308,8 @@ async def export_weekly_report_docx(
     unit_name: str = "TRUNG TÂM CSE",
     reporter_name: str = "NGƯỜI BÁO CÁO",
     location: str = "Đà Nẵng",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Export weekly report as .docx for client-facing sharing."""
     return await export_weekly_report_docx_impl(
@@ -1311,6 +1323,8 @@ async def export_weekly_report_docx(
         unit_name=unit_name,
         reporter_name=reporter_name,
         location=location,
+        from_date=from_date,
+        to_date=to_date,
         handle_error=_handle_redmine_error,
     )
 

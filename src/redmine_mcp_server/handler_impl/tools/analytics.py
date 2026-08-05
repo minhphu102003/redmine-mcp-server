@@ -859,14 +859,19 @@ async def _build_weekly_report_render_payload(
     reporter_name: str,
     location: str,
     today: Optional[date],
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build rendered weekly report markdown and metadata from scrum report data."""
+    report_type = "custom" if (from_date and to_date) else "weekly"
     report_data = await generate_scrum_report_fn(
-        report_type="weekly",
+        report_type=report_type,
         user_id=user_id,
         project_id=project_id,
         top_n_items=top_n_items,
         include_entries=False,
+        from_date=from_date,
+        to_date=to_date,
     )
     if isinstance(report_data, dict) and "error" in report_data:
         return report_data
@@ -983,6 +988,8 @@ async def export_weekly_report_markdown_impl(
     reporter_name: str = "NGƯỜI BÁO CÁO",
     location: str = "Đà Nẵng",
     today: Optional[date] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
     """Export a weekly markdown report file from scrum analytics data."""
@@ -997,6 +1004,8 @@ async def export_weekly_report_markdown_impl(
             reporter_name=reporter_name,
             location=location,
             today=today,
+            from_date=from_date,
+            to_date=to_date,
         )
         if "error" in render_payload:
             return render_payload
@@ -1048,6 +1057,8 @@ async def export_weekly_report_docx_impl(
     reporter_name: str = "NGƯỜI BÁO CÁO",
     location: str = "Đà Nẵng",
     today: Optional[date] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
     """Export weekly report to a plain-text .docx wrapper rendered from markdown."""
@@ -1062,6 +1073,8 @@ async def export_weekly_report_docx_impl(
             reporter_name=reporter_name,
             location=location,
             today=today,
+            from_date=from_date,
+            to_date=to_date,
         )
         if "error" in render_payload:
             return render_payload
