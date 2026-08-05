@@ -1,12 +1,11 @@
 # Redmine MCP Tools (Current Repository)
 
 This document provides a comprehensive summary of every MCP tool, resource,
-prompt, and HTTP route currently exposed by the `redmine-mcp-server`.
+and HTTP route currently exposed by the `redmine-mcp-server`.
 
 - Implementation: `src/redmine_mcp_server/redmine_handler.py`
 - Tool internals (dependency-injected): `src/redmine_mcp_server/handler_impl/tools/`
 - Detailed per-tool reference with examples: [Tool Reference](./tool-reference.md)
-- Client bootstrap guide: [client-bootstrap-prompt.md](./client-bootstrap-prompt.md)
 
 ## Surface summary
 
@@ -14,7 +13,6 @@ prompt, and HTTP route currently exposed by the `redmine-mcp-server`.
 |---|---|
 | MCP tools (`@mcp.tool()`) | 28 |
 | MCP resources (`@mcp.resource()`) | 6 |
-| MCP prompts (`@mcp.prompt()`) | 29 (1 global + 28 per-tool) |
 | Custom HTTP routes (`@mcp.custom_route()`) | 3 |
 
 ## Quick reference (all 28 tools)
@@ -302,14 +300,23 @@ Search Redmine issues matching a query string with pagination support.
 
 ### `create_redmine_issue`
 
-Create a new issue in Redmine.
+Create a new issue in Redmine. All core issue fields are **required** (the
+tool refuses to create an issue with any of them missing).
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `project_id` | int | (required) | Project ID |
 | `subject` | str | (required) | Issue subject |
-| `description` | str | `""` | Issue description |
-| `fields` | dict/str | `None` | Structured fields (tracker, priority, assignee, custom fields...) |
+| `description` | str | (required) | Issue description (Textile/Wiki) |
+| `tracker_id` | int | (required) | Issue type: 1 (Bug), 2 (Feature), 3 (Support), 4 (Common), 5 (Testing Task) |
+| `priority_id` | int | (required) | Priority: 3 = Normal, 4 = High, ... |
+| `status_id` | int | (required) | Initial status: 1 = New, 2 = In Progress, ... |
+| `assigned_to_id` | int | (required) | Assignee user ID (e.g. 80 = Nguyễn Minh Phú) |
+| `start_date` | str | (required) | Start date (YYYY-MM-DD) |
+| `due_date` | str | (required) | Due date (YYYY-MM-DD) |
+| `estimated_hours` | float | (required) | Estimated hours |
+| `done_ratio` | int | (required) | Completion percentage (0-100) |
+| `fields` | dict/str | `None` | Extra fields: category_id, fixed_version_id, custom_fields |
 | `extra_fields` | dict/str | `None` | Extra custom fields |
 | `parent_issue_id` | int/str | `None` | ID of an existing task to create this issue as a subtask of (must be in the same project) |
 
@@ -332,17 +339,29 @@ Behavior:
 
 ### `create_redmine_issue_with_subtasks`
 
-Create one parent issue and multiple subtasks in a single call.
+Create one parent issue and multiple subtasks in a single call. All core
+fields are **required** for the parent and for **every** subtask.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `project_id` | int | (required) | Project ID |
 | `parent_subject` | str | (required) | Parent issue subject |
-| `parent_description` | str | `""` | Parent issue description |
-| `parent_fields` | dict/str | `None` | Structured fields for the parent |
+| `parent_description` | str | (required) | Parent issue description |
+| `tracker_id` | int | (required) | Parent issue type: 1 (Bug), 2 (Feature), 3 (Support), 4 (Common), 5 (Testing Task) |
+| `priority_id` | int | (required) | Parent priority: 3 = Normal, 4 = High, ... |
+| `status_id` | int | (required) | Parent initial status: 1 = New, 2 = In Progress, ... |
+| `assigned_to_id` | int | (required) | Parent assignee user ID |
+| `start_date` | str | (required) | Parent start date (YYYY-MM-DD) |
+| `due_date` | str | (required) | Parent due date (YYYY-MM-DD) |
+| `estimated_hours` | float | (required) | Parent estimated hours |
+| `done_ratio` | int | (required) | Parent completion percentage (0-100) |
+| `parent_fields` | dict/str | `None` | Extra fields for the parent (category, version, custom fields) |
 | `parent_extra_fields` | dict/str | `None` | Extra custom fields for the parent |
-| `subtasks` | list[dict] | `None` | List of subtask specs (subject, description, fields...) |
+| `subtasks` | list[dict] | `None` | Subtask specs; each requires subject, description, tracker_id, priority_id, status_id, assigned_to_id, start_date, due_date, estimated_hours, done_ratio (plus optional fields/extra_fields) |
 | `stop_on_subtask_error` | bool | `False` | Abort remaining subtasks on first failure |
+
+Subtasks missing any required field are reported in `failed_subtasks`, not
+created.
 
 **Returns:** `Dict` with parent issue plus per-subtask results.
 
@@ -620,22 +639,6 @@ write operations.
 - `redmine://time-entry/contract`
   - Time logging contract: required fields and validation rules, available
     activities (id/name/active/default), create/update payload examples.
-
-## Prompts
-
-### `redmine_server_operating_prompt`
-
-Global operating prompt for this MCP server. Designed to be loaded first by
-client/agent orchestration before any tool calls. Client enforcement guide:
-`docs/client-bootstrap-prompt.md`.
-
-### Per-tool prompts (28)
-
-Every tool has a corresponding prompt named `<tool_name>_prompt` (e.g.
-`get_redmine_issue_prompt`, `manage_time_entries_prompt`,
-`cleanup_attachment_files_prompt`). Each prompt renders the tool's objective,
-required inputs, recommended resources, pre-checks, and result shape, guiding
-agents toward correct usage.
 
 ## Custom HTTP routes
 

@@ -395,7 +395,17 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
         result = await create_redmine_issue(
-            1, "Test Issue Subject", "Test issue description"
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
         )
 
         assert result is not None
@@ -404,6 +414,14 @@ class TestRedmineHandler:
             project_id=1,
             subject="Test Issue Subject",
             description="Test issue description",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
         )
 
     @pytest.mark.asyncio
@@ -426,6 +444,14 @@ class TestRedmineHandler:
                 1,
                 "Test Issue Subject",
                 "## Mục tiêu\n- Có mô tả mục tiêu",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
             )
 
         assert "error" in result
@@ -661,6 +687,14 @@ class TestRedmineHandler:
             1,
             "Test Issue Subject",
             "Test issue description",
+            tracker_id=5,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
             fields='{"priority_id": 4, "tracker_id": 5}',
         )
 
@@ -670,8 +704,14 @@ class TestRedmineHandler:
             project_id=1,
             subject="Test Issue Subject",
             description="Test issue description",
-            priority_id=4,
+            priority_id=3,
             tracker_id=5,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
         )
 
     @pytest.mark.asyncio
@@ -688,6 +728,14 @@ class TestRedmineHandler:
             1,
             "Test Issue Subject",
             "Test issue description",
+            tracker_id=5,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
             extra_fields={"priority_id": 4, "tracker_id": 5},
         )
 
@@ -699,6 +747,12 @@ class TestRedmineHandler:
             description="Test issue description",
             priority_id=4,
             tracker_id=5,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
         )
 
     @pytest.mark.asyncio
@@ -715,6 +769,14 @@ class TestRedmineHandler:
             1,
             "Test Issue Subject",
             "Test issue description",
+            tracker_id=5,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
             extra_fields='{"priority_id": 4, "tracker_id": 5}',
         )
 
@@ -726,6 +788,12 @@ class TestRedmineHandler:
             description="Test issue description",
             priority_id=4,
             tracker_id=5,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
         )
 
     @pytest.mark.asyncio
@@ -734,7 +802,20 @@ class TestRedmineHandler:
         """Test invalid serialized fields payload handling."""
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
-        result = await create_redmine_issue(1, "A", "B", fields="this is not valid")
+        result = await create_redmine_issue(
+            1,
+            "A",
+            "B",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+            fields="this is not valid",
+        )
 
         assert "error" in result
         assert "Invalid fields payload" in result["error"]
@@ -749,7 +830,18 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
         result = await create_redmine_issue(
-            1, "A", "B", extra_fields="this is not valid"
+            1,
+            "A",
+            "B",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+            extra_fields="this is not valid",
         )
 
         assert "error" in result
@@ -775,12 +867,25 @@ class TestRedmineHandler:
             clear=False,
         ):
             result = await create_redmine_issue(
-                41, "Autofill test", "Autofill description"
+                41,
+                "Autofill test",
+                "Autofill description",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
             )
 
         assert "error" in result
         mock_redmine.issue.create.assert_called_once()
-        mock_redmine.project.get.assert_not_called()
+        assert all(
+            call.kwargs.get("include") != "issue_custom_fields"
+            for call in mock_redmine.project.get.call_args_list
+        )
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -821,14 +926,20 @@ class TestRedmineHandler:
                 41,
                 "Autofill test",
                 "Autofill description",
+                tracker_id=5,
+                priority_id=4,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 fields='{"tracker_id": 5, "priority_id": 4}',
             )
 
         assert result["id"] == 123
         assert mock_redmine.issue.create.call_count == 2
-        mock_redmine.project.get.assert_called_once_with(
-            41, include="issue_custom_fields"
-        )
+        mock_redmine.project.get.assert_any_call(41, include="issue_custom_fields")
 
         second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
         assert second_call_kwargs["tracker_id"] == 5
@@ -867,7 +978,17 @@ class TestRedmineHandler:
                 41,
                 "Autofill test",
                 "Autofill description",
-                fields='{"tracker_id": 5, "custom_fields": [{"id": 6, "value": ""}]}',
+                tracker_id=5,
+                priority_id=4,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
+                fields=(
+                    '{"tracker_id": 5, "custom_fields": ' '[{"id": 6, "value": ""}]}'
+                ),
             )
 
         assert result["id"] == 123
@@ -912,6 +1033,14 @@ class TestRedmineHandler:
                 41,
                 "Autofill test",
                 "Autofill description",
+                tracker_id=5,
+                priority_id=4,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 fields='{"tracker_id": 5}',
             )
 
@@ -957,6 +1086,14 @@ class TestRedmineHandler:
                 99,
                 "Autofill test",
                 "Autofill description",
+                tracker_id=5,
+                priority_id=4,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 fields=(
                     '{"tracker_id": 5, "custom_fields": ' '[{"id": 6, "value": "any"}]}'
                 ),
@@ -981,7 +1118,19 @@ class TestRedmineHandler:
 
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
-        result = await create_redmine_issue(1, "A", "B")
+        result = await create_redmine_issue(
+            1,
+            "A",
+            "B",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
@@ -990,7 +1139,19 @@ class TestRedmineHandler:
         """Test issue creation when client is not initialized."""
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
-        result = await create_redmine_issue(1, "A")
+        result = await create_redmine_issue(
+            1,
+            "A",
+            "B",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
         assert "error" in result
 
     @pytest.mark.asyncio

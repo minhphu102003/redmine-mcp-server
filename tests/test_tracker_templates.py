@@ -90,6 +90,14 @@ async def test_create_issue_uses_tracker_specific_template_validation():
                 project_id=10,
                 subject="Bug ticket",
                 description="## Steps to Reproduce\n- open app",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 fields={"tracker_id": 1},
             )
 

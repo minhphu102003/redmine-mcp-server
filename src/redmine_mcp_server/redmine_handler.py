@@ -135,7 +135,6 @@ from .resources import (  # noqa: E402
     required_issue_template_sections,
     validate_issue_description_template,
 )
-from .tool_prompts import register_tool_prompts  # noqa: E402
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
@@ -321,7 +320,6 @@ def _get_redmine_client(strict: bool = True) -> Optional[Redmine]:
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")
-register_tool_prompts(mcp)
 
 
 # Initialize cleanup manager
@@ -1111,15 +1109,69 @@ async def create_redmine_issue(
                 "Body/description of the issue. Supports Redmine Textile/Wiki markup."
             )
         ),
-    ] = "",
+    ],
+    tracker_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Issue type: 1 (Bug), 2 (Feature), 3 (Support), 4 (Common), 5"
+                " (Testing Task)."
+            )
+        ),
+    ],
+    priority_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Priority level of the issue, e.g. 3 = Normal, 4 = High, 5 ="
+                " Urgent, 2 = Low."
+            )
+        ),
+    ],
+    status_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Initial status of the issue, e.g. 1 = New, 2 = In Progress, 3 ="
+                " Resolved, 4 = Feedback, 5 = Closed, 6 = Rejected."
+            )
+        ),
+    ],
+    assigned_to_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the user the issue is assigned to, e.g. 79 (Huỳnh Ngọc Đăng"
+                " Khoa), 80 (Nguyễn Minh Phú), 75 (Đoàn Ngọc Phương Linh), 77"
+                " (Nguyễn Trần Khánh Vinh), 30 (Võ Văn Thuận)."
+            )
+        ),
+    ],
+    start_date: Annotated[
+        str,
+        Field(description="Start date of the issue (YYYY-MM-DD)."),
+    ],
+    due_date: Annotated[
+        str,
+        Field(description="Due date of the issue (YYYY-MM-DD)."),
+    ],
+    estimated_hours: Annotated[
+        float,
+        Field(description="Estimated hours required to complete the issue."),
+    ],
+    done_ratio: Annotated[
+        int,
+        Field(description="Completion percentage of the issue (0 to 100)."),
+    ],
     fields: Annotated[
         Optional[Union[Dict[str, Any], str]],
         Field(
             description=(
-                "Structured issue fields: tracker_id, priority_id, assigned_to_id,"
-                " category_id, fixed_version_id, estimated_hours, start_date/due_date"
-                " (YYYY-MM-DD), done_ratio, and custom field values via"
-                " 'custom_fields': [{'id': X, 'value': Y}]."
+                "Optional extra fields: category_id, fixed_version_id, and custom"
+                " field values via 'custom_fields': [{'id': X, 'value': Y}]. All"
+                " other issue fields (tracker_id, priority_id, status_id,"
+                " assigned_to_id, dates, estimated_hours, done_ratio) are passed as"
+                " dedicated required parameters."
             )
         ),
     ] = None,
@@ -1144,11 +1196,33 @@ async def create_redmine_issue(
 ) -> Dict[str, Any]:
     """Create a new issue, standalone or as a subtask of an existing task.
 
-    Use when the user asks to create/track a task. Pass parent_issue_id to
-    create the issue as a child of an existing task. Respects the issue
-    template when enforced by policy; returns the created issue including
-    its parent key.
+    Use when the user asks to create/track a task. All core issue fields
+    (project, subject, description, tracker, priority, status, assignee,
+    start/due dates, estimated hours, completion ratio) are required. Pass
+    parent_issue_id to create the issue as a child of an existing task.
+    Respects the issue template when enforced by policy; returns the created
+    issue including its parent key.
     """
+    try:
+        merged_fields = _issue_fields._parse_create_issue_fields(fields)
+    except ValueError:
+        merged_fields = None
+
+    if merged_fields is not None:
+        merged_fields.update(
+            {
+                "tracker_id": tracker_id,
+                "priority_id": priority_id,
+                "status_id": status_id,
+                "assigned_to_id": assigned_to_id,
+                "start_date": start_date,
+                "due_date": due_date,
+                "estimated_hours": estimated_hours,
+                "done_ratio": done_ratio,
+            }
+        )
+        fields = merged_fields
+
     return await create_redmine_issue_impl(
         project_id,
         subject,
@@ -1192,13 +1266,65 @@ async def create_redmine_issue_with_subtasks(
     parent_description: Annotated[
         str,
         Field(description="Body of the parent issue (Textile/Wiki markup supported)."),
-    ] = "",
+    ],
+    tracker_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Issue type of the parent issue: 1 (Bug), 2 (Feature), 3 (Support),"
+                " 4 (Common), 5 (Testing Task)."
+            )
+        ),
+    ],
+    priority_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Priority level of the parent issue, e.g. 3 = Normal, 4 = High."
+            )
+        ),
+    ],
+    status_id: Annotated[
+        int,
+        Field(
+            description=(
+                "Initial status of the parent issue, e.g. 1 = New, 2 = In Progress."
+            )
+        ),
+    ],
+    assigned_to_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the user assigned to the parent issue, e.g. 79 (Huỳnh Ngọc"
+                " Đăng Khoa), 80 (Nguyễn Minh Phú), 75 (Đoàn Ngọc Phương Linh), 77"
+                " (Nguyễn Trần Khánh Vinh), 30 (Võ Văn Thuận)."
+            )
+        ),
+    ],
+    start_date: Annotated[
+        str,
+        Field(description="Start date of the parent issue (YYYY-MM-DD)."),
+    ],
+    due_date: Annotated[
+        str,
+        Field(description="Due date of the parent issue (YYYY-MM-DD)."),
+    ],
+    estimated_hours: Annotated[
+        float,
+        Field(description="Estimated hours for the parent issue."),
+    ],
+    done_ratio: Annotated[
+        int,
+        Field(description="Completion percentage of the parent issue (0 to 100)."),
+    ],
     parent_fields: Annotated[
         Optional[Union[Dict[str, Any], str]],
         Field(
             description=(
-                "Structured fields for the parent issue (same keys as"
-                " create_redmine_issue.fields)."
+                "Optional extra fields for the parent issue: category_id,"
+                " fixed_version_id, and custom field values via 'custom_fields':"
+                " [{'id': X, 'value': Y}]."
             )
         ),
     ] = None,
@@ -1214,8 +1340,10 @@ async def create_redmine_issue_with_subtasks(
         Optional[List[Dict[str, Any]]],
         Field(
             description=(
-                "List of subtask dicts, each with 'subject' (required) and optional"
-                " 'description', 'fields', 'extra_fields'."
+                "List of subtask dicts, each requiring 'subject', 'description',"
+                " 'tracker_id', 'priority_id', 'status_id', 'assigned_to_id',"
+                " 'start_date', 'due_date', 'estimated_hours', 'done_ratio' plus"
+                " optional 'fields' and 'extra_fields'."
             )
         ),
     ] = None,
@@ -1231,14 +1359,24 @@ async def create_redmine_issue_with_subtasks(
 ) -> Dict[str, Any]:
     """Create one parent issue and multiple subtasks in a single call.
 
-    Use for work items that decompose into several child tasks. Each subtask
-    is created under the new parent in the same project; returns the parent
-    issue with per-subtask results.
+    Use for work items that decompose into several child tasks. All core
+    issue fields (project, subject, description, tracker, priority, status,
+    assignee, dates, estimated hours, completion ratio) are required for the
+    parent and for every subtask. Returns the parent issue with per-subtask
+    results.
     """
     return await create_redmine_issue_with_subtasks_impl(
         project_id=project_id,
         parent_subject=parent_subject,
         parent_description=parent_description,
+        tracker_id=tracker_id,
+        priority_id=priority_id,
+        status_id=status_id,
+        assigned_to_id=assigned_to_id,
+        start_date=start_date,
+        due_date=due_date,
+        estimated_hours=estimated_hours,
+        done_ratio=done_ratio,
         parent_fields=parent_fields,
         parent_extra_fields=parent_extra_fields,
         subtasks=subtasks,

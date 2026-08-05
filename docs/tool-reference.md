@@ -562,20 +562,36 @@ search_redmine_issues(
 
 ### `create_redmine_issue`
 
-Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
+Creates a new issue in the specified project. All core issue fields are
+**required** — the tool will not create an issue with any of them missing.
+Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
-**Parameters:**
-- `project_id` (integer, required): Target project ID
-- `subject` (string, required): Issue subject/title
-- `description` (string, optional): Issue description. Default: `""`
-- `fields` (object|string, optional): Additional Redmine fields as:
-  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
-  - a serialized JSON object string (for MCP clients that pass string payloads)
-- `extra_fields` (object|string, optional): Additional Redmine fields as:
-  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
-  - a serialized JSON object string
+**Parameters (all required):**
+- `project_id` (integer): Target project ID
+- `subject` (string): Issue subject/title
+- `description` (string): Issue description (Textile/Wiki markup supported)
+- `tracker_id` (integer): Issue type — `1` (Bug), `2` (Feature), `3` (Support),
+  `4` (Common), `5` (Testing Task)
+- `priority_id` (integer): Priority level — e.g. `3` = Normal, `4` = High,
+  `5` = Urgent, `2` = Low
+- `status_id` (integer): Initial status — e.g. `1` = New, `2` = In Progress,
+  `3` = Resolved, `4` = Feedback, `5` = Closed, `6` = Rejected
+- `assigned_to_id` (integer): Assignee user ID (e.g. `79`, `80`, `75`, `77`,
+  `30`)
+- `start_date` (string): Start date, `YYYY-MM-DD`
+- `due_date` (string): Due date, `YYYY-MM-DD`
+- `estimated_hours` (number): Estimated hours to complete the issue
+- `done_ratio` (integer): Completion percentage, `0` to `100`
+
+**Optional parameters:**
+- `fields` (object|string, optional): Extra Redmine fields as an object or a
+  serialized JSON object string. Used for `category_id`, `fixed_version_id`,
+  and custom fields (`"custom_fields": [{"id": X, "value": Y}]`). All other
+  issue fields are passed as the dedicated required parameters above
+- `extra_fields` (object|string, optional): Advanced fields passed through to
+  Redmine that are not in `fields`
 - `parent_issue_id` (integer or string, optional): ID of an existing task to
-  create this issue as a subtask of. When omitted, a standalone task is created.
+  create this issue as a subtask of. When omitted, a standalone task is created
 
 **Returns:** Created issue dictionary (includes a `parent` key with the parent
 issue's `id`/`subject`, or `None` for standalone tasks).
@@ -598,16 +614,17 @@ create_redmine_issue(
     project_id=1,
     subject="Implement refresh token flow",
     description="Details...",
-    fields={"tracker_id": 2, "assigned_to_id": 5},
+    tracker_id=2,
+    priority_id=3,
+    status_id=1,
+    assigned_to_id=5,
+    start_date="2026-08-05",
+    due_date="2026-08-12",
+    estimated_hours=8.0,
+    done_ratio=0,
     parent_issue_id=42,
 )
 ```
-
-**Planning defaults:**
-- `done_ratio` defaults to `0` when omitted.
-- If available in Redmine metadata, defaults are applied for:
-  - `status_id` -> `New`
-  - `priority_id` -> `Normal`
 
 **Strict input policy (optional):**
 - Enable with `REDMINE_STRICT_ISSUE_CREATION_INPUTS=true`.
@@ -623,9 +640,16 @@ create_redmine_issue(
 # Create a bug report
 create_redmine_issue(
     project_id=1,
-    subject="Login button not working",
+    subject="[web] Login button not working",
     description="The login button does not respond to clicks",
-    fields={"priority_id": 3, "tracker_id": 1}
+    tracker_id=1,
+    priority_id=4,
+    status_id=1,
+    assigned_to_id=80,
+    start_date="2026-08-05",
+    due_date="2026-08-12",
+    estimated_hours=4.0,
+    done_ratio=0,
 )
 ```
 
@@ -633,18 +657,41 @@ create_redmine_issue(
 
 ### `create_redmine_issue_with_subtasks`
 
-Creates one parent issue and multiple subtasks in a single tool call.
+Creates one parent issue and multiple subtasks in a single tool call. All
+core fields are **required** for the parent and for **every** subtask —
+subtasks missing any required field are reported as failed, not created.
+Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
-**Parameters:**
-- `project_id` (integer, required): Target project ID
-- `parent_subject` (string, required): Parent issue title
-- `parent_description` (string, optional): Parent issue description. Default: `""`
-- `parent_fields` (object|string, optional): Additional fields for parent issue
+**Parameters (all required):**
+- `project_id` (integer): Target project ID
+- `parent_subject` (string): Parent issue title
+- `parent_description` (string): Parent issue description
+- `tracker_id` (integer): Issue type of the parent — `1` (Bug), `2` (Feature),
+  `3` (Support), `4` (Common), `5` (Testing Task)
+- `priority_id` (integer): Priority of the parent (e.g. `3` = Normal, `4` = High)
+- `status_id` (integer): Initial status of the parent (e.g. `1` = New, `2` = In Progress)
+- `assigned_to_id` (integer): Assignee of the parent (e.g. `80`)
+- `start_date` (string): Parent start date, `YYYY-MM-DD`
+- `due_date` (string): Parent due date, `YYYY-MM-DD`
+- `estimated_hours` (number): Estimated hours for the parent
+- `done_ratio` (integer): Parent completion percentage, `0` to `100`
+
+**Optional parameters:**
+- `parent_fields` (object|string, optional): Extra fields for parent issue
+  (`category_id`, `fixed_version_id`, custom fields)
 - `parent_extra_fields` (object|string, optional): Additional fields merged into parent fields
-- `subtasks` (array, optional): List of subtask objects:
-  - `subject` (string, required)
-  - `description` (string, optional)
-  - `fields` (object|string, optional)
+- `subtasks` (array, optional): List of subtask objects, each **requiring**:
+  - `subject` (string)
+  - `description` (string)
+  - `tracker_id` (integer)
+  - `priority_id` (integer)
+  - `status_id` (integer)
+  - `assigned_to_id` (integer)
+  - `start_date` (string, `YYYY-MM-DD`)
+  - `due_date` (string, `YYYY-MM-DD`)
+  - `estimated_hours` (number)
+  - `done_ratio` (integer)
+  - `fields` (object|string, optional): extra fields for the subtask
   - `extra_fields` (object|string, optional)
 - `stop_on_subtask_error` (boolean, optional): Stop processing on first failed subtask. Default: `false`
 
@@ -656,6 +703,8 @@ Creates one parent issue and multiple subtasks in a single tool call.
 
 **Behavior notes:**
 - Each subtask is forced to use `parent_issue_id=<created_parent_id>`.
+- Subtasks missing any required field are skipped and reported in
+  `failed_subtasks` with `Missing required subtask fields: ...`.
 - Parent/subtask creation follows the same validation, template, and read-only rules as `create_redmine_issue`.
 - Subtasks are processed in batches of **50** by default (`REDMINE_MCP_SUBTASK_BATCH_LIMIT`).
 
@@ -665,11 +714,39 @@ create_redmine_issue_with_subtasks(
     project_id=1,
     parent_subject="Implement OAuth login flow",
     parent_description="Break down this epic into implementable tasks.",
-    parent_fields={"tracker_id": 2, "priority_id": 3},
+    tracker_id=2,
+    priority_id=3,
+    status_id=1,
+    assigned_to_id=80,
+    start_date="2026-08-05",
+    due_date="2026-08-19",
+    estimated_hours=16.0,
+    done_ratio=0,
     subtasks=[
-        {"subject": "Design callback handler", "fields": {"tracker_id": 1}},
-        {"subject": "Implement token refresh"},
-        {"subject": "Add integration tests", "fields": {"assigned_to_id": 12}},
+        {
+            "subject": "Design callback handler",
+            "description": "Design the OAuth callback flow",
+            "tracker_id": 1,
+            "priority_id": 3,
+            "status_id": 1,
+            "assigned_to_id": 80,
+            "start_date": "2026-08-05",
+            "due_date": "2026-08-07",
+            "estimated_hours": 4.0,
+            "done_ratio": 0,
+        },
+        {
+            "subject": "Implement token refresh",
+            "description": "Implement refresh token rotation",
+            "tracker_id": 1,
+            "priority_id": 3,
+            "status_id": 1,
+            "assigned_to_id": 79,
+            "start_date": "2026-08-08",
+            "due_date": "2026-08-12",
+            "estimated_hours": 8.0,
+            "done_ratio": 0,
+        },
     ],
 )
 ```

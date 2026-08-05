@@ -159,6 +159,20 @@ def _resolve_subtask_batch_limit(default: int = 50) -> int:
     return min(value, 200)
 
 
+_REQUIRED_SUBTASK_FIELDS = (
+    "subject",
+    "description",
+    "tracker_id",
+    "priority_id",
+    "status_id",
+    "assigned_to_id",
+    "start_date",
+    "due_date",
+    "estimated_hours",
+    "done_ratio",
+)
+
+
 async def get_redmine_issue_impl(
     issue_id: int,
     include_journals: bool = True,
@@ -758,7 +772,15 @@ async def update_redmine_issue_impl(
 async def create_redmine_issue_with_subtasks_impl(
     project_id: int,
     parent_subject: str,
-    parent_description: str = "",
+    parent_description: str,
+    tracker_id: int,
+    priority_id: int,
+    status_id: int,
+    assigned_to_id: int,
+    start_date: str,
+    due_date: str,
+    estimated_hours: float,
+    done_ratio: int,
     parent_fields: Optional[Union[Dict[str, Any], str]] = None,
     parent_extra_fields: Optional[Union[Dict[str, Any], str]] = None,
     subtasks: Optional[List[Dict[str, Any]]] = None,
@@ -783,6 +805,19 @@ async def create_redmine_issue_with_subtasks_impl(
         )
     except ValueError as exc:
         return {"error": str(exc)}
+
+    parent_payload.update(
+        {
+            "tracker_id": tracker_id,
+            "priority_id": priority_id,
+            "status_id": status_id,
+            "assigned_to_id": assigned_to_id,
+            "start_date": start_date,
+            "due_date": due_date,
+            "estimated_hours": estimated_hours,
+            "done_ratio": done_ratio,
+        }
+    )
 
     parent_issue = await create_issue_fn(
         project_id=project_id,
@@ -845,6 +880,28 @@ async def create_redmine_issue_with_subtasks_impl(
                     break
                 continue
 
+            missing_required = [
+                name
+                for name in _REQUIRED_SUBTASK_FIELDS
+                if str(subtask.get(name, "")).strip() == ""
+            ]
+            if missing_required:
+                failed_subtasks.append(
+                    {
+                        "index": index,
+                        "subject": wrap_content(subtask_subject),
+                        "error": (
+                            "Missing required subtask fields: "
+                            + ", ".join(missing_required)
+                            + "."
+                        ),
+                    }
+                )
+                if stop_on_subtask_error:
+                    stop_processing = True
+                    break
+                continue
+
             try:
                 subtask_payload = _coerce_optional_object_payload(
                     subtask.get("fields"), "subtask.fields"
@@ -867,6 +924,18 @@ async def create_redmine_issue_with_subtasks_impl(
                     break
                 continue
 
+            subtask_payload.update(
+                {
+                    "tracker_id": subtask["tracker_id"],
+                    "priority_id": subtask["priority_id"],
+                    "status_id": subtask["status_id"],
+                    "assigned_to_id": subtask["assigned_to_id"],
+                    "start_date": subtask["start_date"],
+                    "due_date": subtask["due_date"],
+                    "estimated_hours": subtask["estimated_hours"],
+                    "done_ratio": subtask["done_ratio"],
+                }
+            )
             subtask_payload["parent_issue_id"] = parent_issue_id
             subtask_description = str(subtask.get("description", ""))
 

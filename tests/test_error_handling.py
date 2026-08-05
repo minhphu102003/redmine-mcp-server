@@ -226,7 +226,19 @@ class TestToolErrorIntegration:
         from redminelib.exceptions import ServerError
 
         mock_redmine.issue.create.side_effect = ServerError()
-        result = await create_redmine_issue(1, "Test", "Description")
+        result = await create_redmine_issue(
+            1,
+            "Test",
+            "Description",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
 
         assert "500" in result["error"]
 

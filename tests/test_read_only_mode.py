@@ -55,7 +55,19 @@ class TestWriteToolsBlockedInReadOnly:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_issue_blocked(self, mock_redmine, mock_cleanup):
-        result = await create_redmine_issue(project_id=1, subject="X")
+        result = await create_redmine_issue(
+            project_id=1,
+            subject="X",
+            description="D",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
         assert "read-only" in result["error"].lower()
         mock_redmine.issue.create.assert_not_called()
 
@@ -172,7 +184,19 @@ class TestWriteToolsWorkWhenNotReadOnly:
         mock_issue.updated_on = None
         mock_redmine.issue.create.return_value = mock_issue
 
-        await create_redmine_issue(project_id=1, subject="X")
+        await create_redmine_issue(
+            project_id=1,
+            subject="X",
+            description="D",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
         mock_redmine.issue.create.assert_called_once()
 
     @pytest.mark.asyncio
