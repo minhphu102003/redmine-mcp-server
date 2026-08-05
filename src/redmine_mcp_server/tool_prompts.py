@@ -152,6 +152,7 @@ def list_redmine_issues_prompt(project_id: Optional[Union[str, int]] = None) -> 
             f"project scope={scope}",
             "limit/offset for pagination",
             "optional filters/status/tracker/assignee",
+            "parent_id to list subtasks of a specific task",
         ],
         pre_checks=["Set include_pagination_info=true when users need total counts."],
         result_shape="List[issue] or pagination wrapper with issues + metadata.",
@@ -188,6 +189,9 @@ def create_redmine_issue_prompt(project_id: Union[str, int], subject: str) -> st
             "start_date, due_date.",
             "Do not auto-choose assignee/category/version/tracker "
             "without user confirmation.",
+            "To create a subtask of an existing task, pass parent_issue_id "
+            "(parent must exist, be in the same project, and not already "
+            "be a subtask).",
             "Validate required custom fields from issue-contract.",
             "If missing, apply defaults: status=New, priority=Normal, done_ratio=0.",
             "Respect read-only mode when enabled.",

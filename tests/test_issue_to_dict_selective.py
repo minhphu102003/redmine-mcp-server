@@ -37,6 +37,9 @@ class TestIssueToDictSelective:
         mock_project.name = "Test Project"
         mock_issue.project = mock_project
 
+        # No parent (standalone issue)
+        mock_issue.parent = None
+
         # Mock status
         mock_status = Mock()
         mock_status.id = 2
@@ -80,6 +83,9 @@ class TestIssueToDictSelective:
         mock_project.name = "Minimal Project"
         mock_issue.project = mock_project
 
+        # No parent (standalone issue)
+        mock_issue.parent = None
+
         mock_status = Mock()
         mock_status.id = 1
         mock_status.name = "New"
@@ -110,7 +116,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10  # All 10 fields
+        assert len(result) == 11  # All 11 fields
         assert "id" in result
         assert "subject" in result
         assert "description" in result
@@ -121,7 +127,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_all_keyword_returns_all_fields(self, mock_issue):
         """Test that fields=["all"] returns all fields."""
@@ -129,7 +135,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_single_field_id(self, mock_issue):
         """Test selecting only the id field."""
@@ -227,6 +233,7 @@ class TestIssueToDictSelective:
             "subject",
             "description",
             "project",
+            "parent",
             "status",
             "priority",
             "author",
@@ -238,7 +245,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_invalid_field_name_ignored(self, mock_issue):
         """Test that invalid field names are silently ignored."""
@@ -337,7 +344,37 @@ class TestIssueToDictSelective:
         # Minimal should have fewer keys
         assert len(minimal_fields_result) < len(all_fields_result)
         assert len(minimal_fields_result) == 2
-        assert len(all_fields_result) == 10
+        assert len(all_fields_result) == 11
+
+    def test_single_field_parent_none(self, mock_issue):
+        """Test selecting the parent field for a standalone issue."""
+        result = _issue_to_dict_selective(mock_issue, ["parent"])
+
+        assert result == {"parent": None}
+        assert len(result) == 1
+
+    def test_single_field_parent_with_parent(self, mock_issue):
+        """Test selecting the parent field for a subtask issue."""
+        mock_parent = Mock()
+        mock_parent.id = 88
+        mock_parent.subject = "Parent Task"
+        mock_issue.parent = mock_parent
+
+        result = _issue_to_dict_selective(mock_issue, ["parent"])
+
+        assert result == {"parent": {"id": 88, "subject": "Parent Task"}}
+        assert len(result) == 1
+
+    def test_all_fields_includes_parent_with_parent(self, mock_issue):
+        """Test that full serialization includes parent info for subtasks."""
+        mock_parent = Mock()
+        mock_parent.id = 88
+        mock_parent.subject = "Parent Task"
+        mock_issue.parent = mock_parent
+
+        result = _issue_to_dict(mock_issue)
+
+        assert result["parent"] == {"id": 88, "subject": "Parent Task"}
 
     def test_case_sensitive_field_names(self, mock_issue):
         """Test that field names are case-sensitive."""

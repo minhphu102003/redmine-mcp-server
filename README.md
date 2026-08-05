@@ -496,9 +496,9 @@ This MCP server provides 28 tools for interacting with Redmine. For a comprehens
 
 - **Issue Operations** (9 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
-  - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
+  - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, parent task, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
-  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
+  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues (standalone or as subtasks of existing tasks)
   - [`create_redmine_issue_with_subtasks`](docs/tool-reference.md#create_redmine_issue_with_subtasks) - Create one parent task and multiple subtasks in one call
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
   - [`list_redmine_issue_statuses`](docs/mcp-tools.md#list_redmine_issue_statuses) - List all issue statuses defined in Redmine

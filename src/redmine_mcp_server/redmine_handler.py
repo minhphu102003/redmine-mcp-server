@@ -829,6 +829,7 @@ async def list_redmine_issues(
     assigned_to_id: Optional[Union[int, str]] = None,
     priority_id: Optional[int] = None,
     fixed_version_id: Optional[int] = None,
+    parent_id: Optional[int] = None,
     sort: Optional[str] = None,
     limit: Optional[int] = 25,
     offset: int = 0,
@@ -844,6 +845,7 @@ async def list_redmine_issues(
         assigned_to_id,
         priority_id,
         fixed_version_id,
+        parent_id,
         sort,
         limit,
         offset,
@@ -891,14 +893,16 @@ async def create_redmine_issue(
     description: str = "",
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    parent_issue_id: Optional[Union[int, str]] = None,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine."""
+    """Create a new issue in Redmine, optionally as a subtask of an existing issue."""
     return await create_redmine_issue_impl(
         project_id,
         subject,
         description,
         fields,
         extra_fields,
+        parent_issue_id,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         parse_create_issue_fields=_issue_fields._parse_create_issue_fields,

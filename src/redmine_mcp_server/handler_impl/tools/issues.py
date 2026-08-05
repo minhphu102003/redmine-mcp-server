@@ -267,6 +267,7 @@ async def list_redmine_issues_impl(
     assigned_to_id: Optional[Union[int, str]] = None,
     priority_id: Optional[int] = None,
     fixed_version_id: Optional[int] = None,
+    parent_id: Optional[int] = None,
     sort: Optional[str] = None,
     limit: Optional[int] = 25,
     offset: int = 0,
@@ -296,6 +297,8 @@ async def list_redmine_issues_impl(
             redmine_api_filters["priority_id"] = priority_id
         if fixed_version_id is not None:
             redmine_api_filters["fixed_version_id"] = fixed_version_id
+        if parent_id is not None:
+            redmine_api_filters["parent_id"] = parent_id
         if sort is not None:
             redmine_api_filters["sort"] = sort
         if filters:
@@ -433,12 +436,58 @@ async def search_redmine_issues_impl(
         return handle_error(e, f"searching issues with query '{query}'", None)
 
 
+async def _validate_parent_issue(
+    parent_issue_id: Union[int, str],
+    project_id: int,
+    get_client: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Optional[Dict[str, Any]]:
+    """Validate an existing issue can be used as a subtask parent.
+
+    Returns an error payload dict, or None when the parent is valid.
+    """
+    try:
+        parent_issue = await asyncio.to_thread(get_client().issue.get, parent_issue_id)
+    except Exception as e:
+        return handle_error(
+            e,
+            f"validating parent issue {parent_issue_id}",
+            {"resource_type": "issue", "resource_id": parent_issue_id},
+        )
+
+    parent_project = getattr(parent_issue, "project", None)
+    parent_project_id = getattr(parent_project, "id", None)
+    if parent_project_id is not None and parent_project_id != project_id:
+        return {
+            "error": (
+                f"Parent issue {parent_issue_id} belongs to project "
+                f"{parent_project_id}, but subtasks must be created in the "
+                "same project."
+            ),
+            "parent_issue_id": parent_issue_id,
+            "project_id": project_id,
+            "parent_project_id": parent_project_id,
+        }
+
+    if getattr(parent_issue, "parent", None) is not None:
+        return {
+            "error": (
+                f"Parent issue {parent_issue_id} is already a subtask; "
+                "Redmine supports at most two levels of nesting."
+            ),
+            "parent_issue_id": parent_issue_id,
+        }
+
+    return None
+
+
 async def create_redmine_issue_impl(
     project_id: int,
     subject: str,
     description: str = "",
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    parent_issue_id: Optional[Union[int, str]] = None,
     *,
     is_read_only_mode: Callable[[], bool],
     read_only_error: Dict[str, Any],
@@ -485,6 +534,14 @@ async def create_redmine_issue_impl(
     policy_error = await prepare_issue_fields(project_id, subject, issue_fields)
     if policy_error is not None:
         return policy_error
+
+    if parent_issue_id is not None:
+        parent_error = await _validate_parent_issue(
+            parent_issue_id, project_id, get_client, handle_error
+        )
+        if parent_error is not None:
+            return parent_error
+        issue_fields["parent_issue_id"] = int(parent_issue_id)
 
     tracker_name: Optional[str] = None
     tracker_id = issue_fields.get("tracker_id")
