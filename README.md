@@ -500,7 +500,7 @@ This MCP server provides 28 tools for interacting with Redmine. For a comprehens
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues (standalone or as subtasks of existing tasks)
   - [`create_redmine_issue_with_subtasks`](docs/tool-reference.md#create_redmine_issue_with_subtasks) - Create one parent task and multiple subtasks in one call
-  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues, optionally logging worked time (`spent_hours`/`activity_id`/`time_comments`/`spent_on`)
   - [`list_redmine_issue_statuses`](docs/mcp-tools.md#list_redmine_issue_statuses) - List all issue statuses defined in Redmine
   - [`get_redmine_issue_allowed_statuses`](docs/mcp-tools.md#get_redmine_issue_allowed_statuses) - Get allowed status transitions for an issue
   - [`get_redmine_project_workflow`](docs/mcp-tools.md#get_redmine_project_workflow) - Infer project workflow from sampled issues

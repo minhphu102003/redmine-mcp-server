@@ -1260,24 +1260,70 @@ async def update_redmine_issue(
                 " 'fixed_version_id': ..., 'estimated_hours': ..., 'start_date':"
                 " 'YYYY-MM-DD', 'due_date': ..., 'done_ratio': ..., 'parent_issue_id':"
                 " ..., 'notes': 'comment to add', 'custom_fields': [{'id': X, 'value':"
-                " Y}]}. Omitted keys stay unchanged."
+                " Y}]}. Omitted keys stay unchanged. May be empty when only logging"
+                " time."
             )
         ),
     ],
+    spent_hours: Annotated[
+        Optional[float],
+        Field(
+            description=(
+                "Hours to log as a time entry on this issue, e.g. 1.5. When set, a"
+                " time entry is created on the issue after the update and returned"
+                " under the 'time_entry' key."
+            )
+        ),
+    ] = None,
+    activity_id: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Activity type ID for the logged time entry (use"
+                " list_time_entry_activities for valid values)."
+            )
+        ),
+    ] = None,
+    time_comments: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Work description for the logged time entry (distinct from the issue"
+                " 'notes' comment)."
+            )
+        ),
+    ] = None,
+    spent_on: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Date the work was done (YYYY-MM-DD) for the logged time entry."
+                " Defaults to today."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Update an existing Redmine issue.
+    """Update an existing Redmine issue, optionally logging time against it.
 
-    Use to change status/assignee/priority/dates, add comments, or reparent
-    a task. Returns the updated issue including its parent key.
+    Use to change status/assignee/priority/dates, add comments, reparent a
+    task, and/or log hours worked on the issue in one call. Returns the
+    updated issue including its parent key; when spent_hours is set, the
+    created time entry is included under 'time_entry' (with an 'error' key
+    plus time_entry_error=true if logging failed).
     """
     return await update_redmine_issue_impl(
         issue_id,
         fields,
+        spent_hours,
+        activity_id,
+        time_comments,
+        spent_on,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         get_client=_get_redmine_client,
         map_named_custom_fields_for_update=_map_named_custom_fields_for_update,
         issue_to_dict=_issue_to_dict,
+        time_entry_to_dict=_time_entry_to_dict,
         is_required_custom_field_autofill_enabled=(
             _issue_fields._is_required_custom_field_autofill_enabled
         ),

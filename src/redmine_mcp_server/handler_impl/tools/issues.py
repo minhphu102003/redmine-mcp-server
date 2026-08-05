@@ -10,6 +10,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Typ
 
 from redminelib.exceptions import ValidationError
 
+from .time_entries import create_time_entry_impl
+
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
@@ -611,12 +613,17 @@ async def create_redmine_issue_impl(
 async def update_redmine_issue_impl(
     issue_id: int,
     fields: Dict[str, Any],
+    spent_hours: Optional[float] = None,
+    activity_id: Optional[int] = None,
+    time_comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
     *,
     is_read_only_mode: Callable[[], bool],
     read_only_error: Dict[str, Any],
     get_client: Callable[[], Any],
     map_named_custom_fields_for_update: Callable[[int, Dict[str, Any]], Dict[str, Any]],
     issue_to_dict: IssueToDictFn,
+    time_entry_to_dict: Callable[[Any], Dict[str, Any]],
     is_required_custom_field_autofill_enabled: Callable[[], bool],
     extract_missing_required_field_names: Callable[[str], List[str]],
     augment_fields_with_required_custom_fields: Callable[
@@ -625,9 +632,12 @@ async def update_redmine_issue_impl(
     handle_error: HandleErrorFn,
     validation_error: Type[Exception] = ValidationError,
 ) -> Dict[str, Any]:
-    """Update an existing Redmine issue."""
+    """Update an existing Redmine issue, optionally logging time against it."""
     if is_read_only_mode():
         return dict(read_only_error)
+
+    if spent_hours is not None and spent_hours <= 0:
+        return {"error": "spent_hours must be a positive number."}
 
     update_fields = dict(fields)
 
@@ -658,9 +668,10 @@ async def update_redmine_issue_impl(
     try:
         update_fields = map_named_custom_fields_for_update(issue_id, update_fields)
         client = get_client()
-        await asyncio.to_thread(client.issue.update, issue_id, **update_fields)
+        if update_fields:
+            await asyncio.to_thread(client.issue.update, issue_id, **update_fields)
         updated_issue = await asyncio.to_thread(client.issue.get, issue_id)
-        return issue_to_dict(updated_issue, include_custom_fields=True)
+        result = issue_to_dict(updated_issue, include_custom_fields=True)
     except validation_error as e:
         if not is_required_custom_field_autofill_enabled():
             return handle_error(
@@ -708,7 +719,7 @@ async def update_redmine_issue_impl(
             client = get_client()
             await asyncio.to_thread(client.issue.update, issue_id, **retry_fields)
             updated_issue = await asyncio.to_thread(client.issue.get, issue_id)
-            return issue_to_dict(updated_issue, include_custom_fields=True)
+            result = issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
             return handle_error(
                 retry_error,
@@ -721,6 +732,27 @@ async def update_redmine_issue_impl(
             f"updating issue {issue_id}",
             {"resource_type": "issue", "resource_id": issue_id},
         )
+
+    if spent_hours is None:
+        return result
+
+    time_result = await create_time_entry_impl(
+        hours=spent_hours,
+        issue_id=issue_id,
+        activity_id=activity_id,
+        comments=time_comments,
+        spent_on=spent_on,
+        get_client=get_client,
+        time_entry_to_dict=time_entry_to_dict,
+        handle_error=handle_error,
+    )
+    if "error" in time_result:
+        return {
+            **result,
+            "time_entry": time_result,
+            "time_entry_error": True,
+        }
+    return {**result, "time_entry": time_result}
 
 
 async def create_redmine_issue_with_subtasks_impl(
