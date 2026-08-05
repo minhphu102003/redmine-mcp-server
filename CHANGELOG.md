@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **`get_project_issue_context` now returns `statuses`**: the consolidated project context includes all issue statuses defined in Redmine (`id`, `name`, `is_closed`), fetched concurrently with the other sections, so agents can pick a valid `status_id` before creating an issue without a separate `list_redmine_issue_statuses` call
 - **All core issue fields are now required**: `create_redmine_issue` and `create_redmine_issue_with_subtasks` expose `tracker_id` (1 = Bug, 2 = Feature, 3 = Support, 4 = Common, 5 = Testing Task), `priority_id`, `status_id`, `assigned_to_id`, `start_date`, `due_date`, `estimated_hours` and `done_ratio` as dedicated required parameters (in addition to the already-required `project_id`, `subject` and `description`), so no issue can be created with any core field missing. `fields` remains optional and is now limited to `category_id`, `fixed_version_id` and custom fields. Every subtask must also carry all required fields; subtasks with missing fields are reported in `failed_subtasks` instead of being created (breaking change for clients that previously omitted these fields)
 
 ### Removed

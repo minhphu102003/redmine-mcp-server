@@ -12,6 +12,7 @@ from .projects import (
     list_project_trackers_impl,
     list_redmine_versions_impl,
 )
+from .workflow import list_redmine_issue_statuses_impl
 
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
@@ -62,7 +63,14 @@ async def get_project_issue_context_impl(
 
         project = await asyncio.to_thread(client.project.get, project_id)
 
-        trackers, categories, members, versions, custom_fields = await asyncio.gather(
+        (
+            trackers,
+            categories,
+            members,
+            versions,
+            custom_fields,
+            statuses,
+        ) = await asyncio.gather(
             list_project_trackers_impl(
                 project_id,
                 ensure_cleanup_started=ensure_cleanup_started,
@@ -100,6 +108,11 @@ async def get_project_issue_context_impl(
                 custom_field_to_dict=custom_field_to_dict,
                 handle_error=handle_error,
             ),
+            list_redmine_issue_statuses_impl(
+                get_client=get_client,
+                wrap_content=wrap_content,
+                handle_error=handle_error,
+            ),
         )
 
         required_custom_fields = [
@@ -115,6 +128,7 @@ async def get_project_issue_context_impl(
             "categories": categories,
             "members": members,
             "versions": versions,
+            "statuses": statuses,
             "custom_fields": custom_fields,
             "required_custom_fields": required_custom_fields,
         }

@@ -864,9 +864,10 @@ async def get_project_issue_context(
 ) -> Dict[str, Any]:
     """Fetch complete issue-creation context for a project in one call.
 
-    Returns project info, trackers, categories, members, versions and custom
-    fields. Call this once before create_redmine_issue to learn the valid
-    tracker/priority/assignee/version values for that project.
+    Returns project info, trackers, categories, members, versions, statuses
+    and custom fields. Call this once before create_redmine_issue to learn
+    the valid tracker/priority/status/assignee/version values for that
+    project.
     """
     return await get_project_issue_context_impl(
         project_id,
