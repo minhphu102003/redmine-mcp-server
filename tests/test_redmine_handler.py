@@ -426,6 +426,59 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_returns_web_url(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Created issue result includes a web link built from the client URL."""
+        mock_redmine.url = "https://redmine.example.com"
+        mock_redmine.issue.create.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
+
+        assert result["url"] == "https://redmine.example.com/issues/123"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_omits_url_without_client_base_url(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """No url key when the client has no usable base URL (e.g. mocks)."""
+        mock_redmine.issue.create.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            tracker_id=1,
+            priority_id=3,
+            status_id=1,
+            assigned_to_id=80,
+            start_date="2026-08-05",
+            due_date="2026-08-12",
+            estimated_hours=2.0,
+            done_ratio=0,
+        )
+
+        assert "url" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_rejects_missing_template_sections(
         self, mock_redmine
     ):
@@ -911,6 +964,7 @@ class TestRedmineHandler:
         mock_project = Mock()
         mock_project.issue_custom_fields = [project_field, os_field]
         mock_redmine.project.get.return_value = mock_project
+        mock_redmine.url = "https://redmine.example.com"
 
         mock_redmine.issue.create.side_effect = [
             ValidationError(
@@ -938,6 +992,7 @@ class TestRedmineHandler:
             )
 
         assert result["id"] == 123
+        assert result["url"] == "https://redmine.example.com/issues/123"
         assert mock_redmine.issue.create.call_count == 2
         mock_redmine.project.get.assert_any_call(41, include="issue_custom_fields")
 
