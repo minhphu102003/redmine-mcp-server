@@ -260,6 +260,14 @@ class TestRedmineIntegration:
                 project_id,
                 new_subject,
                 "Created by integration test",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 extra_fields=_integration_test_custom_fields(),
             )
             assert issue and "id" in issue
@@ -321,6 +329,14 @@ class TestRedmineIntegration:
                     project_id,
                     new_subject,
                     "Testing attachment download functionality",
+                    tracker_id=1,
+                    priority_id=3,
+                    status_id=1,
+                    assigned_to_id=80,
+                    start_date="2026-08-05",
+                    due_date="2026-08-12",
+                    estimated_hours=2.0,
+                    done_ratio=0,
                     extra_fields=_integration_test_custom_fields(),
                 )
                 assert issue and "id" in issue

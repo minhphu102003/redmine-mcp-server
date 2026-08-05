@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **All core issue fields are now required**: `create_redmine_issue` and `create_redmine_issue_with_subtasks` expose `tracker_id` (1 = Bug, 2 = Feature, 3 = Support, 4 = Common, 5 = Testing Task), `priority_id`, `status_id`, `assigned_to_id`, `start_date`, `due_date`, `estimated_hours` and `done_ratio` as dedicated required parameters (in addition to the already-required `project_id`, `subject` and `description`), so no issue can be created with any core field missing. `fields` remains optional and is now limited to `category_id`, `fixed_version_id` and custom fields. Every subtask must also carry all required fields; subtasks with missing fields are reported in `failed_subtasks` instead of being created (breaking change for clients that previously omitted these fields)
+
+### Removed
+- **MCP prompts**: all prompt playbooks (`redmine_server_operating_prompt` and the 28 per-tool prompts) are removed from the MCP surface. All agent-facing guidance now lives in tool `description`s (docstrings) and per-parameter `Field(description=...)` metadata, which clients expose to agents by default; no prompt bootstrapping is required
+
+### Changed
 - **Log time via issue update**: `update_redmine_issue` accepts optional `spent_hours`/`activity_id`/`time_comments`/`spent_on` parameters and creates a time entry on the issue after a successful update (returned under the `time_entry` key; a logging failure keeps the update and reports `time_entry_error: true`). Logging requires `spent_hours > 0`; empty `fields` now skips the issue update call
 - **Per-parameter tool descriptions**: every MCP tool now documents each input parameter (purpose, valid values, defaults) via `Annotated[..., Field(description=...)]`, so the `inputSchema` properties are self-describing for agents; enum constraints added for `mode` (workflow context), `action` (time entries) and `report_type` (scrum report)
 - **Subtask support**: `create_redmine_issue` accepts `parent_issue_id` to create an issue as a child of an existing task (validated: parent exists, same project, not already a subtask); `list_redmine_issues` and `search_redmine_issues` accept a `parent_id` filter; every serialized issue now includes a `parent` key (`{id, subject}` or `null`)

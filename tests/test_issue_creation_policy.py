@@ -42,35 +42,35 @@ def _make_issue(issue_id: int = 100) -> Mock:
 
 class TestIssueCreationPolicy:
     @pytest.mark.asyncio
-    async def test_defaults_done_ratio_status_and_priority_when_missing(self):
+    async def test_passes_required_fields_through_to_create_call(self):
         mock_redmine = Mock()
-        mock_redmine.issue_status.all.return_value = [
-            _make_status(1, "New"),
-            _make_status(2, "In Progress"),
-        ]
-        mock_redmine.issue_priority.all.return_value = [
-            _make_priority(2, "Normal"),
-            _make_priority(3, "High"),
-        ]
         mock_redmine.issue.create.return_value = _make_issue()
 
         with patch("redmine_mcp_server.redmine_handler.redmine", mock_redmine):
-            with patch.dict(
-                os.environ,
-                {"REDMINE_STRICT_ISSUE_CREATION_INPUTS": "false"},
-                clear=False,
-            ):
-                await redmine_handler.create_redmine_issue(
-                    project_id=1,
-                    subject="[api] create endpoint",
-                    description="desc",
-                    fields={"tracker_id": 1},
-                )
+            await redmine_handler.create_redmine_issue(
+                project_id=1,
+                subject="[api] create endpoint",
+                description="desc",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
+                fields={},
+            )
 
         called_kwargs = mock_redmine.issue.create.call_args.kwargs
-        assert called_kwargs["done_ratio"] == 0
+        assert called_kwargs["tracker_id"] == 1
+        assert called_kwargs["priority_id"] == 3
         assert called_kwargs["status_id"] == 1
-        assert called_kwargs["priority_id"] == 2
+        assert called_kwargs["assigned_to_id"] == 80
+        assert called_kwargs["start_date"] == "2026-08-05"
+        assert called_kwargs["due_date"] == "2026-08-12"
+        assert called_kwargs["estimated_hours"] == 2.0
+        assert called_kwargs["done_ratio"] == 0
 
     @pytest.mark.asyncio
     async def test_strict_mode_rejects_subject_without_module_prefix(self):
@@ -83,26 +83,16 @@ class TestIssueCreationPolicy:
                 project_id=1,
                 subject="Create endpoint",
                 description="desc",
+                tracker_id=1,
+                priority_id=3,
+                status_id=1,
+                assigned_to_id=80,
+                start_date="2026-08-05",
+                due_date="2026-08-12",
+                estimated_hours=2.0,
+                done_ratio=0,
                 fields={},
             )
 
         assert "error" in result
         assert "[module name] task name" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_strict_mode_requires_manual_fields(self):
-        with patch.dict(
-            os.environ,
-            {"REDMINE_STRICT_ISSUE_CREATION_INPUTS": "true"},
-            clear=False,
-        ):
-            result = await redmine_handler.create_redmine_issue(
-                project_id=1,
-                subject="[api] create endpoint",
-                description="desc",
-                fields={"tracker_id": 1},
-            )
-
-        assert "error" in result
-        assert "missing_fields" in result
-        assert "assigned_to_id" in result["missing_fields"]
