@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Per-parameter tool descriptions**: every MCP tool now documents each input parameter (purpose, valid values, defaults) via `Annotated[..., Field(description=...)]`, so the `inputSchema` properties are self-describing for agents; enum constraints added for `mode` (workflow context), `action` (time entries) and `report_type` (scrum report)
 - **Subtask support**: `create_redmine_issue` accepts `parent_issue_id` to create an issue as a child of an existing task (validated: parent exists, same project, not already a subtask); `list_redmine_issues` and `search_redmine_issues` accept a `parent_id` filter; every serialized issue now includes a `parent` key (`{id, subject}` or `null`)
 - **Agent-facing tool descriptions**: docstrings of core workflow tools (`get_redmine_issue`, `list_redmine_projects`, `get_project_issue_context`, `list_redmine_issues`, `search_redmine_issues`, `create_redmine_issue`, `create_redmine_issue_with_subtasks`, `update_redmine_issue`, `get_issue_workflow_context`, `manage_time_entries`) enriched with usage guidance; these are exposed as MCP tool `description`s and are visible to agents even when prompts are not loaded
 - **Consolidated project metadata tool**: new `get_project_issue_context` tool fetches trackers, issue categories, members, versions, and issue custom fields for a project in one call (sections fetched concurrently, per-section error isolation, optional `tracker_id` filter for custom fields)
