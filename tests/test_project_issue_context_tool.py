@@ -83,6 +83,16 @@ class TestGetProjectIssueContextImpl:
                     ]
                 ),
             ),
+            patch.object(
+                project_context,
+                "list_redmine_issue_statuses_impl",
+                AsyncMock(
+                    return_value=[
+                        {"id": 1, "name": "New", "is_closed": False},
+                        {"id": 5, "name": "Closed", "is_closed": True},
+                    ]
+                ),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id=1, **deps
@@ -96,6 +106,10 @@ class TestGetProjectIssueContextImpl:
         assert result["categories"] == [{"id": 1, "name": "Frontend"}]
         assert result["members"] == [{"id": 1, "name": "Alice"}]
         assert result["versions"] == [{"id": 1, "name": "v1.0"}]
+        assert result["statuses"] == [
+            {"id": 1, "name": "New", "is_closed": False},
+            {"id": 5, "name": "Closed", "is_closed": True},
+        ]
         assert len(result["custom_fields"]) == 2
         assert result["required_custom_fields"] == [
             {"id": 1, "name": "Size", "is_required": True}
@@ -132,12 +146,18 @@ class TestGetProjectIssueContextImpl:
                 "list_project_issue_custom_fields_impl",
                 custom_fields_impl,
             ),
+            patch.object(
+                project_context,
+                "list_redmine_issue_statuses_impl",
+                AsyncMock(return_value=[]),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id="core", tracker_id=5, **deps
             )
 
         assert result["tracker_id"] == 5
+        assert result["statuses"] == []
         assert custom_fields_impl.await_args.args[0] == "core"
         assert custom_fields_impl.await_args.args[1] == 5
 
@@ -178,6 +198,11 @@ class TestGetProjectIssueContextImpl:
                     ]
                 ),
             ),
+            patch.object(
+                project_context,
+                "list_redmine_issue_statuses_impl",
+                AsyncMock(return_value=[{"id": 1, "name": "New", "is_closed": False}]),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id=1, **deps
@@ -185,6 +210,7 @@ class TestGetProjectIssueContextImpl:
 
         assert result["trackers"] == [{"error": "trackers boom"}]
         assert result["categories"] == [{"id": 1, "name": "Frontend"}]
+        assert result["statuses"] == [{"id": 1, "name": "New", "is_closed": False}]
         assert result["required_custom_fields"] == [
             {"id": 1, "name": "Size", "is_required": True}
         ]
@@ -284,6 +310,16 @@ class TestGetProjectIssueContextTool:
         version.updated_on = None
         mock_redmine.version.filter.return_value = [version]
 
+        status_new = Mock()
+        status_new.id = 1
+        status_new.name = "New"
+        status_new.is_closed = False
+        status_closed = Mock()
+        status_closed.id = 5
+        status_closed.name = "Closed"
+        status_closed.is_closed = True
+        mock_redmine.issue_status.all.return_value = [status_new, status_closed]
+
         result = await redmine_handler.get_project_issue_context(project_id=10)
 
         assert result["project"]["id"] == 10
@@ -295,6 +331,11 @@ class TestGetProjectIssueContextTool:
         assert "Frontend" in result["categories"][0]["name"]
         assert result["members"][0]["id"] == 1
         assert result["versions"][0]["id"] == 1
+        assert [s["id"] for s in result["statuses"]] == [1, 5]
+        assert "New" in result["statuses"][0]["name"]
+        assert result["statuses"][0]["is_closed"] is False
+        assert "Closed" in result["statuses"][1]["name"]
+        assert result["statuses"][1]["is_closed"] is True
         assert result["custom_fields"][0]["id"] == 6
         assert result["custom_fields"][0]["possible_values"] == ["S", "M", "L"]
         assert result["required_custom_fields"][0]["id"] == 6
