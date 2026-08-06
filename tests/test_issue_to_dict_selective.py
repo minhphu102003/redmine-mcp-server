@@ -7,7 +7,7 @@ used in the search optimization feature.
 
 import pytest
 from unittest.mock import Mock
-from datetime import datetime
+from datetime import date, datetime
 import os
 import sys
 
@@ -68,6 +68,12 @@ class TestIssueToDictSelective:
         mock_issue.created_on = datetime(2024, 1, 15, 10, 30, 0)
         mock_issue.updated_on = datetime(2024, 1, 16, 14, 45, 0)
 
+        # Mock dates and planning fields
+        mock_issue.start_date = date(2024, 1, 20)
+        mock_issue.due_date = date(2024, 2, 5)
+        mock_issue.estimated_hours = 8.5
+        mock_issue.done_ratio = 40
+
         return mock_issue
 
     @pytest.fixture
@@ -108,6 +114,12 @@ class TestIssueToDictSelective:
         mock_issue.created_on = None
         mock_issue.updated_on = None
 
+        # No dates or planning fields
+        mock_issue.start_date = None
+        mock_issue.due_date = None
+        mock_issue.estimated_hours = None
+        mock_issue.done_ratio = None
+
         return mock_issue
 
     def test_none_returns_all_fields(self, mock_issue):
@@ -116,7 +128,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11  # All 11 fields
+        assert len(result) == 15  # All 15 fields
         assert "id" in result
         assert "subject" in result
         assert "description" in result
@@ -127,7 +139,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 15
 
     def test_all_keyword_returns_all_fields(self, mock_issue):
         """Test that fields=["all"] returns all fields."""
@@ -135,7 +147,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 15
 
     def test_single_field_id(self, mock_issue):
         """Test selecting only the id field."""
@@ -210,6 +222,66 @@ class TestIssueToDictSelective:
         assert result["updated_on"] == "2024-01-16T14:45:00"
         assert len(result) == 1
 
+    def test_single_field_start_date(self, mock_issue):
+        """Test selecting only the start_date field."""
+        result = _issue_to_dict_selective(mock_issue, ["start_date"])
+
+        assert result == {"start_date": "2024-01-20"}
+        assert len(result) == 1
+
+    def test_single_field_due_date(self, mock_issue):
+        """Test selecting only the due_date field."""
+        result = _issue_to_dict_selective(mock_issue, ["due_date"])
+
+        assert result == {"due_date": "2024-02-05"}
+        assert len(result) == 1
+
+    def test_single_field_estimated_hours(self, mock_issue):
+        """Test selecting only the estimated_hours field."""
+        result = _issue_to_dict_selective(mock_issue, ["estimated_hours"])
+
+        assert result == {"estimated_hours": 8.5}
+        assert len(result) == 1
+
+    def test_single_field_done_ratio(self, mock_issue):
+        """Test selecting only the done_ratio field."""
+        result = _issue_to_dict_selective(mock_issue, ["done_ratio"])
+
+        assert result == {"done_ratio": 40}
+        assert len(result) == 1
+
+    def test_start_and_due_date_combination(self, mock_issue):
+        """Test selecting start_date and due_date together."""
+        result = _issue_to_dict_selective(
+            mock_issue, ["id", "start_date", "due_date", "created_on"]
+        )
+
+        assert result == {
+            "id": 123,
+            "start_date": "2024-01-20",
+            "due_date": "2024-02-05",
+            "created_on": "2024-01-15T10:30:00",
+        }
+        assert len(result) == 4
+
+    def test_planning_fields_none_in_full_serialization(self, mock_issue_minimal):
+        """Test that missing dates/planning fields serialize as None."""
+        result = _issue_to_dict(mock_issue_minimal)
+
+        assert result["start_date"] is None
+        assert result["due_date"] is None
+        assert result["estimated_hours"] is None
+        assert result["done_ratio"] is None
+
+    def test_string_dates_pass_through(self, mock_issue):
+        """Test that string dates (python-redmine raw form) are kept as-is."""
+        mock_issue.start_date = "2024-03-01"
+        mock_issue.due_date = "2024-03-15"
+
+        result = _issue_to_dict_selective(mock_issue, ["start_date", "due_date"])
+
+        assert result == {"start_date": "2024-03-01", "due_date": "2024-03-15"}
+
     def test_multiple_fields_combination(self, mock_issue):
         """Test selecting multiple fields together."""
         result = _issue_to_dict_selective(mock_issue, ["id", "subject", "status"])
@@ -240,12 +312,16 @@ class TestIssueToDictSelective:
             "assigned_to",
             "created_on",
             "updated_on",
+            "start_date",
+            "due_date",
+            "estimated_hours",
+            "done_ratio",
         ]
         result = _issue_to_dict_selective(mock_issue, all_field_names)
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 15
 
     def test_invalid_field_name_ignored(self, mock_issue):
         """Test that invalid field names are silently ignored."""
@@ -344,7 +420,7 @@ class TestIssueToDictSelective:
         # Minimal should have fewer keys
         assert len(minimal_fields_result) < len(all_fields_result)
         assert len(minimal_fields_result) == 2
-        assert len(all_fields_result) == 11
+        assert len(all_fields_result) == 15
 
     def test_single_field_parent_none(self, mock_issue):
         """Test selecting the parent field for a standalone issue."""

@@ -5,6 +5,15 @@ from typing import Any, Dict, List, Optional
 from .content import _coerce_json_safe, wrap_insecure_content
 
 
+def _date_to_iso(value: Any) -> Optional[str]:
+    """Format a date-like value (date, datetime or str) as ISO 8601 string."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
     """Convert issue custom_fields to a serializable list."""
     raw_custom_fields = getattr(issue, "custom_fields", None)
@@ -90,6 +99,10 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
             if getattr(issue, "updated_on", None) is not None
             else None
         ),
+        "start_date": _date_to_iso(getattr(issue, "start_date", None)),
+        "due_date": _date_to_iso(getattr(issue, "due_date", None)),
+        "estimated_hours": getattr(issue, "estimated_hours", None),
+        "done_ratio": getattr(issue, "done_ratio", None),
     }
 
     if include_custom_fields:
@@ -121,6 +134,10 @@ def _issue_to_dict_selective(
         - assigned_to: Assigned user info (dict with id and name, or None)
         - created_on: Creation timestamp (ISO format)
         - updated_on: Last update timestamp (ISO format)
+        - start_date: Start date (YYYY-MM-DD, or None)
+        - due_date: Due date (YYYY-MM-DD, or None)
+        - estimated_hours: Estimated hours (float, or None)
+        - done_ratio: Completion percentage 0-100 (int, or None)
 
     Returns:
         Dictionary containing only the requested fields.
@@ -189,6 +206,10 @@ def _issue_to_dict_selective(
             if getattr(issue, "updated_on", None) is not None
             else None
         ),
+        "start_date": _date_to_iso(getattr(issue, "start_date", None)),
+        "due_date": _date_to_iso(getattr(issue, "due_date", None)),
+        "estimated_hours": getattr(issue, "estimated_hours", None),
+        "done_ratio": getattr(issue, "done_ratio", None),
     }
 
     # Return only requested fields (silently skip invalid field names)
