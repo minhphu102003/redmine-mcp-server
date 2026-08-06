@@ -1,6 +1,6 @@
 # redmine-issue-workflow skill
 
-A user-facing agent skill that teaches **any AI agent** (opencode, Claude Code, Cursor, ...) the exact workflow for creating a Redmine issue from a GitHub commit: verify live Redmine data, map the commit author to a Redmine member, apply the `[FE/BE/Devops]` naming rule and fill the standard English description template.
+A user-facing agent skill that teaches **any AI agent** (opencode, Claude Code, Cursor, ...) the exact workflow for creating a Redmine issue from a GitHub commit: verify live Redmine data, map the commit author to a Redmine member, apply the `[FE/BE/Devops]` naming rule and fill the standard English description template. When a fresh `.redmine` cache exists (created by the [`redmine-init`](../redmine-init/README.md) skill), the workflow skips the live lookups and uses the cached IDs directly.
 
 > Agent (LLM) instruction file: [`SKILL.md`](./SKILL.md). This README is for **humans** — installation, how the skill works, and GitHub CLI (`gh`) setup.
 
@@ -12,7 +12,7 @@ The skill is a single Markdown file with frontmatter (`name` + `description`). W
 
 | Step | What happens |
 |---|---|
-| 1 | **Gather Redmine context** — list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues |
+| 1 | **Gather Redmine context** — fast path: read the `.redmine` cache (fresh ≤ 14 days); otherwise list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues |
 | 2 | **Read the GitHub repo** — authenticate with `gh` for private repos, clone to a temp dir, read commits via `git log` |
 | 3 | **Map commit → issue** — author → Redmine member, files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
 | 4 | **Ask before create** — every parameter is confirmed with you using live option lists (tracker/status/priority/assignee) |
@@ -43,6 +43,8 @@ cp -r <path-to-this-repo>/skills/redmine-issue-workflow .opencode/skills/
 ```
 
 Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup. Verify with: ask your agent "list your skills" or check that `redmine-issue-workflow` appears.
+
+To use the cache fast path, also install the sibling [`redmine-init`](../redmine-init/README.md) skill and run `redmine init` once in your repository — it writes the `.redmine` file this skill reads.
 
 ### Prerequisites
 
@@ -143,7 +145,8 @@ Security notes:
 | `gh auth status` → `not logged in` | Re-run `gh auth login` (section 4) |
 | `gh repo view` → 404 | You have no access to that repo, or login lacks `repo` scope — check `gh auth status` and re-login |
 | `get_project_issue_context` has no `statuses` | Server is an older version — update it, or rely on the skill's fallback (`list_redmine_issue_statuses`) |
-| Redmine asks for priority but none shown | The skill derives priorities from existing issues (`list_redmine_issues`) — requires read access on Redmine |
+| Redmine asks for priority but none shown | The `priorities` section comes from `get_project_issue_context` — requires read access on Redmine |
+| Stale-cache warning on create | The `.redmine` cache is older than 14 days — re-run `redmine init` to refresh, or continue with live data |
 
 ---
 

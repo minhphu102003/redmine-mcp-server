@@ -118,6 +118,7 @@ task with one call.
 - `members` — memberships with user/group and roles
 - `versions` — versions (roadmap milestones)
 - `statuses` — all issue statuses defined in Redmine (`id`, `name`, `is_closed`)
+- `priorities` — all issue priorities defined in Redmine (`id`, `name`)
 - `custom_fields` — custom-field metadata (allowed values, required flags, tracker bindings)
 - `required_custom_fields` — custom fields flagged required (directly usable when creating a task)
 
@@ -135,6 +136,7 @@ Sections are fetched concurrently; if one lookup fails, its section keeps the
   "members": [{"id": 5, "user": {"id": 3, "name": "Alice"}, "roles": [{"id": 3, "name": "Developer"}]}],
   "versions": [{"id": 1, "name": "v1.0", "status": "open"}],
   "statuses": [{"id": 1, "name": "New", "is_closed": false}, {"id": 5, "name": "Closed", "is_closed": true}],
+  "priorities": [{"id": 2, "name": "Normal"}, {"id": 4, "name": "High"}],
   "custom_fields": [{"id": 6, "name": "Size", "is_required": true, "possible_values": ["S", "M", "L"]}],
   "required_custom_fields": [{"id": 6, "name": "Size", "is_required": true, "possible_values": ["S", "M", "L"]}]
 }

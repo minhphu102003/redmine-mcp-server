@@ -245,28 +245,30 @@ Lists all accessible projects in the Redmine instance.
 ### `get_project_issue_context`
 
 Complete issue-creation context for a project in one call: trackers, issue
-categories, members, versions, statuses, and issue custom fields (optionally
-filtered by tracker). This is the single recommended entry point for gathering
-project metadata before creating issues — it replaces the former separate
-`list_project_trackers`, `list_project_issue_categories`, `list_project_members`,
-`list_redmine_versions`, and `list_project_issue_custom_fields` lookups.
+categories, members, versions, statuses, priorities, and issue custom fields
+(optionally filtered by tracker). This is the single recommended entry point for
+gathering project metadata before creating issues — it replaces the former
+separate `list_project_trackers`, `list_project_issue_categories`,
+`list_project_members`, `list_redmine_versions`, and
+`list_project_issue_custom_fields` lookups.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
 - `tracker_id` (integer or string, optional): Restrict custom fields to those applicable to the given tracker
 
 **Returns:** Dict with `project`, `tracker_id`, `trackers`, `categories`,
-`members`, `versions`, `statuses`, `custom_fields`, and `required_custom_fields`
-sections. `statuses` lists all issue statuses defined in Redmine (`id`, `name`,
-`is_closed`). Each section is fetched concurrently; a failed section returns its
-own error dict without failing the others.
+`members`, `versions`, `statuses`, `priorities`, `custom_fields`, and
+`required_custom_fields` sections. `statuses` lists all issue statuses defined
+in Redmine (`id`, `name`, `is_closed`); `priorities` lists all issue priorities
+(`id`, `name`). Each section is fetched concurrently; a failed section returns
+its own error dict without failing the others.
 
 **Example:**
 ```python
 context = await get_project_issue_context(project_id="my-project")
 # context["project"]["id"], context["trackers"], context["categories"],
 # context["members"], context["versions"], context["statuses"],
-# context["custom_fields"]
+# context["priorities"], context["custom_fields"]
 ```
 
 ---

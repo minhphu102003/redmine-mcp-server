@@ -496,7 +496,9 @@ async def _resolve_priority_id_by_name(priority_name: str) -> Optional[int]:
         _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
         return None
     try:
-        priorities = await asyncio.to_thread(client.issue_priority.all)
+        priorities = await asyncio.to_thread(
+            lambda: list(client.enumeration.filter(resource="issue_priorities"))
+        )
     except Exception:
         _cache_set(_PRIORITY_ID_CACHE, cache_key, None)
         return None
@@ -864,10 +866,10 @@ async def get_project_issue_context(
 ) -> Dict[str, Any]:
     """Fetch complete issue-creation context for a project in one call.
 
-    Returns project info, trackers, categories, members, versions, statuses
-    and custom fields. Call this once before create_redmine_issue to learn
-    the valid tracker/priority/status/assignee/version values for that
-    project.
+    Returns project info, trackers, categories, members, versions, statuses,
+    priorities and custom fields. Call this once before create_redmine_issue
+    to learn the valid tracker/priority/status/assignee/version values for
+    that project.
     """
     return await get_project_issue_context_impl(
         project_id,

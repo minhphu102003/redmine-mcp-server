@@ -1,4 +1,4 @@
-"""Tests for the get_project_issue_context consolidated tool."""
+﻿"""Tests for the get_project_issue_context consolidated tool."""
 
 import os
 import sys
@@ -93,6 +93,16 @@ class TestGetProjectIssueContextImpl:
                     ]
                 ),
             ),
+            patch.object(
+                project_context,
+                "_list_issue_priorities",
+                AsyncMock(
+                    return_value=[
+                        {"id": 2, "name": "Normal"},
+                        {"id": 4, "name": "High"},
+                    ]
+                ),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id=1, **deps
@@ -109,6 +119,10 @@ class TestGetProjectIssueContextImpl:
         assert result["statuses"] == [
             {"id": 1, "name": "New", "is_closed": False},
             {"id": 5, "name": "Closed", "is_closed": True},
+        ]
+        assert result["priorities"] == [
+            {"id": 2, "name": "Normal"},
+            {"id": 4, "name": "High"},
         ]
         assert len(result["custom_fields"]) == 2
         assert result["required_custom_fields"] == [
@@ -151,6 +165,11 @@ class TestGetProjectIssueContextImpl:
                 "list_redmine_issue_statuses_impl",
                 AsyncMock(return_value=[]),
             ),
+            patch.object(
+                project_context,
+                "_list_issue_priorities",
+                AsyncMock(return_value=[]),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id="core", tracker_id=5, **deps
@@ -158,6 +177,7 @@ class TestGetProjectIssueContextImpl:
 
         assert result["tracker_id"] == 5
         assert result["statuses"] == []
+        assert result["priorities"] == []
         assert custom_fields_impl.await_args.args[0] == "core"
         assert custom_fields_impl.await_args.args[1] == 5
 
@@ -203,6 +223,11 @@ class TestGetProjectIssueContextImpl:
                 "list_redmine_issue_statuses_impl",
                 AsyncMock(return_value=[{"id": 1, "name": "New", "is_closed": False}]),
             ),
+            patch.object(
+                project_context,
+                "_list_issue_priorities",
+                AsyncMock(return_value=[{"id": 2, "name": "Normal"}]),
+            ),
         ):
             result = await project_context.get_project_issue_context_impl(
                 project_id=1, **deps
@@ -211,6 +236,7 @@ class TestGetProjectIssueContextImpl:
         assert result["trackers"] == [{"error": "trackers boom"}]
         assert result["categories"] == [{"id": 1, "name": "Frontend"}]
         assert result["statuses"] == [{"id": 1, "name": "New", "is_closed": False}]
+        assert result["priorities"] == [{"id": 2, "name": "Normal"}]
         assert result["required_custom_fields"] == [
             {"id": 1, "name": "Size", "is_required": True}
         ]
@@ -320,6 +346,17 @@ class TestGetProjectIssueContextTool:
         status_closed.is_closed = True
         mock_redmine.issue_status.all.return_value = [status_new, status_closed]
 
+        priority_normal = Mock()
+        priority_normal.id = 2
+        priority_normal.name = "Normal"
+        priority_high = Mock()
+        priority_high.id = 4
+        priority_high.name = "High"
+        mock_redmine.enumeration.filter.return_value = [
+            priority_normal,
+            priority_high,
+        ]
+
         result = await redmine_handler.get_project_issue_context(project_id=10)
 
         assert result["project"]["id"] == 10
@@ -336,6 +373,9 @@ class TestGetProjectIssueContextTool:
         assert result["statuses"][0]["is_closed"] is False
         assert "Closed" in result["statuses"][1]["name"]
         assert result["statuses"][1]["is_closed"] is True
+        assert [p["id"] for p in result["priorities"]] == [2, 4]
+        assert "Normal" in result["priorities"][0]["name"]
+        assert "High" in result["priorities"][1]["name"]
         assert result["custom_fields"][0]["id"] == 6
         assert result["custom_fields"][0]["possible_values"] == ["S", "M", "L"]
         assert result["required_custom_fields"][0]["id"] == 6

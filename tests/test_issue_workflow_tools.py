@@ -145,3 +145,46 @@ class TestIssueWorkflowTools:
         assert result["request_pattern"]["detail_request_count"] == 1
         assert result["request_pattern"]["total_request_count"] == 2
         mock_redmine.issue.get.assert_called_once_with(102, include="allowed_statuses")
+
+
+class TestResolvePriorityIdByName:
+    """Unit tests for the create-issue priority fallback resolver."""
+
+    @pytest.mark.asyncio
+    async def test_resolves_by_name_via_enumeration(self):
+        from redmine_mcp_server.redmine_handler import (
+            _PRIORITY_ID_CACHE,
+            _resolve_priority_id_by_name,
+        )
+
+        _PRIORITY_ID_CACHE.clear()
+        normal = Mock(id=2)
+        normal.name = "Normal"
+        client = Mock(enumeration=Mock(filter=Mock(return_value=[normal])))
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            return_value=client,
+        ):
+            result = await _resolve_priority_id_by_name("normal")
+
+        assert result == 2
+        client.enumeration.filter.assert_called_once_with(resource="issue_priorities")
+        _PRIORITY_ID_CACHE.clear()
+
+    @pytest.mark.asyncio
+    async def test_error_returns_none(self):
+        from redmine_mcp_server.redmine_handler import (
+            _PRIORITY_ID_CACHE,
+            _resolve_priority_id_by_name,
+        )
+
+        _PRIORITY_ID_CACHE.clear()
+        client = Mock(enumeration=Mock(filter=Mock(side_effect=Exception("boom"))))
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            return_value=client,
+        ):
+            result = await _resolve_priority_id_by_name("urgent")
+
+        assert result is None
+        _PRIORITY_ID_CACHE.clear()
