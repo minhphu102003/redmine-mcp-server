@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Skill installer script**: `scripts/install-skills.ps1` installs the agent skills into a target repository's `.agents/skills/` (only the `SKILL.md` files, no READMEs) so every agent (opencode, Claude Code, Agent SDK) can use them. One-liner from any repo: `irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex`; running the script from a local clone copies from the local `skills/` folder instead of downloading
 - **`redmine-issue-workflow` agent skill**: a user-facing skill at `skills/redmine-issue-workflow/` that teaches AI agents the exact workflow for creating a Redmine issue from a GitHub commit (live-data verification, author→member mapping, `[FE/BE/Devops]` naming, English description template). The folder includes a README with installation steps for opencode/Claude Code plus GitHub CLI (`gh`) install and OAuth login instructions
 - **`redmine-init` agent skill**: a user-facing skill at `skills/redmine-init/` that maps the current repository to its Redmine project and writes a `.redmine` JSON cache file at the git worktree root. The cache snapshots the project ID plus static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can skip live lookups for static values. Includes a README with installation steps for opencode/Claude Code
 

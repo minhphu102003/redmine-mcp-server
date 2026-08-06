@@ -24,20 +24,37 @@ The file is a snapshot with a `fetched_at` timestamp. Consumers such as `redmine
 
 ## 2. Installation
 
-This repo ships the skill at `skills/redmine-init/` as a **distribution copy**. It is not auto-loaded from here — copy the `redmine-init` folder into the skills directory of **your own agent**, then restart the agent.
+This repo ships the skill at `skills/redmine-init/` as a **distribution copy**. It is not auto-loaded from here — install it into the repository where you want to use it, then restart your agent.
 
-### Copy into your agent
+### One-liner installer (recommended)
 
-| Agent | Copy to |
+Run this from the repository you develop in — it downloads only the `SKILL.md` files into `.agents/skills/` of that repository (both this skill and its consumer `redmine-issue-workflow`):
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
+```
+
+If you have a local clone of this repo (e.g. `D:\redmine-mcp-server`), run the script from it instead — no download needed:
+
+```powershell
+& D:\redmine-mcp-server\scripts\install-skills.ps1
+```
+
+The script installs into `.agents/skills/`, which **opencode and Claude Code / Agent SDK auto-scan** — no config required. You are free to move the skill folders to another location afterwards (see table below).
+
+### Manual copy
+
+| Location | Works with |
 |---|---|
-| opencode (per project) | `.opencode/skills/redmine-init/` inside the project where you want the skill |
-| opencode (all projects) | `~/.config/opencode/skills/redmine-init/` (Windows: `%USERPROFILE%\.config\opencode\skills\redmine-init\`) |
-| Claude Code | `.claude/skills/redmine-init/` (project) or `~/.claude/skills/redmine-init/` (all projects) |
+| `.agents/skills/redmine-init/` (inside your repo) | opencode + Claude Code + Agent SDK (auto-scan) |
+| `.claude/skills/redmine-init/` (inside your repo) | Claude Code + opencode (auto-scan) |
+| `.opencode/skills/redmine-init/` (inside your repo) | opencode only |
+| `~/.config/opencode/skills/redmine-init/` (global) | opencode, all projects |
 
 Example for opencode (project-level), from the project you want the skill in:
 
 ```bash
-cp -r <path-to-this-repo>/skills/redmine-init .opencode/skills/
+cp -r <path-to-this-repo>/skills/redmine-init .agents/skills/
 ```
 
 Also copy `redmine-issue-workflow` (see its [README](../redmine-issue-workflow/README.md)) — it is the consumer that reads the cache when creating issues.
@@ -73,11 +90,11 @@ The `.redmine` file contains no secrets (IDs, names and roles only) — it is sa
 
 ## 5. Keeping the skill up to date
 
-The skill tracks the server's behavior. Update by pulling this repo:
+The skill tracks the server's behavior. Update by pulling this repo, then re-running the installer in the repository that uses the skill:
 
 ```bash
 git pull --rebase
-# re-copy the folder into your agent (section 2)
+# re-run the one-liner installer from section 2
 ```
 
 For changes to take effect, **restart the agent** afterwards.
