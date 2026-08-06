@@ -14,6 +14,7 @@ This skill documents the exact workflow to create a Redmine issue from a GitHub 
 ## 1. Core principles
 
 - **Never trust memory, tool-description defaults, or this skill's examples** — always fetch live data from Redmine first. Values change per project, per instance, and over time.
+- **Exception — the `.redmine` cache file**: if a `.redmine` file exists at the git worktree root and its `fetched_at` is within **14 days**, its static ID lists (project, trackers, statuses, priorities, members, versions, categories, custom fields) are a trusted fast path (see Step 1). Live verification is still required for dynamic state: allowed status transitions, parent-issue validity, and any ID that is missing from the cache.
 - **Always verify before creating**: project, trackers, statuses, priorities, members, versions, categories.
 - Issue content (subject + description) is written in **English**.
 - The workflow below applies when the user asks to "tạo issue/task từ commit", "create issue from commit", or hands you a GitHub commit + Redmine project.
@@ -31,10 +32,15 @@ This skill documents the exact workflow to create a Redmine issue from a GitHub 
 
 Use the agent's Redmine tools (capabilities in parentheses — names may differ across agents):
 
+0. **Cache check (fast path)**: if a `.redmine` file exists at the git worktree root of the current repo, **read it first**:
+   - `fetched_at` within 14 days → use `project`, `trackers`, `statuses`, `priorities`, `members`, `versions`, `categories`, `custom_fields` from the cache. **Skip steps 1–4 below** — no live calls needed for these lists.
+   - `fetched_at` older than 14 days → warn the user and suggest running `redmine init` to refresh; ask whether to proceed with live data.
+   - Any ID you need that is **not** in the cache (e.g. a rarely-used priority) → fetch live data for that item only — never invent values.
+   - No `.redmine` file → proceed with the live steps below. (The `redmine-init` skill creates the file; suggest it to the user for future speed.)
 1. **List projects** (e.g. `redmine_list_redmine_projects`) → find the target project and its ID.
-2. **Get project issue context** (e.g. `redmine_get_project_issue_context`, project_id) → returns **trackers, members + roles, categories, versions, custom_fields and statuses** (recent versions of redmine-mcp-server include statuses in the response).
+2. **Get project issue context** (e.g. `redmine_get_project_issue_context`, project_id) → returns **trackers, members + roles, categories, versions, custom_fields, statuses and priorities** (recent versions of redmine-mcp-server include statuses and priorities in the response).
 3. **Statuses**: use the `statuses` section from step 2 when present (valid statuses, e.g. `New`, `In Progress`, `Done`, `Closed` — IDs vary per instance). If the response has **no** `statuses` section, call a separate status-list capability (e.g. `redmine_list_redmine_issue_statuses`).
-4. If priorities are not provided by any tool, derive the real priority list by **listing existing issues** (e.g. `redmine_list_redmine_issues` with fields `["id", "priority"]`) and reading the names from real issues — **never assume** `1=Low, 2=Normal, 3=High, 4=Urgent`; instances often differ.
+4. **Priorities**: use the `priorities` section from step 2 (valid priorities, e.g. `Normal`, `High` — IDs vary per instance). **Never assume** `1=Low, 2=Normal, 3=High, 4=Urgent`; instances often differ.
 
 ---
 
@@ -148,4 +154,6 @@ Rules:
 - [ ] Ask/confirm every required param with the user; present live options (tracker/status/priority/assignee) via the agent's ask capability.
 - [ ] Description must be English with the exact template above.
 - [ ] Confirm the returned values after creation; fix with update if needed.
+- [ ] Cache fast path: read `.redmine` at the git worktree root; use it only while `fetched_at` is within 14 days; warn + suggest `redmine init` when stale.
+- [ ] Missing cache ID → verify that single item live; never invent IDs absent from the cache.
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.

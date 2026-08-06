@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Dict, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
 from .projects import (
     list_project_issue_categories_impl,
@@ -18,6 +18,32 @@ HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
 ]
+
+
+def _priority_to_dict(
+    priority: Any, wrap_content: Callable[[Any], Any]
+) -> Dict[str, Any]:
+    """Serialize an issue priority object into a JSON-safe dictionary."""
+    return {
+        "id": getattr(priority, "id", None),
+        "name": wrap_content(getattr(priority, "name", "")),
+    }
+
+
+async def _list_issue_priorities(
+    *,
+    get_client: Callable[[], Any],
+    wrap_content: Callable[[Any], Any],
+    handle_error: HandleErrorFn,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all issue priorities defined in Redmine."""
+    try:
+        priorities = await asyncio.to_thread(
+            lambda: list(get_client().enumeration.filter(resource="issue_priorities"))
+        )
+        return [_priority_to_dict(priority, wrap_content) for priority in priorities]
+    except Exception as e:
+        return handle_error(e, "listing issue priorities", None)
 
 
 def _serialize_project(
@@ -70,6 +96,7 @@ async def get_project_issue_context_impl(
             versions,
             custom_fields,
             statuses,
+            priorities,
         ) = await asyncio.gather(
             list_project_trackers_impl(
                 project_id,
@@ -113,6 +140,11 @@ async def get_project_issue_context_impl(
                 wrap_content=wrap_content,
                 handle_error=handle_error,
             ),
+            _list_issue_priorities(
+                get_client=get_client,
+                wrap_content=wrap_content,
+                handle_error=handle_error,
+            ),
         )
 
         required_custom_fields = [
@@ -129,6 +161,7 @@ async def get_project_issue_context_impl(
             "members": members,
             "versions": versions,
             "statuses": statuses,
+            "priorities": priorities,
             "custom_fields": custom_fields,
             "required_custom_fields": required_custom_fields,
         }
