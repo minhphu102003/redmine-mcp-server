@@ -26,7 +26,7 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 1. **Locate the repo root**: run `git rev-parse --show-toplevel`. The `.redmine` file goes at that root (not the current working directory when they differ). If the directory is not a git repository → ask the user where to place the file.
 2. **Check for an existing file**: if `.redmine` already exists at the root → follow the refresh flow (section 3) instead.
 3. **List projects**: call the list-projects capability (e.g. `redmine_list_redmine_projects`) → returns `id`, `name`, `identifier`, `description`, `created_on`.
-4. **Ask the user to choose**: present the project list (id + name + identifier) and ask "repo này tương ứng với project Redmine nào?" using the agent's ask capability (e.g. the `question` tool). Do NOT guess. If the list is long (> ~30 rows), cap it and ask the user to narrow by keyword.
+4. **Ask the user to choose**: present the project list (id + name + identifier) and ask "repo này tương ứng với project Redmine nào?" using the agent's structured ask tool (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Do NOT guess. **Embed the full project list in the question text as a numbered list** and let the user type the number or name (ask tools accept custom/free-text answers); optionally add 2–4 clickable shortcuts of the most likely projects. If the list is very long (> ~30 rows), cap the embedded list and ask the user to narrow by keyword.
 5. **Fetch project context**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
 6. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
 7. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
@@ -50,16 +50,16 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 ```json
 {
   "version": 1,
-  "project": {"id": 313, "name": "[AI] Chatbot Tuyển Sinh", "identifier": "ai-chatbot-tuyen-sinh", "created_on": "2026-05-29T01:50:49"},
+  "project": {"id": 12, "name": "Example Project", "identifier": "example-project", "created_on": "2026-01-15T08:30:00Z"},
   "trackers": [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}],
   "categories": [],
-  "members": [{"id": 2847, "user": {"id": 79, "name": "Huỳnh Ngọc Đăng Khoa"}, "roles": [{"id": 4, "name": "Developer"}]}],
+  "members": [{"id": 101, "user": {"id": 5, "name": "Jane Doe"}, "roles": [{"id": 4, "name": "Developer"}]}],
   "versions": [],
   "statuses": [{"id": 1, "name": "New", "is_closed": false}, {"id": 5, "name": "Closed", "is_closed": true}],
   "custom_fields": [],
   "required_custom_fields": [],
-  "priorities": [{"id": 2, "name": "Normal"}],
-  "fetched_at": "2026-08-06T00:00:00Z"
+  "priorities": [{"id": 2, "name": "Normal"}, {"id": 3, "name": "High"}],
+  "fetched_at": "2026-01-15T08:30:00Z"
 }
 ```
 
