@@ -1,6 +1,6 @@
 ---
 name: redmine-issue-workflow
-description: Use when creating a Redmine issue from a GitHub commit or task (also triggers on Vietnamese requests like "tạo issue/task trên Redmine từ commit", "tạo task", "create issue", "redmine"). Covers gathering project context, verifying IDs against live data, mapping commit authors to Redmine members via `.redmine` `user_mappings` if available, applying the [FE/BE/Devops] naming rule, and filling the standard English description template. Use ONLY for Redmine issue creation from commit/repo context, not for general Redmine queries or wiki work.
+description: Use when creating or updating a Redmine issue from a GitHub commit or PR (also triggers on Vietnamese requests like "tạo issue/task trên Redmine từ commit", "tạo task", "create issue", "redmine", "cập nhật issue từ PR", "update issue from PR", "đọc commit rồi update issue"). Covers gathering project context, verifying IDs against live data, mapping commit authors to Redmine members via `.redmine` `user_mappings` if available, applying the [FE/BE/Devops] naming rule, filling the standard English description template, and updating existing issues with changelog + time logging. Use ONLY for Redmine issue creation/update from commit/repo context, not for general Redmine queries or wiki work.
 ---
 
 # Redmine Issue Workflow
@@ -17,7 +17,8 @@ This skill documents the exact workflow to create a Redmine issue from a GitHub 
 - **Exception — the `.redmine` cache file**: if a `.redmine` file exists at the git worktree root and its `fetched_at` is within **14 days**, its static ID lists (project, trackers, statuses, priorities, members, versions, categories, custom fields) are a trusted fast path (see Step 1). Live verification is still required for dynamic state: allowed status transitions, parent-issue validity, and any ID that is missing from the cache.
 - **Always verify before creating**: project, trackers, statuses, priorities, members, versions, categories.
 - Issue content (subject + description) is written in **English**.
-- The workflow below applies when the user asks to "tạo issue/task từ commit", "create issue from commit", or hands you a GitHub commit + Redmine project.
+- The workflow below covers two modes: **create** (new issue from commit/PR) and **update** (reflect PR/commit changes onto an existing Redmine issue). The mode is chosen based on whether the user provides an existing issue ID or the agent finds a matching issue by subject prefix.
+- The workflow applies when the user asks to "tạo issue/task từ commit", "create issue from commit", "cập nhật issue từ PR", "update issue from PR", "đọc commit rồi update issue", or hands you a GitHub commit/PR + Redmine project.
 
 ### Ask-before-create rule
 
@@ -113,7 +114,76 @@ Mixed changes → pick the dominant layer; ask the user if ambiguous.
 
 ---
 
-## 6. Description template (English, fixed format)
+## 6. Step 5 — Update an existing issue from a PR/commit
+
+Use this workflow when the user provides an existing Redmine issue ID, or when the agent finds a matching issue by subject prefix (e.g. an existing issue titled `[FE] Add PDF parsing` matches a PR whose latest commit subject is `Add PDF parsing`). The agent reads the **latest commit/PR** (not full git history) and reflects the changes on the issue.
+
+### 6a. Find the existing issue
+
+1. If the user provides an issue ID → use it directly.
+2. Otherwise, search for a matching issue by subject prefix:
+   - Build the expected prefix from the PR/commit: `[FE/BE/Devops] <commit subject>`.
+   - Call `redmine_search_redmine_issues` or `redmine_list_redmine_issues` with a keyword query matching the subject (without the prefix).
+   - If exactly **one** match → use it. If **multiple** matches → ask the user which one. If **no match** → ask the user for the issue ID.
+
+### 6b. Read the latest PR/commit (not full history)
+
+- **If a PR is provided** (PR number or URL):
+  - `gh api "repos/<owner>/<repo>/pulls/<n>"` → title, body, state (`open`/`merged`/`closed`), merged date, files changed.
+  - `gh api "repos/<owner>/<repo>/pulls/<n>/commits"` → list of commits in the PR (use only the **latest** commit for subject/date).
+- **If a commit SHA is provided** (or working in the local repo):
+  - `gh api "repos/<owner>/<repo>/commits/<sha>"` → commit message, author, date, files changed.
+  - Or locally: `git log -1 --format="%s%n%b%n%an <%ae>" <sha>` + `git diff <sha>~1 <sha> --stat` for files changed.
+- **If no SHA/PR given but the repo is local** → use the **latest commit** on the current branch:
+  - `git log -1 --format="%s%n%b%n%an <%ae>"`
+  - `git diff HEAD~1 HEAD --stat`
+- Extract: commit subject, files changed, PR/commit state, date, author.
+
+### 6c. Determine the update actions
+
+Based on the PR/commit data, propose the following updates (present all to the user for confirmation in step 6e):
+
+| Action | Rule |
+|---|---|
+| **Status** | PR `merged` → set to `Done`/`Closed` (confirm actual status ID from Step 1); PR `open` → set to `In Progress`; PR `closed` (not merged) → set to `Closed` or `Rejected` (ask user) |
+| **done_ratio** | PR `merged` → `100`; PR `open` → keep current or set proportionally (ask user); PR `closed` (not merged) → `0` |
+| **Description** | Append a **changelog entry** to the existing description (see format below). Do NOT replace the existing description — preserve all original context. |
+| **Time log** | If PR `merged` or commit is the final one → log time using `redmine_create_time_entry` with `hours` = `estimated_hours` from the issue (or the PR's estimated hours if provided). Use the latest commit date as `spent_on`. |
+
+### 6d. Changelog entry format
+
+Append this block to the existing description (before the last line if it ends with `PR: <url>`, or at the end otherwise):
+
+```markdown
+## Changelog
+- **<date>** — PR #<n> merged by <author>: <commit subject>
+  - Files changed: <file1>, <file2>, ...
+  - <one-line summary of what changed>
+```
+
+If a `## Changelog` section already exists in the description → append a new bullet under it instead of creating a duplicate section header.
+
+### 6e. Confirm with the user
+
+Present the proposed updates as a confirmation step (same ask-before-create rule from Section 1):
+- Issue ID and current subject
+- Proposed status change (with live status options from Step 1)
+- Proposed done_ratio
+- Proposed time log (hours, date)
+- Proposed changelog entry (preview)
+
+Batch confirmations into **1–4 questions per call**. If the user adjusts any value, apply the adjustment and proceed.
+
+### 6f. Execute the update
+
+1. Call `redmine_update_redmine_issue` with the confirmed fields (`status_id`, `done_ratio`, `description` with appended changelog).
+2. If time logging is confirmed → call `redmine_create_time_entry` with `issue_id`, `hours`, `activity_id`, `spent_on`, `comments`.
+3. If the update returns an error (e.g. invalid status transition) → fetch allowed statuses via `redmine_get_redmine_issue_allowed_statuses` and suggest the nearest valid status.
+4. Report back: issue ID, subject, updated status, done_ratio, time logged (if any), changelog entry appended.
+
+---
+
+## 7. Description template (English, fixed format)
 
 **You (the agent) draft the entire description** — the user never writes it from scratch. Fill all 8 sections **fully in English** from the commit/PR/repo context (actual code, files, changes); the user only reviews/edits the draft during confirmation (Section 5, step 1):
 
@@ -161,9 +231,9 @@ Rules:
 
 ---
 
-## 7. Gotchas checklist
+## 8. Gotchas checklist
 
-- [ ] Description is auto-drafted by you from the English template (Section 6) using commit/PR/repo context — never ask the user to write it from scratch.
+- [ ] Description is auto-drafted by you from the English template (Section 7) using commit/PR/repo context — never ask the user to write it from scratch.
 - [ ] start/due dates are pre-proposed (commit date, +1 day) — present as defaults, user only adjusts if needed.
 - [ ] Priority IDs cannot be assumed from any default description — verify via live issue data (instances have differed before: id 3 was once "High" where a default claimed "Normal").
 - [ ] Private repos → use `gh` CLI, not GitHub API/web (404).
@@ -176,4 +246,8 @@ Rules:
 - [ ] Cache fast path: read `.redmine` at the git worktree root; use it only while `fetched_at` is within 14 days; warn + suggest `redmine init` when stale.
 - [ ] Missing cache ID → verify that single item live; never invent IDs absent from the cache.
 - [ ] `user_mappings` in `.redmine` takes priority over live member matching — if a commit author matches a stored mapping, use `redmine_user_id` directly without asking.
+- [ ] **Update workflow**: when updating an existing issue, always append a changelog entry to the description — never replace the existing description. Read the current description first, find the `## Changelog` section (or create one), and append a new bullet.
+- [ ] **Update workflow**: only read the **latest** commit/PR — do not scan full git history. Use `git log -1` or `gh api .../pulls/<n>/commits` (latest commit only).
+- [ ] **Update workflow**: time logging uses the issue's `estimated_hours` by default; confirm with the user before logging.
+- [ ] **Update workflow**: if the proposed status transition is invalid (e.g. trying to close an issue that's already closed), fetch allowed statuses and suggest the nearest valid one.
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.
