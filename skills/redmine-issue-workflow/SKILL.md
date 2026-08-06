@@ -1,6 +1,6 @@
 ---
 name: redmine-issue-workflow
-description: Use when creating a Redmine issue from a GitHub commit or task (also triggers on Vietnamese requests like "tạo issue/task trên Redmine từ commit", "tạo task", "create issue", "redmine"). Covers gathering project context, verifying IDs against live data, mapping commit authors to Redmine members, applying the [FE/BE/Devops] naming rule, and filling the standard English description template. Use ONLY for Redmine issue creation from commit/repo context, not for general Redmine queries or wiki work.
+description: Use when creating a Redmine issue from a GitHub commit or task (also triggers on Vietnamese requests like "tạo issue/task trên Redmine từ commit", "tạo task", "create issue", "redmine"). Covers gathering project context, verifying IDs against live data, mapping commit authors to Redmine members via `.redmine` `user_mappings` if available, applying the [FE/BE/Devops] naming rule, and filling the standard English description template. Use ONLY for Redmine issue creation from commit/repo context, not for general Redmine queries or wiki work.
 ---
 
 # Redmine Issue Workflow
@@ -41,8 +41,8 @@ This skill documents the exact workflow to create a Redmine issue from a GitHub 
 Use the agent's Redmine tools (capabilities in parentheses — names may differ across agents):
 
 0. **Cache check (fast path)**: if a `.redmine` file exists at the git worktree root of the current repo, **read it first**:
-   - `fetched_at` within 14 days → use `project`, `trackers`, `statuses`, `priorities`, `members`, `versions`, `categories`, `custom_fields` from the cache. **Skip steps 1–4 below** — no live calls needed for these lists.
-   - `fetched_at` older than 14 days → warn the user and suggest running `redmine init` to refresh; ask whether to proceed with live data.
+    - `fetched_at` within 14 days → use `project`, `trackers`, `statuses`, `priorities`, `members`, `versions`, `categories`, `custom_fields`, **`user_mappings`** from the cache. **Skip steps 1–4 below** — no live calls needed for these lists.
+    - `fetched_at` older than 14 days → warn the user and suggest running `redmine init` to refresh; ask whether to proceed with live data.
    - Any ID you need that is **not** in the cache (e.g. a rarely-used priority) → fetch live data for that item only — never invent values.
    - No `.redmine` file → proceed with the live steps below. (The `redmine-init` skill creates the file; suggest it to the user for future speed.)
 1. **List projects** (e.g. `redmine_list_redmine_projects`) → find the target project and its ID.
@@ -70,7 +70,10 @@ Use the agent's Redmine tools (capabilities in parentheses — names may differ 
 
 ### 4a. Map commit author → Redmine member
 
-- Match the commit author (GitHub username/name) to a Redmine member from Step 1's live member list. Build the mapping from the **fetched data only**.
+- If the `.redmine` cache has a `user_mappings` section, match the commit author (GitHub login or git email) against the stored mappings first:
+  - Match by `github` (GitHub login) or `git_email` — whichever is present and matches the commit author.
+  - If a match is found → use `redmine_user_id` directly, **no ask needed**.
+- If no match in `user_mappings` (or no `user_mappings` section) → match against the live `members` list from Step 1 (same logic as before).
 - If the author cannot be matched confidently → **ask the user**, never guess.
 
 ### 4b. Determine the [FE/BE/Devops] prefix by files changed
@@ -172,4 +175,5 @@ Rules:
 - [ ] Confirm the returned values after creation; fix with update if needed.
 - [ ] Cache fast path: read `.redmine` at the git worktree root; use it only while `fetched_at` is within 14 days; warn + suggest `redmine init` when stale.
 - [ ] Missing cache ID → verify that single item live; never invent IDs absent from the cache.
+- [ ] `user_mappings` in `.redmine` takes priority over live member matching — if a commit author matches a stored mapping, use `redmine_user_id` directly without asking.
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.

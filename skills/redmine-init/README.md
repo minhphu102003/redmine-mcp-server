@@ -16,7 +16,8 @@ Running `redmine init` once in a repository:
 | 2 | Lists all Redmine projects (`list_redmine_projects`) |
 | 3 | Asks you which project the repository corresponds to |
 | 4 | Fetches full project context (trackers, members, categories, versions, statuses, priorities, custom fields) |
-| 5 | Strips server wrapper tags and writes `.redmine` (JSON) at the repo root |
+| 5 | **Maps GitHub account ↔ Redmine member** — detects your GitHub identity via `gh api user`, matches against the project member list, confirms with you, and optionally maps additional committers. Stored in `.redmine` for reuse. |
+| 6 | Strips server wrapper tags and writes `.redmine` (JSON) at the repo root |
 
 The file is a snapshot with a `fetched_at` timestamp. Consumers such as `redmine-issue-workflow` use it as the fast path while it is fresh (TTL: **14 days**) and tell you to re-run `redmine init` when it is stale.
 
@@ -71,8 +72,9 @@ Then **restart your agent** (quit and reopen opencode / Claude Code) — skills 
 
 1. Open a session in the repository and ask: `redmine init`
 2. Answer the question about which Redmine project the repo maps to.
-3. The agent writes `.redmine` at the repo root and reports a summary.
-4. Later, re-run `redmine init` any time to refresh the snapshot (e.g. when you get a stale-cache warning, or after team/member changes).
+3. Confirm the GitHub ↔ Redmine member mapping (the agent detects your GitHub identity via `gh` and suggests the match).
+4. The agent writes `.redmine` at the repo root and reports a summary.
+5. Later, re-run `redmine init` any time to refresh the snapshot (e.g. when you get a stale-cache warning, or after team/member changes).
 
 The `.redmine` file contains no secrets (IDs, names and roles only) — it is safe to commit so the whole team shares the mapping.
 

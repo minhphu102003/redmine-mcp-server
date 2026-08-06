@@ -1,6 +1,6 @@
 ---
 name: redmine-init
-description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
+description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. Also asks the user to map their GitHub account to a Redmine member and stores the mapping in `.redmine` so the issue-workflow skill can auto-assign assignees without guessing. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
 ---
 
 # Redmine Init
@@ -28,10 +28,17 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 3. **List projects**: call the list-projects capability (e.g. `redmine_list_redmine_projects`) → returns `id`, `name`, `identifier`, `description`, `created_on`.
 4. **Ask the user to choose**: present the project list (id + name + identifier) and ask "repo này tương ứng với project Redmine nào?" using the agent's structured ask tool (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Do NOT guess. **Embed the full project list in the question text as a numbered list** and let the user type the number or name (ask tools accept custom/free-text answers); optionally add 2–4 clickable shortcuts of the most likely projects. If the list is very long (> ~30 rows), cap the embedded list and ask the user to narrow by keyword.
 5. **Fetch project context**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
-6. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
-7. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
-8. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
-9. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
+6. **Map GitHub account ↔ Redmine member**: detect the current GitHub identity and confirm the Redmine member.
+   1. Detect GitHub side: run `gh api user` (requires `gh` CLI, installed first per the issue-workflow skill's prerequisites) → returns `login`, `name`, `email`. If `gh` is unavailable, fall back to `git config user.name` + `git config user.email`.
+   2. Match the detected GitHub identity against the `members` list from step 5. Match by **name** (case-insensitive) first, then by **email** if name doesn't match.
+   3. If exactly **one** confident match → confirm with the user via the structured ask tool: "GitHub account `janedoe` (Jane Doe) maps to Redmine member nào?" with the matched member pre-selected and 1–3 other likely members as clickable shortcuts.
+   4. If **no match** or **multiple matches** → present the full `members` list as a numbered list and ask the user to pick via the structured ask tool (embed full list in question text, user types number or name; ≤4 clickable shortcuts of the most likely picks).
+   5. **Optional — map additional committers** (ask only if the user seems interested; do NOT exhaustively map every committer to save tokens): run `git shortlog -sne --since="6 months"` to get a compact list of recent committers (1 line each: `count  Name <email>`). Ask the user: "Có muốn map thêm committer nào không?" — if yes, present the shortlist and let them pick entries to map (same ask pattern). Default: **only the current user** (tiết kiệm token).
+   6. Build the `user_mappings` array: each entry `{"github": "<login>", "git_email": "<email>", "redmine_user_id": <id>, "redmine_name": "<name>"}`. Strip wrapper tags from all names.
+7. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
+8. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
+9. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
+10. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count, the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
 
 ---
 
@@ -41,7 +48,8 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 2. **Reuse the stored `project.id`** — do NOT re-ask which project.
 3. If the user hints the repo maps to a *different* project than the file says → confirm with the user before overwriting.
 4. Re-fetch project context + priorities (step 5 of the init flow) and overwrite the file with a fresh `fetched_at`, keeping the same schema.
-5. Verify and report as in init steps 8–9.
+5. **Refresh `user_mappings`**: keep existing mappings whose `redmine_user_id` is still in the new `members` list; drop entries for members that no longer exist; do NOT re-ask for existing mappings.
+6. Verify and report as in init steps 9–10.
 
 ---
 
@@ -59,6 +67,9 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
   "custom_fields": [],
   "required_custom_fields": [],
   "priorities": [{"id": 2, "name": "Normal"}, {"id": 3, "name": "High"}],
+  "user_mappings": [
+    {"github": "janedoe", "git_email": "jane@example.com", "redmine_user_id": 101, "redmine_name": "Jane Doe"}
+  ],
   "fetched_at": "2026-01-15T08:30:00Z"
 }
 ```
@@ -86,4 +97,7 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 - [ ] One project per repo (v1). If a repo maps to multiple projects, ask the user to pick one for the file.
 - [ ] Priorities come from the context tool as a complete list — no sampling or guessing; consumers still live-verify an ID absent from the cache instead of inventing one.
 - [ ] The file contains no secrets (IDs, names, roles only) — safe to commit for the whole team.
+- [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Existing mappings are kept across refreshes; entries for members no longer in the project are dropped automatically.
+- [ ] GitHub identity is detected via `gh api user` (requires `gh` CLI, installed first per the issue-workflow prerequisites); falls back to `git config user.name` + `git config user.email` if `gh` is unavailable.
+- [ ] Mapping the current user is the default — do NOT exhaustively map every committer (saves tokens); offer to map additional committers optionally via `git shortlog -sne --since="6 months"`.
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.

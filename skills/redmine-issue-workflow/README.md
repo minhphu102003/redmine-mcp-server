@@ -12,9 +12,9 @@ The skill is a single Markdown file with frontmatter (`name` + `description`). W
 
 | Step | What happens |
 |---|---|
-| 1 | **Gather Redmine context** — fast path: read the `.redmine` cache (fresh ≤ 14 days); otherwise list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues |
+| 1 | **Gather Redmine context** — fast path: read the `.redmine` cache (fresh ≤ 14 days); otherwise list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues. Also reads `user_mappings` (GitHub↔Redmine account mapping) if present. |
 | 2 | **Read the GitHub repo** — authenticate with `gh` for private repos, clone to a temp dir, read commits via `git log` |
-| 3 | **Map commit → issue** — author → Redmine member, files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
+| 3 | **Map commit → issue** — author → Redmine member (uses `.redmine` `user_mappings` if available, otherwise matches against live member list and asks if no confident match), files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
 | 4 | **Ask before create** — every parameter is confirmed with you using live option lists (tracker/status/priority/assignee) shown in the agent's structured ask UI (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`): full list embedded in the question, answer by typing the number/name or picking a shortcut, plain text as fallback |
 | 5 | **Create** — `create_redmine_issue` with all 11 required fields, then verify the returned values |
 | 6 | **Description** — 8-section English template (Context, User story, Scope, Proposed solution, Related data, Acceptance criteria, Success measurement, PR link) |
