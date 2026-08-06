@@ -26,20 +26,37 @@ Key rule: **nothing is assumed** — every ID/name is fetched live from Redmine 
 
 ## 2. Installation
 
-This repo ships the skill at `skills/redmine-issue-workflow/` as a **distribution copy**. It is not auto-loaded from here — copy the `redmine-issue-workflow` folder into the skills directory of **your own agent**, then restart the agent.
+This repo ships the skill at `skills/redmine-issue-workflow/` as a **distribution copy**. It is not auto-loaded from here — install it into the repository where you want to use it, then restart your agent.
 
-### Copy into your agent
+### One-liner installer (recommended)
 
-| Agent | Copy to |
+Run this from the repository you develop in — it downloads only the `SKILL.md` files into `.agents/skills/` of that repository (both this skill and its companion `redmine-init`):
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
+```
+
+If you have a local clone of this repo (e.g. `D:\redmine-mcp-server`), run the script from it instead — no download needed:
+
+```powershell
+& D:\redmine-mcp-server\scripts\install-skills.ps1
+```
+
+The script installs into `.agents/skills/`, which **opencode and Claude Code / Agent SDK auto-scan** — no config required. You are free to move the skill folders to another location afterwards (see table below).
+
+### Manual copy
+
+| Location | Works with |
 |---|---|
-| opencode (per project) | `.opencode/skills/redmine-issue-workflow/` inside the project where you want the skill |
-| opencode (all projects) | `~/.config/opencode/skills/redmine-issue-workflow/` (Windows: `%USERPROFILE%\.config\opencode\skills\redmine-issue-workflow\`) |
-| Claude Code | `.claude/skills/redmine-issue-workflow/` (project) or `~/.claude/skills/redmine-issue-workflow/` (all projects) |
+| `.agents/skills/redmine-issue-workflow/` (inside your repo) | opencode + Claude Code + Agent SDK (auto-scan) |
+| `.claude/skills/redmine-issue-workflow/` (inside your repo) | Claude Code + opencode (auto-scan) |
+| `.opencode/skills/redmine-issue-workflow/` (inside your repo) | opencode only |
+| `~/.config/opencode/skills/redmine-issue-workflow/` (global) | opencode, all projects |
 
 Example for opencode (project-level), from the project you want the skill in:
 
 ```bash
-cp -r <path-to-this-repo>/skills/redmine-issue-workflow .opencode/skills/
+cp -r <path-to-this-repo>/skills/redmine-issue-workflow .agents/skills/
 ```
 
 Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup. Verify with: ask your agent "list your skills" or check that `redmine-issue-workflow` appears.
@@ -152,11 +169,11 @@ Security notes:
 
 ## 6. Keeping the skill up to date
 
-The skill tracks the server's behavior (e.g. `get_project_issue_context` returning `statuses`). Update by pulling this repo:
+The skill tracks the server's behavior (e.g. `get_project_issue_context` returning `statuses`). Update by pulling this repo, then re-running the installer in the repository that uses the skill:
 
 ```bash
 git pull --rebase
-# re-copy the folder into your agent (section 2)
+# re-run the one-liner installer from section 2
 ```
 
 For changes to take effect, **restart the agent** afterwards.

@@ -532,6 +532,29 @@ This MCP server provides 28 tools for interacting with Redmine. For a comprehens
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
 
+## Agent Skills
+
+This repo ships two user-facing agent skills that teach AI agents (opencode, Claude Code, Agent SDK) how to work with your Redmine project:
+
+- [`redmine-init`](./skills/redmine-init/README.md) — maps the current repository to its Redmine project and writes a `.redmine` JSON cache file at the git worktree root (project ID + static ID lists, TTL 14 days)
+- [`redmine-issue-workflow`](./skills/redmine-issue-workflow/README.md) — the exact workflow for creating a Redmine issue from a GitHub commit (author → member mapping, `[FE/BE/Devops]` naming, English description template), using the `.redmine` cache as the fast path
+
+### Install into a repository
+
+Run this one-liner from the repository where you want the skills — it downloads only the `SKILL.md` files into `.agents/skills/`, which opencode and Claude Code / Agent SDK auto-scan (no config required):
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
+```
+
+If you have a local clone of this repo, run the script from it instead (no download):
+
+```powershell
+& <path-to-this-clone>\scripts\install-skills.ps1
+```
+
+Then **restart your agent** — skills are loaded at startup. You are free to move the installed folders to another location (see the skill READMEs for the manual copy table).
+
 ## Docker Deployment
 
 ### Quick Start with Docker
