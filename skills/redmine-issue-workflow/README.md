@@ -17,8 +17,9 @@ The skill is a single Markdown file with frontmatter (`name` + `description`). W
 | 3 | **Map commit → issue** — author → Redmine member (uses `.redmine` `user_mappings` if available, otherwise matches against live member list and asks if no confident match), files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
 | 4 | **Ask before create** — every parameter is confirmed with you using live option lists (tracker/status/priority/assignee) shown in the agent's structured ask UI (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`): full list embedded in the question, answer by typing the number/name or picking a shortcut, plain text as fallback |
 | 5 | **Create** — `create_redmine_issue` with all 11 required fields, then verify the returned values |
-| 6 | **Description** — 8-section English template (Context, User story, Scope, Proposed solution, Related data, Acceptance criteria, Success measurement, PR link) |
-| 7 | **Gotchas checklist** — no hardcoded IDs, no guessing, private-repo auth via `gh` |
+| 6 | **Update existing issue** — find the issue by ID or subject prefix match, read the latest PR/commit (not full history), propose status/done_ratio/description changelog/time log updates, confirm with user, then execute |
+| 7 | **Description** — 8-section English template (Context, User story, Scope, Proposed solution, Related data, Acceptance criteria, Success measurement, PR link) |
+| 8 | **Gotchas checklist** — no hardcoded IDs, no guessing, private-repo auth via `gh` |
 
 Key rule: **nothing is assumed** — every ID/name is fetched live from Redmine in the current session, and defaults are only proposals confirmed with you first.
 
