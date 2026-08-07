@@ -25,7 +25,7 @@ Break a user story down into tasks with the right assignees, inside Redmine — 
 4. **Live data first** — never trust memory or tool-description defaults for Redmine IDs. Exception: a `.redmine` cache with `fetched_at` within **14 days** is a trusted fast path for its static lists (project, trackers, statuses, priorities, members, versions, categories, custom fields). Anything missing from the cache, or dynamic (allowed status transitions, parent-issue validity), must be fetched live. Stale cache → warn and suggest `redmine init`. No `.redmine` → live lookups.
 5. **Ask-before-create**: every required parameter is confirmed — never silently chosen. Use the agent's structured ask tool (opencode `question` / Claude Code `AskUserQuestion` / Codex `request_user_input`; plain text as fallback). Ask-tool limits: **1–4 questions per call**, **≤ 4 clickable options per question**; for longer live lists (trackers, members, versions) embed the **full numbered list in the question text** and let the user type the number/name. If the ask tool is unavailable or the session is non-interactive → ask in plain text and wait; never proceed on guessed values.
 6. **Dates are the user's call — never auto-proposed**: scheduling depends on context complexity only the user knows. Ask once at confirmation; if the user gives none, create the issues with **empty dates**.
-7. **Assignees follow real ownership**: from architecture docs (owner sections) + `.redmine` `user_mappings` / live members; "unassigned" is the safe default when unknown.
+7. **Assignees follow real ownership + member rules**: from architecture docs (owner sections) + `.redmine` `user_mappings` / live members; "unassigned" is the safe default when unknown. When proposing an assignee, also respect `.redmine` `member_rules` — each member's roles/stack (backend, frontend, mobile, devops, ai, da, qa, full-stack, lead, ...) and personal rules (e.g. "không nhận task UI", "mọi thay đổi DB phải qua lead review"): a task is only proposed to someone whose roles fit the work and whose rules don't exclude it; a Lead's rules typically describe review/approval gates, so lead review is proposed as a separate task or a check, not as the implementation assignee. No matching candidate → ask the user (never override a rule silently).
 8. **Issue content is English** (subject + description) unless the user asks otherwise.
 9. **The agent drafts everything** — the story description, sub-stories, tasks, estimates — as *proposals*. The user only reviews/edits at confirmation.
 10. **Ask, don't interpret**: every ambiguous business point — why the story matters (context), who uses it (role), what it does (capability), why it is worth it (business value), what counts as done (acceptance criteria) — is resolved by **the user through questions**, never self-interpreted. Unresolved points are marked `[?]` in the draft; the proposal is not confirmed (2d) until the user answers all of them. The same applies to **technical feasibility**: if implementing a business requirement is not feasible (technical gap), ask the user how to proceed (re-scope, alternative approach, or drop) — never silently reword, shrink or drop a requirement to fit what is easy.
@@ -129,7 +129,7 @@ Only run after the user explicitly agrees to continue (2f). If the user resumes 
 
 1. At the repo root, read **all** of these files if they exist: `AGENTS.md`, `CLAUDE.md`, `ARCHITECTURE.md` (plus a `docs/architecture.md` if present at the root of docs/). Use them for: module/layer breakdown (to sanity-check the story's scope and sub-stories), ownership hints, complexity signals.
 2. **If none of these files exist → do NOT scan the repo. Ask the user instead**, e.g.: "Repo này chưa có AGENTS.md/ARCHITECTURE.md — mô tả giúp: (a) hệ thống gồm những module/layer nào?, (b) ai phụ trách module nào?, (c) module nào phức tạp nhất?" Use the answers to adjust the story's scope, sub-stories, estimates and assignee proposals.
-3. Map ownership → assignees via `.redmine` `user_mappings` or the live members list; no match → keep the batch default or "unassigned" (never guess).
+3. Map ownership → assignees via `.redmine` `user_mappings` or the live members list, then **filter candidates through `.redmine` `member_rules`** (roles/stack + personal rules, rule 7): a module owner whose roles don't cover the task's stack (or whose rules exclude it) is not proposed — ask the user for the right assignee; no match → keep the batch default or "unassigned" (never guess).
 4. **Feasibility re-check**: if the architecture contradicts a confirmed story (the business requirement is not implementable as stated — technical gap), ask the user how to proceed (re-scope, alternative approach, or drop) — never silently rewrite the story to fit the architecture.
 
 ### 3b. Break down tasks (architecture-driven)
@@ -140,8 +140,31 @@ With the architecture context from 3a, break **the story (and each sub-story) in
 - **Estimate rule (mandatory)**: `estimate = implementation time × 1.2` — the time the task actually takes to implement **plus a 20 % buffer** for the problems listed below. Round to sensible half-hours.
 - **Size rule (mandatory)**: every leaf task must be between **4 h and 8 h**. A task needing < 4 h → merge it into a related task (re-scope the deliverable); a task needing > 8 h → split it into several tasks. Story/sub-story = sum of its tasks.
 - **Prove the estimate with risks**: for every task, list the problems it may hit ("các vấn đề có thể gặp phải") — unclear requirements, tricky integration, hidden dependencies, platform limits, test-data setup, ... — that justify the estimate is just enough. Put them in the task description as a `## Risks` section and surface them again in the 3e confirmation.
-- **Assignees from ownership**: per task, assign the owner of that module (3a step 3 → `.redmine` `user_mappings` / live members); no owner → batch default or "unassigned" (rule 7).
-- Task description: single-paragraph deliverable + `Part of story #<ref>` + `## Risks` bullet list.
+- **Assignees from ownership + member rules**: per task, assign the owner of that module (3a step 3 → `.redmine` `user_mappings` / live members) whose `member_rules` roles fit the task's stack and whose rules don't exclude it; no owner or no fitting candidate → batch default, "unassigned", or ask the user (rule 7).
+- Task description (English, exact template — headers verbatim, fill only the bullet content):
+
+```markdown
+## Deliverable
+- [one concrete outcome this task produces]
+
+## Scope of work
+- [2–5 implementation steps: module/layer from 3a, endpoint, DB change, config, ...]
+
+## Acceptance
+- [ ] T-AC1: [pass/fail check — test passes / API returns X / UI flow works]
+- [ ] T-AC2: [trace to the story's AC, e.g. "covers AC2 of S1"]
+
+## Out of scope
+- [what belongs to another task of this breakdown, named explicitly]
+
+## Dependencies
+- [what must be done first — mirrors the confirmed precedes pairs from 3c, e.g. "T2 (refund DB schema)"]
+
+## Risks
+- [the problems justifying the estimate, from 3b]
+```
+
+Writing rules: `## Deliverable` is one concrete outcome — "I wrote code" is not done; `## Scope of work` lists only steps grounded in the 3a architecture context (never invented module names); `## Acceptance` holds 1–3 pass/fail checks that **trace to the story's acceptance criteria** (each AC scenario maps to a task, per 2c — write which AC this task covers); `## Out of scope` names the other task(s) that own the leftover work so two tasks never silently overlap; `## Dependencies` mirrors exactly the confirmed `precedes` pairs from 3c (the same list is stored in the state as `depends_on` refs and created as issue relations in 3f) — never add a dependency that is not in that list, and never create one that the user rejected. Keep the `Part of story #<ref>` line at the top.
 
 ### 3c. Dependencies — "task nào nên làm trước"
 
@@ -210,6 +233,7 @@ The `plan` section holds **one story's breakdown** — written by this skill (Ch
   "custom_fields": [],
   "required_custom_fields": [],
   "user_mappings": [],
+  "member_rules": [],
   "fetched_at": "2026-08-07T00:00:00Z",
   "plan": {
     "status": "created",
@@ -223,8 +247,8 @@ The `plan` section holds **one story's breakdown** — written by this skill (Ch
     },
     "nodes": [
       {"ref": "S1", "type": "story", "subject": "Add refund support", "description": "## Context\n- ...\n\n## User story\n- **As a** ...\n- **I want** ...\n- **So that** ...\n\n## Acceptance criteria\n- [ ] AC1: ...\n\n## Out of scope\n- ...\n\n## Notes & open questions\n- ...", "estimate_hours": 8.8, "priority_id": 2, "redmine_id": 101},
-      {"ref": "T1", "type": "task", "subject": "Implement refund API endpoint", "description": "Refund API endpoint\n\nPart of story #S1\n\n## Risks\n- Refund calculation edge cases\n- External payment provider limits", "estimate_hours": 4.8, "priority_id": 2, "parent": "S1", "depends_on": ["T2"], "redmine_id": 102},
-      {"ref": "T2", "type": "task", "subject": "Build refund UI", "description": "Build the refund form and confirmation flow", "estimate_hours": 4, "priority_id": 2, "parent": "S1", "depends_on": [], "redmine_id": 103}
+      {"ref": "T1", "type": "task", "subject": "Implement refund API endpoint", "description": "Part of story #S1\n\n## Deliverable\n- Refund API endpoint accepting order + amount\n\n## Scope of work\n- Add refund route in orders module\n- Validate amount against paid total\n- Call payment provider refund API\n\n## Acceptance\n- [ ] T-AC1: POST /refunds returns 201 and refund id\n- [ ] T-AC2: covers AC1 of S1\n\n## Out of scope\n- Refund UI (T2)\n\n## Dependencies\n- T2 (refund DB schema)\n\n## Risks\n- Refund calculation edge cases\n- External payment provider limits", "estimate_hours": 4.8, "priority_id": 2, "parent": "S1", "depends_on": ["T2"], "redmine_id": 102},
+      {"ref": "T2", "type": "task", "subject": "Build refund UI", "description": "Part of story #S1\n\n## Deliverable\n- Refund form and confirmation flow\n\n## Scope of work\n- Refund form on order detail page\n- Confirmation screen with result\n\n## Acceptance\n- [ ] T-AC1: refund flow completes end-to-end\n- [ ] T-AC2: covers AC3 of S1\n\n## Out of scope\n- Refund API endpoint (T1)\n\n## Dependencies\n- T1 (refund API endpoint)\n\n## Risks\n- Async status update from provider", "estimate_hours": 4, "priority_id": 2, "parent": "S1", "depends_on": [], "redmine_id": 103}
     ],
     "relations": [
       {"precedes": "T2", "follows": "T1", "relation_id": 55}
@@ -244,7 +268,7 @@ Rules:
 - `redmine_id`: `null` until the issue is created, then the real ID.
 - `depends_on` (per node): refs of nodes that must be **done first** ("task nào nên làm trước"). Confirmed in 3c.
 - `relations`: the confirmed dependency pairs — `precedes` = ref done first, `follows` = ref done later; `relation_id` filled when the Redmine relation is created (`precedes` type; Redmine mirrors `follows` automatically).
-- Task `description` includes the deliverable, `Part of story #<ref>`, and a `## Risks` section (the problems justifying the estimate, from 3b).
+- Task `description` follows the 3b template: `Part of story #<ref>` + `## Deliverable` / `## Scope of work` / `## Acceptance` (tracing the story's AC) / `## Out of scope` / `## Dependencies` (mirroring `depends_on`) / `## Risks` (the problems justifying the estimate).
 - Keep the static-list keys verbatim (a `redmine init` run may have written them); this skill only manages the `plan` key plus the lists it needed to fetch itself.
 - **Gotcha**: re-running `redmine init` rewrites `.redmine` from scratch and drops the `plan` section — after any `redmine init`, re-persist `plan` from the last confirmed state (read it back first if the file still has it, or ask the user to re-confirm the stored tree).
 

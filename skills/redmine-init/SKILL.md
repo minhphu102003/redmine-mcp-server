@@ -1,6 +1,6 @@
 ---
 name: redmine-init
-description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. Also asks the user to map their GitHub account to a Redmine member and stores the mapping in `.redmine` so the issue-workflow skill can auto-assign assignees without guessing. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
+description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. Also asks the user to map their GitHub account to a Redmine member and stores the mapping in `.redmine` so the issue-workflow skill can auto-assign assignees without guessing. Also asks the user for each team member's working rules (role/stack, coding conventions, testing, code review, AI-assistant usage, reporting — the user may answer or skip per member) and stores them in `.redmine` (`member_rules`) so the planning/issue skills respect each person's constraints. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
 ---
 
 # Redmine Init
@@ -35,10 +35,33 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
    4. If **no match** or **multiple matches** → present the full `members` list as a numbered list and ask the user to pick via the structured ask tool (embed full list in question text, user types number or name; ≤4 clickable shortcuts of the most likely picks).
    5. **Optional — map additional committers** (ask only if the user seems interested; do NOT exhaustively map every committer to save tokens): run `git shortlog -sne --since="6 months"` to get a compact list of recent committers (1 line each: `count  Name <email>`). Ask the user: "Có muốn map thêm committer nào không?" — if yes, present the shortlist and let them pick entries to map (same ask pattern). Default: **only the current user** (tiết kiệm token).
    6. Build the `user_mappings` array: each entry `{"github": "<login>", "git_email": "<email>", "redmine_user_id": <id>, "redmine_name": "<name>"}`. Strip wrapper tags from all names.
-7. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
-8. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
-9. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
-10. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count, the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
+7. **Collect member working rules** (ask, never assume): for each member mapped in step 6, ask the user for that person's working rules — "Người này làm role gì và có rule/đặc thù riêng khi làm việc không? (gõ 'bỏ qua' để skip)". Prompt with the researched catalog below as a reminder of what rule areas exist (role/stack, required tests, code-review expectations, AI-assistant usage policy, reporting cadence, definition of done). The user answers, skips, or says "bỏ qua" per member — **never invent a rule**; store only what the user explicitly said, as short verbatim bullets (Vietnamese OK).
+8. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
+9. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
+10. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
+11. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count, the `member_rules` count, the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
+
+### Member rules catalog (research summary — use as prompt material)
+
+Researched rule areas per role (ask the user which apply; do NOT assume any apply):
+
+| Role | Typical rule areas |
+|---|---|
+| Backend | API-first contract (OpenAPI), schema/validation, authn/z + PII handling, error handling, database access rules, performance/scalability, test coverage |
+| Frontend (web) | Design system + tokens, responsive + accessibility, performance (bundle/lazy), state management pattern, API contract alignment, e2e for critical flows |
+| Mobile | Platform (native Swift/Kotlin vs Flutter/React Native), offline/caching + network retries, store policies + signing/release, crash monitoring, performance (cold start, memory, battery), secure storage |
+| DevOps | CI/CD quality gates, IaC (Terraform/Ansible), Docker/K8s, observability/alerting, release management + rollback, security gates, secrets handling |
+| AI (LLM) | RAG + evals (golden datasets), prompt management, guardrails, inference latency/cost, drift monitoring, model API rate limits/retries/fallbacks |
+| Data analyst (DA) | SQL + BI dashboards, metric definitions, data quality/freshness, source of truth |
+| Data engineer | dbt models, orchestration (Airflow), lineage, data quality tests, schema migrations |
+| QA | Test pyramid, page objects/factories, e2e on critical paths only, adversarial/negative paths, contract testing |
+| Full-stack | Both sides of the API contract, end-to-end feature ownership incl. tests |
+| Lead (Tech/Team/Project) | Architecture decisions + review/approval gates (review rules, who must approve PRs/merge), task delegation (what they assign vs. keep), technical risk ownership, mentoring/onboarding, reporting to stakeholders, definition of done enforcement |
+| Security | Threat modeling, SAST/DAST, auth, compliance |
+| SRE | SLOs, error budgets, incidents, chaos testing |
+| PM/PO | Intent + acceptance criteria + out-of-scope, definition of ready |
+
+Cross-role dimensions to ask once per person: commit/branch conventions, code-review expectations, AI-assistant usage policy (allowed? verify output?), reporting cadence (standup/weekly), definition of done, preferred communication.
 
 ---
 
@@ -49,7 +72,8 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 3. If the user hints the repo maps to a *different* project than the file says → confirm with the user before overwriting.
 4. Re-fetch project context + priorities (step 5 of the init flow) and overwrite the file with a fresh `fetched_at`, keeping the same schema.
 5. **Refresh `user_mappings`**: keep existing mappings whose `redmine_user_id` is still in the new `members` list; drop entries for members that no longer exist; do NOT re-ask for existing mappings.
-6. Verify and report as in init steps 9–10.
+6. **Refresh `member_rules`**: keep entries whose `redmine_user_id` still exists in the new `members` list, drop stale ones; do NOT re-ask every person's rules — only ask again if the user explicitly wants to update them.
+7. Verify and report as in init steps 10–11.
 
 ---
 
@@ -70,6 +94,9 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
   "user_mappings": [
     {"github": "janedoe", "git_email": "jane@example.com", "redmine_user_id": 101, "redmine_name": "Jane Doe"}
   ],
+  "member_rules": [
+    {"redmine_user_id": 101, "redmine_name": "Jane Doe", "roles": ["backend"], "rules": ["luôn viết test trước khi code", "API cần OpenAPI spec trước khi implement"]}
+  ],
   "fetched_at": "2026-01-15T08:30:00Z"
 }
 ```
@@ -78,6 +105,7 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 - `fetched_at`: current time, ISO 8601 with `Z` (UTC).
 - Keep keys verbatim; empty lists stay as `[]`.
 - Strip all `<insecure-content-...>` wrapper tags from names.
+- `member_rules` (optional): per-member working rules as told by the user — `roles` = role/stack tags (backend, frontend, mobile, devops, ai, da, qa, full-stack, ...), `rules` = short verbatim bullets (Vietnamese OK). A member without entries means the user skipped them — never invent rules.
 
 ---
 
@@ -100,4 +128,6 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 - [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Existing mappings are kept across refreshes; entries for members no longer in the project are dropped automatically.
 - [ ] GitHub identity is detected via `gh api user` (requires `gh` CLI, installed first per the issue-workflow prerequisites); falls back to `git config user.name` + `git config user.email` if `gh` is unavailable.
 - [ ] Mapping the current user is the default — do NOT exhaustively map every committer (saves tokens); offer to map additional committers optionally via `git shortlog -sne --since="6 months"`.
+- [ ] Member rules are **user-provided only** — never invent a rule; a member the user skips simply has no entry. Use the researched catalog (roles × rule areas) as prompts, not as assumptions.
+- [ ] Re-ask member rules on refresh only when the user asks to update them — keep existing entries otherwise.
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.
