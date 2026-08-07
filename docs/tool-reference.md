@@ -819,6 +819,46 @@ update_redmine_issue(
 
 ---
 
+## Issue Relations (dependencies)
+
+### `create_redmine_issue_relation`
+
+Creates an issue relation (dependency) between two Redmine issues — e.g. task A `precedes` task B, so the Gantt chart and roadmap reflect "task nào nên làm trước". Blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the first issue (the one that comes first, blocks, or is related)
+- `issue_to_id` (integer, required): ID of the second issue (the one that comes later, is blocked, or is related)
+- `relation_type` (string, required): `precedes` / `follows`, `blocks` / `blocked`, `relates`, `duplicates` / `duplicated`, `copied_to` / `copied_from`. Pick one direction — Redmine mirrors the complementary type automatically
+- `delay` (integer, optional): Delay in days (precedes/follows only), e.g. `1` = `issue_to_id` starts 1 day after `issue_id`
+
+**Behavior:** validates the relation type, rejects self-relations, verifies both issues exist before creating; both issue subjects are returned wrapped in insecure-content tags.
+
+**Returns:** `success`, the created `relation` (`id`, `issue_id`, `issue_to_id`, `relation_type`, `delay`) and both `issues` (id + subject).
+
+**Example:**
+```python
+# Task 100 (Setup API) must be done before task 200 (Build UI)
+create_redmine_issue_relation(
+    issue_id=100,
+    issue_to_id=200,
+    relation_type="precedes",
+    delay=0,
+)
+```
+
+---
+
+### `delete_redmine_issue_relation`
+
+Deletes an issue relation from Redmine. Blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+**Parameters:**
+- `relation_id` (integer, required): ID of the issue relation to delete
+
+**Returns:** `success`, `relation_id` and a `message`.
+
+---
+
 ## Time Tracking
 
 ### `list_time_entries`

@@ -28,6 +28,10 @@ from .projects import (
     list_redmine_versions_impl,
 )
 from .project_context import get_project_issue_context_impl
+from .relations import (
+    create_redmine_issue_relation_impl,
+    delete_redmine_issue_relation_impl,
+)
 from .time_entries import (
     create_time_entry_impl,
     delete_time_entry_impl,
@@ -80,4 +84,6 @@ __all__ = [
     "export_weekly_report_markdown_impl",
     "export_weekly_report_docx_impl",
     "get_project_issue_context_impl",
+    "create_redmine_issue_relation_impl",
+    "delete_redmine_issue_relation_impl",
 ]

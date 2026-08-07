@@ -159,12 +159,13 @@ To keep keys out of git, read them from environment variables instead of literal
 
 ## Install the skills — the workflow itself
 
-This repo ships two skills that teach your agent the workflow above:
+This repo ships three skills that teach your agent the workflow above:
 
 - [`redmine-init`](./skills/redmine-init/README.md) — maps the current repo to its Redmine project and writes the `.redmine` cache (project ID, members, trackers, ...)
 - [`redmine-issue-workflow`](./skills/redmine-issue-workflow/README.md) — creates/updates Redmine issues from GitHub commits and PRs (author mapping, `[FE/BE/Devops]` naming, description template, changelog, time logging)
+- [`redmine-planning`](./skills/redmine-planning/README.md) — breaks **one user story** down into tasks with the right assignees (optionally via lower-level sub-stories) in two checkpoints: a confirmed, ambiguity-free business proposal first, then an architecture-grounded task breakdown (estimates, assignees, dependencies) before creating everything in Redmine. Never plans a whole sprint at once — stories are processed one at a time to avoid context overflow
 
-Install both into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
+Install all three into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
 
 ```powershell
 irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
@@ -180,7 +181,7 @@ Then restart your agent, run `redmine init` once in your repo, and start with e.
 
 ## Under the hood — the tools powering the workflow
 
-The MCP server provides ~28 tools that the skills call on your behalf: issues (create/list/update/delete), time entries, wiki pages, global search, scrum reports and weekly report export (markdown/docx). See [MCP Tools](./docs/mcp-tools.md) for the full list and [Tool Reference](./docs/tool-reference.md) for parameters.
+The MCP server provides ~31 tools that the skills call on your behalf: issues (create/list/update/delete/relations), time entries, wiki pages, global search, scrum reports and weekly report export (markdown/docx). See [MCP Tools](./docs/mcp-tools.md) for the full list and [Tool Reference](./docs/tool-reference.md) for parameters.
 
 ### Authentication modes
 

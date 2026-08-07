@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$skills = @("redmine-init", "redmine-issue-workflow")
+$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {

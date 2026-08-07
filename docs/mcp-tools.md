@@ -11,11 +11,11 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 
 | Kind | Count |
 |---|---|
-| MCP tools (`@mcp.tool()`) | 28 |
+| MCP tools (`@mcp.tool()`) | 31 |
 | MCP resources (`@mcp.resource()`) | 6 |
 | Custom HTTP routes (`@mcp.custom_route()`) | 3 |
 
-## Quick reference (all 28 tools)
+## Quick reference (all 31 tools)
 
 | Tool | Category | Description |
 |---|---|---|
@@ -25,6 +25,8 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`create_redmine_issue`](#create_redmine_issue) | Issues | Create a new issue (template enforcement, required custom-field autofill) |
 | [`create_redmine_issue_with_subtasks`](#create_redmine_issue_with_subtasks) | Issues | Create one parent issue plus multiple subtasks in a single call |
 | [`update_redmine_issue`](#update_redmine_issue) | Issues | Update an existing issue |
+| [`create_redmine_issue_relation`](#create_redmine_issue_relation) | Issues | Create an issue relation (dependency) between two issues |
+| [`delete_redmine_issue_relation`](#delete_redmine_issue_relation) | Issues | Delete an issue relation |
 | [`list_redmine_issue_statuses`](#list_redmine_issue_statuses) | Issues | List all issue statuses defined in Redmine |
 | [`get_redmine_issue_allowed_statuses`](#get_redmine_issue_allowed_statuses) | Issues | Get allowed status transitions for a specific issue |
 | [`get_redmine_project_workflow`](#get_redmine_project_workflow) | Issues | Infer project workflow from issue-level allowed statuses (sample-based) |
@@ -394,6 +396,41 @@ issue after a successful update; a logging failure keeps the update and
 returns the error under `time_entry` with `time_entry_error: true`.
 
 **Returns:** `Dict` with the updated issue, plus a `time_entry` key when `spent_hours` was provided.
+
+---
+
+### `create_redmine_issue_relation`
+
+Create an issue relation (dependency) between two Redmine issues — e.g. task A
+`precedes` task B, so the Gantt chart and roadmap reflect "task nào nên làm
+trước". Redmine stores one row per relation and mirrors the complementary type
+(`follows`, `blocked`, `duplicated`) on the other side automatically.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `issue_id` | int | (required) | ID of the first issue (comes first / blocks / is related) |
+| `issue_to_id` | int | (required) | ID of the second issue (comes later / is blocked / is related) |
+| `relation_type` | str | (required) | `precedes` / `follows`, `blocks` / `blocked`, `relates`, `duplicates` / `duplicated`, `copied_to` / `copied_from` |
+| `delay` | int | None | Optional delay in days (precedes/follows only) |
+
+Behavior: respects read-only mode; validates the relation type, rejects
+self-relations, and verifies both issues exist before creating. Both issue
+subjects are returned wrapped in insecure-content tags.
+
+**Returns:** `Dict` with `success`, the created `relation` (`id`, `issue_id`,
+`issue_to_id`, `relation_type`, `delay`) and both `issues` (id + subject).
+
+---
+
+### `delete_redmine_issue_relation`
+
+Delete an issue relation from Redmine. Respects read-only mode.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `relation_id` | int | (required) | ID of the issue relation to delete |
+
+**Returns:** `Dict` with `success`, `relation_id` and a `message`.
 
 ---
 
