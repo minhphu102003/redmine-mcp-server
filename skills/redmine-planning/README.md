@@ -29,7 +29,7 @@ This skill closes the gap by making the **agent** the planning workflow: one tem
 
 | Step | What happens |
 |---|---|
-| 1 | Gathers project context (trackers, versions, members, priorities, custom fields) — via the `.redmine` cache when fresh, otherwise live |
+| 1 | Gathers project context (trackers, versions, members, priorities, custom fields) — via the `.redmine` cache when fresh, otherwise live. **The plan always targets the repo's project** — planning another project/repo is refused (no context/architecture for its breakdown) |
 | 2 | Captures the goal: **guided** (asks you goal → epics → stories → tasks) or **from notes** (you paste text / point at a wiki page) |
 | 3 | **Checkpoint 1** — drafts the user-story proposal (Context + User story + Acceptance criteria, priorities, assignees); **every ambiguous business point becomes a question for you** (marked `[?]`) — never self-interpreted; if a requirement is **not technically feasible**, it asks you how to proceed (re-scope / alternative / drop), never silently changes it. Task breakdown happens later, in Checkpoint 2 |
 | 4 | Iterates with you until you confirm the proposal — every `[?]` answered by you first; **nothing written to Redmine yet** |
@@ -99,7 +99,7 @@ The agent parses the notes into the tree, drafts descriptions/acceptance criteri
 - **Token-friendly**: the agent **never scans the repo** — architecture context comes only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md`, or from questions to you.
 - **Breakdown grounded in reality**: tasks are broken down only after architecture grounding — each estimate follows the mandatory rule (**implementation time + 20 % buffer**, leaf tasks kept in the 4–8 h band) and is justified with the problems the task may hit; assignees come from module ownership — not guesses.
 - **You stay in control of the content**: at Checkpoint 1 every ambiguous business point (Context / role / capability / value / acceptance criteria) is a question for you, marked `[?]` — and if a requirement is **not technically feasible**, the agent asks you how to proceed (re-scope / alternative / drop) instead of silently changing it.
-- **One plan in memory**: `.redmine` holds a single plan at a time — starting a new plan replaces the old state (you confirm first; issues already created in Redmine are untouched).
+- **One plan in memory, one project**: `.redmine` holds a single plan at a time — starting a new plan replaces the old state (you confirm first; issues already created in Redmine are untouched). The plan always belongs to the **repo's project** (the `.redmine` top-level `project`); planning another repo is refused because the agent has no architecture context for its breakdown.
 - **Dependencies ("task nào nên làm trước")**: recorded as real Redmine issue relations (`precedes`/`follows`), so the Gantt chart shows the correct order of work.
 - **You control the schedule**: the agent **never proposes dates** — start/due dates are set only when you explicitly give them (scheduling depends on context complexity only you know).
 - **Consistent structure**: every story has Context + User story + Acceptance criteria; every task is one 4–8 h deliverable; epics/stories/tasks carry estimates that roll up.
@@ -116,6 +116,7 @@ The agent parses the notes into the tree, drafts descriptions/acceptance criteri
 | **No create-version MCP tool** — a brand-new version cannot be created from the chat | Create the version once in the Redmine UI (`/projects/<id>/versions/new`) or ask an admin, then re-run the plan |
 | No `Epic`/`Story` trackers on some instances | The skill asks you to pick existing trackers from the live list (or admin creates them) |
 | Read-only server (`REDMINE_MCP_READ_ONLY`) | Creation is blocked — the skill detects this and offers a text-draft of the plan instead |
+| **Planning another project/repo** | **Refused by design** — the breakdown needs that repo's architecture context, which the skill does not have. Use the `redmine-issue-workflow` skill for ad-hoc issues in other projects |
 
 ---
 

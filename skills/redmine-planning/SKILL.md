@@ -1,6 +1,6 @@
 ---
 name: redmine-planning
-description: Use when the user wants to plan or create a structured plan in Redmine, e.g. "lập kế hoạch", "planning", "tạo plan", "lên kế hoạch cho quý/sprint/tháng", "breakdown task", "epic", "user story", "roadmap", "kế hoạch cho project", "tạo kế hoạch từ ghi chú", "add tasks to the plan", "thêm task vào plan", "cập nhật plan", "đổi estimate", "chuyển version", "task nào làm trước", "dependon", "dependency". Runs in two checkpoints: (1) turns a natural-language goal or meeting notes into a proposal of user stories in the defined format (Epic → Story), iterates with the user until the proposal is confirmed — every ambiguous business point (context, role, capability, value, acceptance criteria) is resolved by the user through questions, never self-interpreted — then persists the confirmed state as JSON in the `.redmine` plan section — nothing is written to Redmine yet; (2) after the user explicitly says to continue, grounds the plan in the repository architecture read ONLY from designated files (AGENTS.md / CLAUDE.md / ARCHITECTURE.md) or from questions to the user — never by scanning the repo — breaks each story into tasks (estimates = implementation time + 20 % buffer, leaf tasks kept in the 4–8 h band, each estimate justified with the risks it covers; assignees from module ownership), collects dependencies ("task nào nên làm trước") as precedes/follows issue relations, then bulk-creates issues + relations via the Redmine MCP tools and marks the state as created. Also covers updating an existing plan (add tasks to a story, change estimates/version/priority, add/remove dependencies). Use ONLY for planning work — NOT for creating a single issue from a commit/PR (use redmine-issue-workflow), NOT for init/refresh of the `.redmine` cache (use redmine-init).
+description: Use when the user wants to plan or create a structured plan in Redmine, e.g. "lập kế hoạch", "planning", "tạo plan", "lên kế hoạch cho quý/sprint/tháng", "breakdown task", "epic", "user story", "roadmap", "kế hoạch cho project", "tạo kế hoạch từ ghi chú", "add tasks to the plan", "thêm task vào plan", "cập nhật plan", "đổi estimate", "chuyển version", "task nào làm trước", "dependon", "dependency". The plan always belongs to the repo's project (the top-level `project` in `.redmine`) — planning a different project/repo is refused because the agent lacks that repo's context and architecture for the breakdown. Runs in two checkpoints: (1) turns a natural-language goal or meeting notes into a proposal of user stories in the defined format (Epic → Story), iterates with the user until the proposal is confirmed — every ambiguous business point (context, role, capability, value, acceptance criteria) is resolved by the user through questions, never self-interpreted — then persists the confirmed state as JSON in the `.redmine` plan section — nothing is written to Redmine yet; (2) after the user explicitly says to continue, grounds the plan in the repository architecture read ONLY from designated files (AGENTS.md / CLAUDE.md / ARCHITECTURE.md) or from questions to the user — never by scanning the repo — breaks each story into tasks (estimates = implementation time + 20 % buffer, leaf tasks kept in the 4–8 h band, each estimate justified with the risks it covers; assignees from module ownership), collects dependencies ("task nào nên làm trước") as precedes/follows issue relations, then bulk-creates issues + relations via the Redmine MCP tools and marks the state as created. Also covers updating an existing plan (add tasks to a story, change estimates/version/priority, add/remove dependencies). Use ONLY for planning work — NOT for creating a single issue from a commit/PR (use redmine-issue-workflow), NOT for init/refresh of the `.redmine` cache (use redmine-init).
 ---
 
 # Redmine Planning
@@ -44,7 +44,8 @@ Checkpoint 2 — COMMIT (writes to Redmine)
 8. **Issue content is English** (subject + description) unless the user asks otherwise.
 9. **The agent drafts everything** — user stories, acceptance criteria, breakdown, estimates — as *proposals*. The user only reviews/edits at confirmation.
 10. **Ask, don't interpret**: every ambiguous business point — why the story matters, who uses it (role), what it does (capability), why it is worth it (business value), what counts as done (acceptance criteria) — is resolved by **the user through questions**, never self-interpreted. Unresolved points are marked `[?]` in the draft; the proposal is not confirmed (2d) until the user answers all of them. The same applies to **technical feasibility**: if implementing a business requirement is not feasible (technical gap), ask the user how to proceed (re-scope, alternative approach, or drop) — never silently reword, shrink or drop a requirement to fit what is easy.
-11. **Read-only guard**: if the server is in read-only mode (`REDMINE_MCP_READ_ONLY`), creation tools return an error — detect it early and tell the user Checkpoint 2 cannot write; offer to finish Checkpoint 1 (proposal + state) only.
+11. **The plan always belongs to the repo's project**: the target project is the repo's project — the top-level `project` in `.redmine` (the one `redmine init` mapped). If the user asks to plan a **different project or repo**, **refuse**: "Skill này chỉ planning cho project của repo hiện tại — tôi không có context/architecture của repo kia để breakdown." Never plan another project even if the user insists (offer the redmine-issue-workflow skill for ad-hoc issues there instead).
+12. **Read-only guard**: if the server is in read-only mode (`REDMINE_MCP_READ_ONLY`), creation tools return an error — detect it early and tell the user Checkpoint 2 cannot write; offer to finish Checkpoint 1 (proposal + state) only.
 
 ---
 
@@ -53,7 +54,7 @@ Checkpoint 2 — COMMIT (writes to Redmine)
 ### 2a. Gather context
 
 1. **Cache check (fast path)**: if a `.redmine` file exists at the git worktree root, read it — fresh (≤ 14 days) → reuse its static lists; stale → warn + suggest `redmine init`; ID missing from cache → fetch that one live; no file → live lookups. Strip `<insecure-content-...>` wrapper tags from any names you reuse.
-2. **List projects** → find the target project and its ID (ask the user if unknown).
+2. **The target project is fixed — the repo's project**: the top-level `project` in `.redmine` (or fetched per the `redmine-init` skill when no cache). If the user names another project or repo → **refuse** (rule 11): the breakdown needs that repo's context and architecture, which you do not have.
 3. **Get project issue context** → trackers, members + roles, categories, versions, statuses, priorities, custom_fields. Priorities come from this call as the complete list — never assume `1=Low, 2=Normal, 3=High, 4=Urgent`.
 4. Note whether a version exists that can hold the plan (a version = a sprint/release milestone in Redmine). This context is needed for Checkpoint 2 but cheap to have now.
 
@@ -62,7 +63,7 @@ Checkpoint 2 — COMMIT (writes to Redmine)
 Detect the mode from the user's request; for ambiguity ask "bạn muốn hỏi từng bước hay gửi ghi chú sẵn có?".
 
 **Guided mode** — ask in this order (batch into 1–4 questions per ask call):
-1. **Scope**: which project (if not already known)? Which horizon — sprint / month / quarter / version?
+1. **Scope**: the repo's project is fixed (rule 11 — never another project); ask only the horizon — sprint / month / quarter / version?
 2. **Goals**: "Mục tiêu của kế hoạch này là gì?" (1–3 outcomes the plan must deliver).
 3. **Epics**: what are the big work streams (epics)? Propose an initial list from the goals; let the user add/remove.
 4. **Stories**: per epic, which user stories — or tell the user "tôi sẽ tự proposal phần còn lại" and draft them (2c), which is the default. **Task breakdown is NOT part of Checkpoint 1** — tasks need the architecture context from Checkpoint 2.
@@ -118,7 +119,7 @@ Rules: user story uses exactly **As a → I want → So that**, each phrase **bo
 
 ### 2e. Persist state to `.redmine`
 
-Write the confirmed proposal into the `plan` section of `.redmine` (exact schema in Section 5), `status: "proposed"`, with a per-node `ref` (E1, S1, T1...) and parent links. If `.redmine` does not exist (e.g. no `redmine init` run), create it with the plan section plus the static lists you fetched in 2a, keeping the exact schema. Verify the file parses as JSON and contains no wrapper tags.
+Write the confirmed proposal into the `plan` section of `.redmine` (exact schema in Section 5), `status: "proposed"`, with a per-node `ref` (E1, S1, T1...) and parent links. If `.redmine` does not exist (e.g. no `redmine init` run), create it with the plan section plus the static lists you fetched in 2a, keeping the exact schema and the top-level `project` set to the **repo's** project (never another project — rule 11). Verify the file parses as JSON and contains no wrapper tags.
 
 **One plan in memory**: the `plan` section holds **exactly one plan at a time**. If a plan already exists (even a `"created"` one), warn the user it will be replaced and ask to confirm before overwriting — issues already created in Redmine are NOT affected. Set `created_at` (ngày tạo của plan) when the plan is first persisted; bump `updated_at` on every later change.
 
@@ -219,7 +220,6 @@ The `plan` section is written by this skill (Checkpoint 1) and updated through C
   "fetched_at": "2026-08-07T00:00:00Z",
   "plan": {
     "status": "proposed",
-    "project_id": 12,
     "version_id": null,
     "decisions": {
       "tracker_epic_id": 2,
@@ -246,6 +246,7 @@ The `plan` section is written by this skill (Checkpoint 1) and updated through C
 
 Rules:
 - `status`: `"proposed"` after Checkpoint 1; `"created"` after Checkpoint 2 succeeds.
+- **The plan always belongs to the repo's project**: the target project is the top-level `project.id` — `plan` carries no `project_id` of its own. Planning a different project/repo is refused (rule 11) — never write a `plan` for another project, and re-verify after any `redmine init` that the top-level `project` still matches the repo before continuing.
 - **The `plan` section holds exactly one plan at a time** — starting a new plan replaces the old `plan` state (confirm with the user first; already-created Redmine issues are untouched).
 - `created_at`: ngày tạo của plan — set when the plan is first persisted (Checkpoint 1); `updated_at` bumps on every state change.
 - `redmine_id`: `null` until the issue is created, then the real ID.
@@ -267,6 +268,7 @@ Rules:
 - [ ] **No self-interpretation at Checkpoint 1**: every ambiguous business point (Context / role / capability / value / acceptance criteria) is a question for the user, marked `[?]` in the draft — the proposal is never confirmed while any `[?]` remains. Same for a **technical gap** (requirement not feasible to implement): ask the user how to proceed (re-scope / alternative / drop), never silently change the requirement.
 - [ ] **Estimate rule**: `estimate = implementation time × 1.2`; every leaf task must be **4–8 h** (merge tasks < 4 h, split tasks > 8 h); each task's description lists the risks ("các vấn đề có thể gặp phải") proving the estimate is just enough.
 - [ ] **One plan in memory**: `.redmine` `plan` holds exactly one plan at a time — starting a new plan replaces the old state (confirm first; Redmine issues are unaffected).
+- [ ] **Plan scope = the repo's project**: the plan always targets the top-level `project` of `.redmine`; planning another project/repo is **refused** (no context/architecture for its breakdown) — even if the user insists.
 - [ ] **Dependencies**: collect/confirm the ordering ("task nào nên làm trước") in 3c; create relations **only after both issues exist** (3f step 3) with `precedes`; Redmine mirrors `follows` automatically — never create both directions.
 - [ ] A failed relation creation is reported, not fatal — tell the user which pair to retry.
 - [ ] `redmine init` rewrites `.redmine` and drops `plan` — re-persist after any refresh.
