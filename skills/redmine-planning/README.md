@@ -31,8 +31,8 @@ This skill closes the gap by making the **agent** the planning workflow: one tem
 |---|---|
 | 1 | Gathers project context (trackers, versions, members, priorities, custom fields) — via the `.redmine` cache when fresh, otherwise live |
 | 2 | Captures the goal: **guided** (asks you goal → epics → stories → tasks) or **from notes** (you paste text / point at a wiki page) |
-| 3 | **Checkpoint 1** — drafts the user-story proposal (Context + User story + Acceptance criteria, task breakdown, estimates, priorities, assignees) |
-| 4 | Iterates with you until you confirm the proposal — **nothing written to Redmine yet** |
+| 3 | **Checkpoint 1** — drafts the user-story proposal (Context + User story + Acceptance criteria, priorities, assignees); **every ambiguous business point becomes a question for you** (marked `[?]`) — never self-interpreted; if a requirement is **not technically feasible**, it asks you how to proceed (re-scope / alternative / drop), never silently changes it. Task breakdown happens later, in Checkpoint 2 |
+| 4 | Iterates with you until you confirm the proposal — every `[?]` answered by you first; **nothing written to Redmine yet** |
 | 5 | Persists the confirmed plan as **state JSON** in the `.redmine` `plan` section, then asks: "lưu lên Redmine luôn không?" |
 | 6 | **Checkpoint 2** — on your go-ahead, reads architecture **only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md`** (missing → asks you; **never scans the repo**) |
 | 7 | **Breaks each story into tasks**: estimate = implementation time + 20 % buffer, leaf tasks kept in the **4–8 h band** (merge smaller / split larger), each estimate justified with the problems it may hit; assignees from module ownership; collects dependencies ("task nào nên làm trước") |
@@ -98,10 +98,11 @@ The agent parses the notes into the tree, drafts descriptions/acceptance criteri
 - **Two checkpoints, you stay in control**: the proposal is reviewed and confirmed **before** anything touches Redmine; the confirmed state is saved as JSON in `.redmine`, so you can pause and resume ("tiếp tục plan") anytime.
 - **Token-friendly**: the agent **never scans the repo** — architecture context comes only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md`, or from questions to you.
 - **Breakdown grounded in reality**: tasks are broken down only after architecture grounding — each estimate follows the mandatory rule (**implementation time + 20 % buffer**, leaf tasks kept in the 4–8 h band) and is justified with the problems the task may hit; assignees come from module ownership — not guesses.
+- **You stay in control of the content**: at Checkpoint 1 every ambiguous business point (Context / role / capability / value / acceptance criteria) is a question for you, marked `[?]` — and if a requirement is **not technically feasible**, the agent asks you how to proceed (re-scope / alternative / drop) instead of silently changing it.
 - **One plan in memory**: `.redmine` holds a single plan at a time — starting a new plan replaces the old state (you confirm first; issues already created in Redmine are untouched).
 - **Dependencies ("task nào nên làm trước")**: recorded as real Redmine issue relations (`precedes`/`follows`), so the Gantt chart shows the correct order of work.
 - **You control the schedule**: the agent **never proposes dates** — start/due dates are set only when you explicitly give them (scheduling depends on context complexity only you know).
-- **Consistent structure**: every story has Context + User story + Acceptance criteria; every task is one ≤ 1-day deliverable; epics/stories/tasks carry estimates that roll up.
+- **Consistent structure**: every story has Context + User story + Acceptance criteria; every task is one 4–8 h deliverable; epics/stories/tasks carry estimates that roll up.
 - **One confirmation for the batch**: no per-issue questions, no ID hunting — you pick from real option lists (trackers, versions, members, priorities).
 - **Visibility in native Redmine**: Roadmap (`/projects/<id>/roadmap` — needs a version), Gantt (`/projects/<id>/issues/gantt`), and the regular issue list with parent/child links.
 
