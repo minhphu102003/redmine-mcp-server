@@ -99,7 +99,7 @@ Then **restart your agent** (quit and reopen opencode / Claude Code) — skills 
 - **One plan in memory, one project**: `.redmine` holds a single plan (one story's breakdown) at a time — starting a new plan replaces the old state (you confirm first; issues already created in Redmine are untouched). The plan always belongs to the **repo's project** (the `.redmine` top-level `project`); planning another repo is refused because the agent has no architecture context for its breakdown.
 - **Dependencies ("task nào nên làm trước")**: recorded as real Redmine issue relations (`precedes`/`follows`), so the Gantt chart shows the correct order of work.
 - **You control the schedule**: the agent **never proposes dates** — start/due dates are set only when you explicitly give them (scheduling depends on context complexity only you know).
-- **Consistent structure**: the story has Context + User story + Acceptance criteria; every task is one 4–8 h deliverable with a `## Risks` section; estimates roll up.
+- **Consistent structure**: the story has Context + User story + Acceptance criteria + Out of scope + Notes & open questions; every task is one 4–8 h deliverable with a full description (Deliverable / Scope of work / Acceptance tracing the story's AC / Out of scope / Dependencies / Risks); estimates roll up.
 - **One confirmation for the batch**: no per-issue questions, no ID hunting — you pick from real option lists (trackers, versions, members, priorities).
 - **Visibility in native Redmine**: Roadmap (`/projects/<id>/roadmap` — needs a version), Gantt (`/projects/<id>/issues/gantt`), and the regular issue list with parent/child links.
 
