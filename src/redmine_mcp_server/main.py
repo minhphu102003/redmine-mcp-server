@@ -28,7 +28,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from .redmine_handler import mcp  # noqa: E402
+from .redmine_handler import mcp, _is_true_env  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
 from .dynamic_auth_middleware import RedmineDynamicAuthMiddleware  # noqa: E402
 
@@ -47,16 +47,6 @@ def get_version() -> str:
         return version("redmine-mcp-server")
     except PackageNotFoundError:
         return "dev"
-
-
-def _is_true_env(var_name: str, default: str = "false") -> bool:
-    """Parse common truthy env-var values."""
-    return os.getenv(var_name, default).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
 
 
 def _is_public_bind(host: str) -> bool:

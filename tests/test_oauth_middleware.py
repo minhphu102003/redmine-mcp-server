@@ -3,7 +3,6 @@ Tests for OAuth2 middleware and related functionality.
 
 Tests cover:
 - RedmineOAuthMiddleware: token validation, skip paths, error responses
-- get_current_token(): ContextVar access
 - _get_redmine_client(): OAuth vs legacy auth selection
 """
 
@@ -40,44 +39,6 @@ def _make_app():
     app = Starlette(routes=[Route("/protected", protected)])
     app.add_middleware(RedmineOAuthMiddleware)
     return app
-
-
-# ---------------------------------------------------------------------------
-# get_current_token()
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetCurrentToken:
-    """Tests for the get_current_token() helper."""
-
-    def test_raises_when_no_token_in_context(self):
-        """Raises RuntimeError when called outside middleware context."""
-        from redmine_mcp_server.oauth_middleware import (
-            get_current_token,
-            current_redmine_token,
-        )
-
-        # Make sure ContextVar is empty
-        token_var = current_redmine_token.set(None)
-        try:
-            with pytest.raises(RuntimeError, match="No Redmine token in context"):
-                get_current_token()
-        finally:
-            current_redmine_token.reset(token_var)
-
-    def test_returns_token_when_set(self):
-        """Returns the token stored in the ContextVar."""
-        from redmine_mcp_server.oauth_middleware import (
-            get_current_token,
-            current_redmine_token,
-        )
-
-        token_var = current_redmine_token.set("my-test-token")
-        try:
-            assert get_current_token() == "my-test-token"
-        finally:
-            current_redmine_token.reset(token_var)
 
 
 # ---------------------------------------------------------------------------

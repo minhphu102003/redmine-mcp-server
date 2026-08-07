@@ -1867,7 +1867,7 @@ class TestRedmineHandler:
     async def test_cleanup_attachment_files_exception(self):
         """Test exception handling in cleanup_attachment_files."""
         from redmine_mcp_server.redmine_handler import cleanup_attachment_files
-        from redmine_mcp_server.file_manager import AttachmentFileManager
+        from redmine_mcp_server.attachment_manager import AttachmentFileManager
 
         with patch.object(
             AttachmentFileManager,
