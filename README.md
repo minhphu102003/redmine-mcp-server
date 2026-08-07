@@ -163,7 +163,7 @@ This repo ships three skills that teach your agent the workflow above:
 
 - [`redmine-init`](./skills/redmine-init/README.md) — maps the current repo to its Redmine project and writes the `.redmine` cache (project ID, members, trackers, ...)
 - [`redmine-issue-workflow`](./skills/redmine-issue-workflow/README.md) — creates/updates Redmine issues from GitHub commits and PRs (author mapping, `[FE/BE/Devops]` naming, description template, changelog, time logging)
-- [`redmine-planning`](./skills/redmine-planning/README.md) — plans a goal or meeting notes into a structured plan (Epic → Story → Task) in two checkpoints: a confirmed proposal first, then an architecture-grounded task breakdown (estimates, assignees, dependencies) before bulk-creating everything in Redmine
+- [`redmine-planning`](./skills/redmine-planning/README.md) — breaks **one user story** down into tasks with the right assignees (optionally via lower-level sub-stories) in two checkpoints: a confirmed, ambiguity-free business proposal first, then an architecture-grounded task breakdown (estimates, assignees, dependencies) before creating everything in Redmine. Never plans a whole sprint at once — stories are processed one at a time to avoid context overflow
 
 Install all three into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
 
