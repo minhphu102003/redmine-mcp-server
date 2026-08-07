@@ -81,6 +81,7 @@ from .handler_impl.tools import (  # noqa: E402
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
+    delete_time_entry_impl,
     export_weekly_report_docx_impl,
     export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
@@ -1702,18 +1703,23 @@ async def get_issue_workflow_context(
 @mcp.tool()
 async def manage_time_entries(
     action: Annotated[
-        Literal["list", "create", "update", "activities"],
+        Literal["list", "create", "update", "delete", "activities"],
         Field(
             description=(
                 "Operation to perform: 'list' time entries for a range, 'create' a new"
-                " entry, 'update' an existing entry, 'activities' list valid activity"
-                " types."
+                " entry, 'update' an existing entry, 'delete' an existing entry,"
+                " 'activities' list valid activity types."
             )
         ),
     ],
     time_entry_id: Annotated[
         Optional[int],
-        Field(description="ID of the entry to update (required when action='update')."),
+        Field(
+            description=(
+                "ID of the entry to update or delete (required when action='update'"
+                " or action='delete')."
+            )
+        ),
     ] = None,
     hours: Annotated[
         Optional[float],
@@ -1823,7 +1829,17 @@ async def manage_time_entries(
         )
         return {"action": "update", "data": data}
 
-    return {"error": "Invalid action. Supported: list, create, update, activities."}
+    if resolved_action == "delete":
+        if time_entry_id is None:
+            return {"error": "time_entry_id is required when action='delete'."}
+        data = await delete_time_entry(
+            time_entry_id=time_entry_id,
+        )
+        return {"action": "delete", "data": data}
+
+    return {
+        "error": "Invalid action. Supported: list, create, update, delete, activities."
+    }
 
 
 @mcp.tool()
@@ -2479,6 +2495,27 @@ async def update_time_entry(
         spent_on,
         get_client=_get_redmine_client,
         time_entry_to_dict=_time_entry_to_dict,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def delete_time_entry(
+    time_entry_id: Annotated[
+        int,
+        Field(description="ID of the time entry to delete."),
+    ],
+) -> Dict[str, Any]:
+    """Delete a time entry from Redmine.
+
+    Destructive: permanently removes the entry. Respects read-only mode and
+    confirms the deletion result.
+    """
+    return await delete_time_entry_impl(
+        time_entry_id,
+        get_client=_get_redmine_client,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
         handle_error=_handle_redmine_error,
     )
 

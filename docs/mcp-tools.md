@@ -32,10 +32,11 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`list_redmine_projects`](#list_redmine_projects) | Projects | List all accessible projects |
 | [`summarize_project_status`](#summarize_project_status) | Projects | Summary of project status over a time period |
 | [`get_project_issue_context`](#get_project_issue_context) | Consolidated | Complete issue-creation context for a project (replaces 5 project lookups) |
-| [`manage_time_entries`](#manage_time_entries) | Consolidated | Unified time-entry tool (list/create/update/activities) |
+| [`manage_time_entries`](#manage_time_entries) | Consolidated | Unified time-entry tool (list/create/update/delete/activities) |
 | [`list_time_entries`](#list_time_entries) | Time entries | List time entries with filters and pagination |
 | [`create_time_entry`](#create_time_entry) | Time entries | Create a new time entry |
 | [`update_time_entry`](#update_time_entry) | Time entries | Update an existing time entry |
+| [`delete_time_entry`](#delete_time_entry) | Time entries | Delete a time entry |
 | [`list_time_entry_activities`](#list_time_entry_activities) | Time entries | List available time-entry activities |
 | [`generate_scrum_report`](#generate_scrum_report) | Consolidated | Generate daily/weekly/custom scrum report drafts |
 | [`export_weekly_report_markdown`](#export_weekly_report_markdown) | Consolidated | Export weekly report as a markdown file |
@@ -150,8 +151,8 @@ Unified entry point for time logging operations.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `action` | str | (required) | `"list"`, `"create"`, `"update"`, or `"activities"` |
-| `time_entry_id` | int | `None` | Required for `"update"` |
+| `action` | str | (required) | `"list"`, `"create"`, `"update"`, `"delete"`, or `"activities"` |
+| `time_entry_id` | int | `None` | Required for `"update"` and `"delete"` |
 | `hours` | float | `None` | Required for `"create"` |
 | `project_id` | str/int | `None` | Project filter / target |
 | `issue_id` | int | `None` | Issue filter / target |
@@ -509,6 +510,18 @@ Update an existing time entry in Redmine.
 | `spent_on` | str | `None` | New date |
 
 **Returns:** `Dict` with the updated time entry.
+
+---
+
+### `delete_time_entry`
+
+Delete a time entry from Redmine.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `time_entry_id` | int | (required) | Time entry ID to delete |
+
+**Returns:** `Dict` with `success`, `time_entry_id` and `message`.
 
 ---
 

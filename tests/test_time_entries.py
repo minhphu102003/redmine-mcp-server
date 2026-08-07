@@ -12,6 +12,7 @@ from redmine_mcp_server.redmine_handler import (
     list_time_entries,
     create_time_entry,
     update_time_entry,
+    delete_time_entry,
     _time_entry_to_dict,
 )
 
@@ -546,6 +547,73 @@ class TestUpdateTimeEntry:
         mock_redmine.time_entry.update.side_effect = ForbiddenError()
 
         result = await update_time_entry(time_entry_id=1, hours=2.0)
+
+        assert "error" in result
+        assert "Access denied" in result["error"]
+
+
+class TestDeleteTimeEntry:
+    """Test cases for delete_time_entry tool."""
+
+    @pytest.fixture
+    def mock_redmine(self):
+        """Create a mock Redmine client."""
+        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+            yield mock
+
+    @pytest.mark.asyncio
+    async def test_delete_time_entry_success(self, mock_redmine):
+        """Test deleting a time entry."""
+        result = await delete_time_entry(time_entry_id=123)
+
+        assert result["success"] is True
+        assert result["time_entry_id"] == 123
+        assert "deleted successfully" in result["message"]
+        mock_redmine.time_entry.delete.assert_called_once_with(123)
+
+    @pytest.mark.asyncio
+    async def test_delete_time_entry_read_only_mode(self, mock_redmine):
+        """Test that read-only mode blocks deletion."""
+        with patch(
+            "redmine_mcp_server.redmine_handler._is_read_only_mode",
+            return_value=True,
+        ):
+            result = await delete_time_entry(time_entry_id=123)
+
+        assert "error" in result
+        assert "read-only" in result["error"]
+        mock_redmine.time_entry.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_time_entry_not_found(self, mock_redmine):
+        """Test error when time entry not found."""
+        from redminelib.exceptions import ResourceNotFoundError
+
+        mock_redmine.time_entry.delete.side_effect = ResourceNotFoundError()
+
+        result = await delete_time_entry(time_entry_id=9999)
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_delete_time_entry_redmine_not_initialized(self):
+        """Test error when Redmine client is not initialized."""
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
+            result = await delete_time_entry(time_entry_id=123)
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_delete_time_entry_forbidden(self, mock_redmine):
+        """Test error when user lacks permission to delete."""
+        from redminelib.exceptions import ForbiddenError
+
+        mock_redmine.time_entry.delete.side_effect = ForbiddenError()
+
+        result = await delete_time_entry(time_entry_id=123)
 
         assert "error" in result
         assert "Access denied" in result["error"]

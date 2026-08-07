@@ -30,6 +30,7 @@ from .projects import (
 from .project_context import get_project_issue_context_impl
 from .time_entries import (
     create_time_entry_impl,
+    delete_time_entry_impl,
     list_time_entries_impl,
     list_time_entry_activities_impl,
     update_time_entry_impl,
@@ -53,6 +54,7 @@ __all__ = [
     "create_redmine_wiki_page_impl",
     "create_time_entry_impl",
     "delete_redmine_wiki_page_impl",
+    "delete_time_entry_impl",
     "get_redmine_attachment_download_url_impl",
     "get_redmine_issue_impl",
     "get_redmine_wiki_page_impl",

@@ -131,3 +131,33 @@ class TestManageTimeEntries:
         result = await redmine_handler.manage_time_entries(action="create")
         assert "error" in result
         assert "hours is required" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_action(self):
+        payload = {"success": True, "time_entry_id": 55}
+        mock_delete = AsyncMock(return_value=payload)
+        with patch.object(
+            redmine_handler,
+            "delete_time_entry",
+            mock_delete,
+        ):
+            result = await redmine_handler.manage_time_entries(
+                action="delete",
+                time_entry_id=55,
+            )
+
+        assert result["action"] == "delete"
+        assert result["data"] == payload
+        mock_delete.assert_awaited_once_with(time_entry_id=55)
+
+    @pytest.mark.asyncio
+    async def test_delete_requires_time_entry_id(self):
+        result = await redmine_handler.manage_time_entries(action="delete")
+        assert "error" in result
+        assert "time_entry_id is required" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_action_message_includes_delete(self):
+        result = await redmine_handler.manage_time_entries(action="nope")
+        assert "error" in result
+        assert "delete" in result["error"]
