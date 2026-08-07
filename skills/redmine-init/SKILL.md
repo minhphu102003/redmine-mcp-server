@@ -56,6 +56,7 @@ Researched rule areas per role (ask the user which apply; do NOT assume any appl
 | Data engineer | dbt models, orchestration (Airflow), lineage, data quality tests, schema migrations |
 | QA | Test pyramid, page objects/factories, e2e on critical paths only, adversarial/negative paths, contract testing |
 | Full-stack | Both sides of the API contract, end-to-end feature ownership incl. tests |
+| Lead (Tech/Team/Project) | Architecture decisions + review/approval gates (review rules, who must approve PRs/merge), task delegation (what they assign vs. keep), technical risk ownership, mentoring/onboarding, reporting to stakeholders, definition of done enforcement |
 | Security | Threat modeling, SAST/DAST, auth, compliance |
 | SRE | SLOs, error budgets, incidents, chaos testing |
 | PM/PO | Intent + acceptance criteria + out-of-scope, definition of ready |
