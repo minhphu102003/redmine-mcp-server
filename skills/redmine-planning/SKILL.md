@@ -80,25 +80,32 @@ Story description template (you draft fully in English):
 
 ```markdown
 ## Context
-- Why this story matters / problem it solves.
+- Why this story matters / problem it solves / why it is needed now.
 
 ## User story
-- **As a** [role]
-- **I want** [capability]
-- **So that** [business value]
+- **As a** [specific role — never "a user" or "the system"]
+- **I want** [capability — the user's intent, not the UI or implementation]
+- **So that** [real business value]
 
-## Acceptance criteria
-- [ ] AC1: [verifiable outcome]
-- [ ] AC2: [verifiable outcome]
+## Acceptance criteria (3–5, each pass/fail)
+- [ ] AC1: [happy path, verifiable outcome]
+- [ ] AC2: [edge case — invalid input / authorization / retry / partial failure]
+- [ ] AC3: [Given/When/Then when the behavior depends on state]
+
+## Out of scope
+- [what this story deliberately does NOT cover]
+
+## Notes & open questions
+- [dependencies, assumptions, unresolved `[?]` points]
 ```
 
-Rules: user story uses exactly **As a → I want → So that**, each phrase **bolded**; keep section headers verbatim; fill only the bullet content.
+Rules: user story uses exactly **As a → I want → So that**, each phrase **bolded**; keep section headers verbatim; fill only the bullet content. Writing rules: `As a` names a **specific role** — if you cannot point at the real user, the role is decoration; `So that` must be a **real business value** (delete-test: if nothing is lost when the clause is removed, the value is not found yet); `## Acceptance criteria` holds **3–5** pass/fail conditions — fewer than 3 → too vague, more than 8 → split the story — covering the happy path plus the important edge cases (invalid input, authorization, retry, partial failure), using **Given/When/Then** when the outcome depends on a starting state (each scenario maps to a task in Checkpoint 2); `## Out of scope` prevents scope creep during task breakdown (most estimate disputes are two people sizing different scopes); `## Notes & open questions` holds dependencies, assumptions and unresolved `[?]` points.
 
-**No self-interpretation / technical feasibility**: per Rule 10 — every ambiguous business point (context, role, capability, value, acceptance criteria) and every technical gap is a question for the user, never a gap you fill from assumptions. Keep each unresolved point visible in the draft as `[?]` (e.g. `- [ ] AC2: [?]`); the proposal cannot be confirmed (2d) while any `[?]` remains.
+**No self-interpretation / technical feasibility**: per Rule 10 — every ambiguous business point (context, role, capability, value, acceptance criteria) and every technical gap is a question for the user, never a gap you fill from assumptions. Keep each unresolved point visible in the draft as `[?]` in `## Notes & open questions` (e.g. `- [?] AC2: xử lý trùng lặp order thế nào?`); the proposal cannot be confirmed (2d) while any `[?]` remains.
 
 ### 2d. Iterate until the user confirms ("chốt")
 
-1. Present the full draft (story + optional sub-stories with descriptions + estimate/assignee/priority proposals, totals). List every `[?]` from 2c as open questions first — the **user** resolves each one; you never self-interpret.
+1. Present the full draft (story + optional sub-stories with descriptions + estimate/assignee/priority proposals, totals). List every `[?]` from 2c as open questions first — the **user** resolves each one; you never self-interpret. Before presenting, run a quick quality check on the story: specific role (not "a user"), `So that` carries real value, 3–5 testable acceptance criteria, `## Out of scope` stated — flag anything failing.
 2. Apply every adjustment the user makes and re-present — **repeat until the user explicitly confirms the proposal**. Do not accept "chốt" while a `[?]` is still unanswered: each one is a question for the user, not a guess you are allowed to make. Never skip to Checkpoint 2 on your own judgment.
 3. On confirmation, summarize the decisions: project, tracker mapping (story/task), priority, assignee (or unassigned), version (or "create via UI"), story-points field (if applicable). **Ask about dates separately, only if the user wants to set them** — leave empty otherwise (rule 6).
 
@@ -215,7 +222,7 @@ The `plan` section holds **one story's breakdown** — written by this skill (Ch
       "story_points_field_id": null
     },
     "nodes": [
-      {"ref": "S1", "type": "story", "subject": "Add refund support", "description": "## Context\n- ...\n\n## User story\n- **As a** ...\n- **I want** ...\n- **So that** ...\n\n## Acceptance criteria\n- [ ] AC1: ...", "estimate_hours": 8.8, "priority_id": 2, "redmine_id": 101},
+      {"ref": "S1", "type": "story", "subject": "Add refund support", "description": "## Context\n- ...\n\n## User story\n- **As a** ...\n- **I want** ...\n- **So that** ...\n\n## Acceptance criteria\n- [ ] AC1: ...\n\n## Out of scope\n- ...\n\n## Notes & open questions\n- ...", "estimate_hours": 8.8, "priority_id": 2, "redmine_id": 101},
       {"ref": "T1", "type": "task", "subject": "Implement refund API endpoint", "description": "Refund API endpoint\n\nPart of story #S1\n\n## Risks\n- Refund calculation edge cases\n- External payment provider limits", "estimate_hours": 4.8, "priority_id": 2, "parent": "S1", "depends_on": ["T2"], "redmine_id": 102},
       {"ref": "T2", "type": "task", "subject": "Build refund UI", "description": "Build the refund form and confirmation flow", "estimate_hours": 4, "priority_id": 2, "parent": "S1", "depends_on": [], "redmine_id": 103}
     ],
