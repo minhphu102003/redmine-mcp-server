@@ -78,9 +78,11 @@ from .handler_impl.tools import (  # noqa: E402
     cleanup_attachment_files_impl,
     create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
+    create_redmine_issue_relation_impl,
     create_redmine_wiki_page_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
+    delete_redmine_issue_relation_impl,
     delete_time_entry_impl,
     export_weekly_report_docx_impl,
     export_weekly_report_markdown_impl,
@@ -1385,6 +1387,84 @@ async def create_redmine_issue_with_subtasks(
         stop_on_subtask_error=stop_on_subtask_error,
         create_issue_fn=create_redmine_issue,
         wrap_content=wrap_insecure_content,
+    )
+
+
+@mcp.tool()
+async def create_redmine_issue_relation(
+    issue_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the issue whose dependency is being declared (the issue that"
+                " comes first, blocks, or is related to the other)."
+            )
+        ),
+    ],
+    issue_to_id: Annotated[
+        int,
+        Field(
+            description=(
+                "ID of the other issue in the relation (the one that comes later, is"
+                " blocked, or is related to the first)."
+            )
+        ),
+    ],
+    relation_type: Annotated[
+        str,
+        Field(
+            description=(
+                "Type of relation: 'precedes'/'follows' (issue_id must be done before"
+                " issue_to_id; pick one direction — Redmine mirrors the other),"
+                " 'blocks'/'blocked', 'relates', 'duplicates'/'duplicated',"
+                " 'copied_to'/'copied_from'. Use 'precedes' to express 'task nào nên"
+                " làm trước'."
+            )
+        ),
+    ],
+    delay: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Optional delay in days (precedes/follows only), e.g. 1 = issue_to_id"
+                " starts 1 day after issue_id."
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """Create an issue relation (dependency) between two Redmine issues.
+
+    Use to declare which task must be done first, so the Gantt chart and
+    roadmap reflect the dependency order. Returns the created relation plus
+    both issue subjects.
+    """
+    return await create_redmine_issue_relation_impl(
+        issue_id=issue_id,
+        issue_to_id=issue_to_id,
+        relation_type=relation_type,
+        delay=delay,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        get_client=_get_redmine_client,
+        wrap_content=wrap_insecure_content,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def delete_redmine_issue_relation(
+    relation_id: Annotated[
+        int,
+        Field(description="ID of the issue relation to delete."),
+    ],
+) -> Dict[str, Any]:
+    """Delete an issue relation from Redmine."""
+    return await delete_redmine_issue_relation_impl(
+        relation_id=relation_id,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
     )
 
 
