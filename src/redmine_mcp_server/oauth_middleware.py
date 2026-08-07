@@ -82,10 +82,3 @@ class RedmineOAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         finally:
             current_redmine_token.reset(token_var)
-
-
-def get_current_token() -> str:
-    token = current_redmine_token.get()
-    if token is None:
-        raise RuntimeError("No Redmine token in context — is OAuth middleware active?")
-    return token

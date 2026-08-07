@@ -110,8 +110,8 @@ def ssrf_redirect_hook(response, **kwargs):
     302 redirect to an internal endpoint (e.g., http://169.254.169.254/),
     and without this hook the Redmine client would silently follow it.
 
-    Usage (via _build_requests_config):
-        requests_config["hooks"] = {"response": [ssrf_redirect_hook]}
+    Attached via _apply_ssrf_protection() in redmine_handler, which patches
+    the session's response hooks after client construction.
     """
     if not REDMINE_SECURITY_STRICT:
         return

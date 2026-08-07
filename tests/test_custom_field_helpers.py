@@ -30,7 +30,7 @@ from redmine_mcp_server.handler_impl.issue_fields import (  # noqa: E402
     _custom_field_trackers_to_list,
     _custom_field_applies_to_tracker,
 )
-from redmine_mcp_server.serialization import (  # noqa: E402
+from redmine_mcp_server.serializers import (  # noqa: E402
     _coerce_json_safe,
     _custom_fields_to_list,
 )

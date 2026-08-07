@@ -429,7 +429,10 @@ redmine-mcp-server/
 │   ├── main.py              # FastMCP application entry point + OAuth discovery routes
 │   ├── redmine_handler.py   # MCP tools and Redmine integration
 │   ├── oauth_middleware.py  # OAuth2 Bearer token validation middleware
-│   └── file_manager.py      # Attachment file management and cleanup
+│   ├── dynamic_auth_middleware.py  # Dynamic per-request URL/key auth middleware
+│   ├── attachment_manager.py # Attachment file management and cleanup
+│   ├── security.py          # SSRF protection, URL validation
+│   └── serializers/         # Redmine resource → dict serializers
 ├── tests/                   # Comprehensive test suite
 ├── docs/                    # Documentation
 │   ├── tool-reference.md    # Tool usage documentation
@@ -447,7 +450,9 @@ redmine-mcp-server/
 - **main.py**: FastMCP application entry point; registers OAuth middleware when `REDMINE_AUTH_MODE=oauth` and serves RFC 8707/8414 discovery endpoints
 - **redmine_handler.py**: MCP tools implementation using python-redmine; `_get_redmine_client()` selects auth per request (OAuth token → API key → username/password)
 - **oauth_middleware.py**: Starlette middleware that validates Bearer tokens against Redmine before forwarding MCP requests; uses `ContextVar` for per-request token storage
-- **file_manager.py**: Attachment file management and cleanup utilities
+- **dynamic_auth_middleware.py**: Starlette middleware for dynamic multi-tenant mode; reads `X-Redmine-URL` and `X-Redmine-API-Key` headers per request
+- **attachment_manager.py**: Attachment file management and cleanup utilities
+- **security.py**: SSRF protection (URL validation, DNS-pinning adapter, redirect hook) and security-scoped environment settings
 
 ### Key Technologies
 

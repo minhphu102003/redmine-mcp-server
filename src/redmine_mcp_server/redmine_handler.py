@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 if _env_loaded:
     logger.info("Loaded .env for Redmine MCP Server")
 
-from .file_manager import AttachmentFileManager  # noqa: E402
+from .attachment_manager import AttachmentFileManager  # noqa: E402
 from .handler_impl import issue_fields as _issue_fields  # noqa: E402
 from .handler_impl.errors import handle_redmine_error  # noqa: E402
 from .security import (  # noqa: E402
@@ -110,10 +110,8 @@ from .handler_impl.http_routes import (  # noqa: E402
     health_payload,
     serve_attachment_by_id,
 )
-from .serialization import (  # noqa: E402,F401
+from .serializers import (  # noqa: E402
     wrap_insecure_content,
-    _coerce_json_safe,
-    _custom_fields_to_list,
     _issue_to_dict,
     _resource_to_dict,
     _issue_to_dict_selective,

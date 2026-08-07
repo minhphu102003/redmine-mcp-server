@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
-from redmine_mcp_server.file_manager import AttachmentFileManager
+from redmine_mcp_server.attachment_manager import AttachmentFileManager
 
 
 def create_attachment(
