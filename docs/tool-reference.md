@@ -960,6 +960,32 @@ update_time_entry(
 
 ---
 
+### `delete_time_entry`
+
+Delete a time entry from Redmine. Destructive: permanently removes the entry. Respects read-only mode.
+
+**Parameters:**
+- `time_entry_id` (integer, required): ID of the time entry to delete
+
+**Returns:** Confirmation dictionary with `success`, `time_entry_id` and `message`
+
+**Example:**
+```json
+{
+  "success": true,
+  "time_entry_id": 1,
+  "message": "Time entry 1 deleted successfully."
+}
+```
+
+**Usage:**
+```python
+# Delete a mislogged entry
+delete_time_entry(time_entry_id=1)
+```
+
+---
+
 ### `list_time_entry_activities`
 
 List all available time entry activity types from Redmine.

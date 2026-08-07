@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
@@ -132,6 +132,34 @@ async def update_time_entry_impl(
         return handle_error(
             e,
             f"updating time entry {time_entry_id}",
+            {"resource_type": "time entry", "resource_id": time_entry_id},
+        )
+
+
+async def delete_time_entry_impl(
+    time_entry_id: int,
+    *,
+    get_client: Callable[[], Any],
+    is_read_only_mode: Callable[[], bool],
+    read_only_error: Mapping[str, Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Delete a time entry from Redmine."""
+    if is_read_only_mode():
+        return dict(read_only_error)
+
+    try:
+        client = get_client()
+        await asyncio.to_thread(client.time_entry.delete, time_entry_id)
+        return {
+            "success": True,
+            "time_entry_id": time_entry_id,
+            "message": f"Time entry {time_entry_id} deleted successfully.",
+        }
+    except Exception as e:
+        return handle_error(
+            e,
+            f"deleting time entry {time_entry_id}",
             {"resource_type": "time entry", "resource_id": time_entry_id},
         )
 

@@ -19,9 +19,9 @@ async def test_server_exposes_no_prompts():
 
 @pytest.mark.asyncio
 async def test_server_still_exposes_all_tools():
-    """All 28 tools must remain registered after prompt removal."""
+    """All 29 tools must remain registered after prompt removal."""
     tools = await mcp.list_tools()
-    assert len(tools) == 28
+    assert len(tools) == 29
 
 
 @pytest.mark.asyncio

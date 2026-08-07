@@ -13,7 +13,7 @@ The skill is a single Markdown file with frontmatter (`name` + `description`). W
 | Step | What happens |
 |---|---|
 | 1 | **Gather Redmine context** — fast path: read the `.redmine` cache (fresh ≤ 14 days); otherwise list projects, fetch project issue context (trackers, members, categories, versions, custom fields, statuses), verify priorities from real issues. Also reads `user_mappings` (GitHub↔Redmine account mapping) if present. |
-| 2 | **Read the GitHub repo** — authenticate with `gh` for private repos, clone to a temp dir, read commits via `git log` |
+| 2 | **Read the GitHub repo** — ask the user for the data source first (remote PR/commit vs current uncommitted changes); for remote: authenticate with `gh` for private repos, clone to a temp dir, read commits via `git log`; for local changes: `git status` + `git diff` |
 | 3 | **Map commit → issue** — author → Redmine member (uses `.redmine` `user_mappings` if available, otherwise matches against live member list and asks if no confident match), files changed → `[FE]` / `[BE]` / `[Devops]` prefix |
 | 4 | **Ask before create** — every parameter is confirmed with you using live option lists (tracker/status/priority/assignee) shown in the agent's structured ask UI (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`): full list embedded in the question, answer by typing the number/name or picking a shortcut, plain text as fallback |
 | 5 | **Create** — `create_redmine_issue` with all 11 required fields, then verify the returned values |
@@ -63,6 +63,25 @@ cp -r <path-to-this-repo>/skills/redmine-issue-workflow .agents/skills/
 Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup. Verify with: ask your agent "list your skills" or check that `redmine-issue-workflow` appears.
 
 To use the cache fast path, also install the sibling [`redmine-init`](../redmine-init/README.md) skill and run `redmine init` once in your repository — it writes the `.redmine` file this skill reads.
+
+### Optional — configure the commit-workflow placeholder (install-time)
+
+For combined requests like *"commit rồi tạo task"*, you can plug in your repo's commit workflow so it runs **before** the Redmine steps — just replace the `{{COMMIT_WORKFLOW_PATH}}` placeholder in the installed `SKILL.md`:
+
+| Placeholder value | Behavior |
+|---|---|
+| a real path (e.g. `.agents/workflows/commit-python.md`) | The agent reads & follows that file (branch → sync → quality gate → commit → push → PR) before doing the Redmine steps |
+| empty / left as `{{...}}` / `none` (default) | The commit pre-step is **skipped** — the skill works on an existing commit/PR you provide |
+
+Manual: edit the installed `.agents/skills/redmine-issue-workflow/SKILL.md` and replace the placeholder. Automatic: pass the path to the installer:
+
+```powershell
+& D:\redmine-mcp-server\scripts\install-skills.ps1 -CommitWorkflowPath ".agents/workflows/commit-python.md"
+# or explicitly disable the pre-step in the installed copy:
+& D:\redmine-mcp-server\scripts\install-skills.ps1 -CommitWorkflowPath "none"
+```
+
+Note: the installer validates the path against the target repo and warns (does not fail) if the file is not found — the pre-step is then skipped. Restart your agent after re-installing.
 
 ### Prerequisites
 
