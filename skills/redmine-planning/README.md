@@ -35,7 +35,7 @@ This skill closes the gap by making the **agent** the planning workflow: one tem
 | 4 | Iterates with you until you confirm the proposal — **nothing written to Redmine yet** |
 | 5 | Persists the confirmed plan as **state JSON** in the `.redmine` `plan` section, then asks: "lưu lên Redmine luôn không?" |
 | 6 | **Checkpoint 2** — on your go-ahead, reads architecture **only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md`** (missing → asks you; **never scans the repo**) |
-| 7 | **Breaks each story into tasks**: estimates from complexity, assignees from module ownership; collects dependencies ("task nào nên làm trước") |
+| 7 | **Breaks each story into tasks**: estimate = implementation time + 20 % buffer, leaf tasks kept in the **4–8 h band** (merge smaller / split larger), each estimate justified with the problems it may hit; assignees from module ownership; collects dependencies ("task nào nên làm trước") |
 | 8 | Finalizes the batch (tracker mapping, version, priority, assignee; **dates only if you give them**), confirms once, then bulk-creates: epics first, each story with its tasks as subtasks (`create-issue-with-subtasks`), then the dependencies as issue relations (`precedes`) |
 | 9 | Marks the state `created` with Redmine IDs and reports the tree + dependency summary with links to Roadmap/Gantt |
 | 10 | **Update mode** any time later: "thêm task vào story X", "đổi estimate", "task A trước task B", "chuyển version" — state JSON stays in sync |
@@ -97,7 +97,8 @@ The agent parses the notes into the tree, drafts descriptions/acceptance criteri
 
 - **Two checkpoints, you stay in control**: the proposal is reviewed and confirmed **before** anything touches Redmine; the confirmed state is saved as JSON in `.redmine`, so you can pause and resume ("tiếp tục plan") anytime.
 - **Token-friendly**: the agent **never scans the repo** — architecture context comes only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md`, or from questions to you.
-- **Breakdown grounded in reality**: tasks are broken down only after architecture grounding — estimates come from complexity, assignees from module ownership, not guesses.
+- **Breakdown grounded in reality**: tasks are broken down only after architecture grounding — each estimate follows the mandatory rule (**implementation time + 20 % buffer**, leaf tasks kept in the 4–8 h band) and is justified with the problems the task may hit; assignees come from module ownership — not guesses.
+- **One plan in memory**: `.redmine` holds a single plan at a time — starting a new plan replaces the old state (you confirm first; issues already created in Redmine are untouched).
 - **Dependencies ("task nào nên làm trước")**: recorded as real Redmine issue relations (`precedes`/`follows`), so the Gantt chart shows the correct order of work.
 - **You control the schedule**: the agent **never proposes dates** — start/due dates are set only when you explicitly give them (scheduling depends on context complexity only you know).
 - **Consistent structure**: every story has Context + User story + Acceptance criteria; every task is one ≤ 1-day deliverable; epics/stories/tasks carry estimates that roll up.

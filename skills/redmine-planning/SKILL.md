@@ -1,6 +1,6 @@
 ---
 name: redmine-planning
-description: Use when the user wants to plan or create a structured plan in Redmine, e.g. "lập kế hoạch", "planning", "tạo plan", "lên kế hoạch cho quý/sprint/tháng", "breakdown task", "epic", "user story", "roadmap", "kế hoạch cho project", "tạo kế hoạch từ ghi chú", "add tasks to the plan", "thêm task vào plan", "cập nhật plan", "đổi estimate", "chuyển version", "task nào làm trước", "dependon", "dependency". Runs in two checkpoints: (1) turns a natural-language goal or meeting notes into a proposal of user stories in the defined format (Epic → Story), iterates with the user until the proposal is confirmed, then persists the confirmed state as JSON in the `.redmine` plan section — nothing is written to Redmine yet; (2) after the user explicitly says to continue, grounds the plan in the repository architecture read ONLY from designated files (AGENTS.md / CLAUDE.md / ARCHITECTURE.md) or from questions to the user — never by scanning the repo — breaks each story into tasks with estimates from complexity and assignees from module ownership, collects dependencies ("task nào nên làm trước") as precedes/follows issue relations, then bulk-creates issues + relations via the Redmine MCP tools and marks the state as created. Also covers updating an existing plan (add tasks to a story, change estimates/version/priority, add/remove dependencies). Use ONLY for planning work — NOT for creating a single issue from a commit/PR (use redmine-issue-workflow), NOT for init/refresh of the `.redmine` cache (use redmine-init).
+description: Use when the user wants to plan or create a structured plan in Redmine, e.g. "lập kế hoạch", "planning", "tạo plan", "lên kế hoạch cho quý/sprint/tháng", "breakdown task", "epic", "user story", "roadmap", "kế hoạch cho project", "tạo kế hoạch từ ghi chú", "add tasks to the plan", "thêm task vào plan", "cập nhật plan", "đổi estimate", "chuyển version", "task nào làm trước", "dependon", "dependency". Runs in two checkpoints: (1) turns a natural-language goal or meeting notes into a proposal of user stories in the defined format (Epic → Story), iterates with the user until the proposal is confirmed, then persists the confirmed state as JSON in the `.redmine` plan section — nothing is written to Redmine yet; (2) after the user explicitly says to continue, grounds the plan in the repository architecture read ONLY from designated files (AGENTS.md / CLAUDE.md / ARCHITECTURE.md) or from questions to the user — never by scanning the repo — breaks each story into tasks (estimates = implementation time + 20 % buffer, leaf tasks kept in the 4–8 h band, each estimate justified with the risks it covers; assignees from module ownership), collects dependencies ("task nào nên làm trước") as precedes/follows issue relations, then bulk-creates issues + relations via the Redmine MCP tools and marks the state as created. Also covers updating an existing plan (add tasks to a story, change estimates/version/priority, add/remove dependencies). Use ONLY for planning work — NOT for creating a single issue from a commit/PR (use redmine-issue-workflow), NOT for init/refresh of the `.redmine` cache (use redmine-init).
 ---
 
 # Redmine Planning
@@ -83,7 +83,7 @@ Epic (node type: epic)
 
 - **Epic subject**: short English noun phrase, e.g. `Payment flow revamp`. Description: Context (why), Goals/outcomes, In scope / Out of scope.
 - **Story subject**: short English capability statement. Description: the user-story template below.
-- **Story estimates (proposals)**: default 4–8 h per implied work unit (batch default, user-tunable); epic = sum of its stories. Story points custom field — if the project defines one, ask whether to fill it.
+- **Story estimates (proposals)**: default 4–8 h per implied work unit (batch default, user-tunable); epic = sum of its stories. (Final task-level estimates are fixed in Checkpoint 2: implementation time + 20 % buffer, leaf tasks 4–8 h — see 3b.) Story points custom field — if the project defines one, ask whether to fill it.
 - **Assignees (proposals)**: batch default, or per-node overrides the user asks for. Real ownership grounding happens in Checkpoint 2.
 - **Dependencies (proposals, optional)**: note any ordering the user states ("task nào nên làm trước") — store as `depends_on` refs in Checkpoint 1 state if explicit, otherwise propose them in Checkpoint 2 (3c).
 
@@ -113,7 +113,9 @@ Rules: user story uses exactly **As a → I want → So that**, each phrase **bo
 
 ### 2e. Persist state to `.redmine`
 
-Write the confirmed proposal into the `plan` section of `.redmine` (exact schema in Section 6), `status: "proposed"`, with a per-node `ref` (E1, S1, T1...) and parent links. If `.redmine` does not exist (e.g. no `redmine init` run), create it with the plan section plus the static lists you fetched in 2a, keeping the exact schema. Verify the file parses as JSON and contains no wrapper tags.
+Write the confirmed proposal into the `plan` section of `.redmine` (exact schema in Section 5), `status: "proposed"`, with a per-node `ref` (E1, S1, T1...) and parent links. If `.redmine` does not exist (e.g. no `redmine init` run), create it with the plan section plus the static lists you fetched in 2a, keeping the exact schema. Verify the file parses as JSON and contains no wrapper tags.
+
+**One plan in memory**: the `plan` section holds **exactly one plan at a time**. If a plan already exists (even a `"created"` one), warn the user it will be replaced and ask to confirm before overwriting — issues already created in Redmine are NOT affected. Set `created_at` (ngày tạo của plan) when the plan is first persisted; bump `updated_at` on every later change.
 
 ### 2f. Checkpoint-1 report
 
@@ -133,12 +135,14 @@ Only run after the user explicitly agrees to continue (2f). If the user resumes 
 
 ### 3b. Break down tasks (architecture-driven)
 
-With the architecture context from 3a, break **every story into tasks** (one task = one deliverable, ≤ 1 day of work) — this is where complexity, estimates and assignees become concrete:
+With the architecture context from 3a, break **every story into tasks** (one task = one deliverable) — this is where complexity, estimates and assignees become concrete:
 
 - **Tasks follow real modules**: name tasks after the components the story touches (from 3a). No architecture info → ask the user for the module breakdown; never guess module names.
-- **Estimates from complexity**: per task, propose hours from the module's complexity signals (module size/risk per 3a); task floor = batch default (e.g. 4–8 h); story = sum of its tasks; epic = sum of its stories.
+- **Estimate rule (mandatory)**: `estimate = implementation time × 1.2` — the time the task actually takes to implement **plus a 20 % buffer** for the problems listed below. Round to sensible half-hours.
+- **Size rule (mandatory)**: every leaf task must be between **4 h and 8 h**. A task needing < 4 h → merge it into a related task (re-scope the deliverable); a task needing > 8 h → split it into several tasks. Story = sum of its tasks; epic = sum of its stories.
+- **Prove the estimate with risks**: for every task, list the problems it may hit ("các vấn đề có thể gặp phải") — unclear requirements, tricky integration, hidden dependencies, platform limits, test-data setup, ... — that justify the estimate is just enough. Put them in the task description as a `## Risks` section and surface them again in the 3e confirmation.
 - **Assignees from ownership**: per task, assign the owner of that module (3a step 3 → `.redmine` `user_mappings` / live members); no owner → batch default or "unassigned".
-- Task description: single-paragraph deliverable + `Part of story #<ref>`.
+- Task description: single-paragraph deliverable + `Part of story #<ref>` + `## Risks` bullet list.
 
 ### 3c. Dependencies — "task nào nên làm trước"
 
@@ -155,7 +159,7 @@ With the architecture context from 3a, break **every story into tasks** (one tas
 
 ### 3e. Confirm the whole batch once
 
-Present the final tree (epics → stories → tasks) with all resolved values (tracker/priority/assignee/version/status per node, estimate totals) **plus the dependency list** in one compact summary + 1–4 ask questions for any remaining decisions. Apply adjustments and re-present once if the user asks for a restructure.
+Present the final tree (epics → stories → tasks) with all resolved values (tracker/priority/assignee/version/status per node, estimate totals) **plus the dependency list** in one compact summary + 1–4 ask questions for any remaining decisions. Each task line shows its estimate and the key risks justifying it (from 3b). Apply adjustments and re-present once if the user asks for a restructure.
 
 ### 3f. Bulk-create
 
@@ -222,7 +226,7 @@ The `plan` section is written by this skill (Checkpoint 1) and updated through C
     "nodes": [
       {"ref": "E1", "type": "epic", "subject": "Payment flow revamp", "description": "## Context\n- ...", "estimate_hours": 12, "priority_id": 2, "redmine_id": null},
       {"ref": "S1", "type": "story", "subject": "Add refund support", "description": "## Context\n- ...", "estimate_hours": 8, "priority_id": 2, "parent": "E1", "depends_on": [], "redmine_id": null},
-      {"ref": "T1", "type": "task", "subject": "Implement refund API endpoint", "description": "...", "estimate_hours": 4, "priority_id": 2, "parent": "S1", "depends_on": ["T2"], "redmine_id": null},
+      {"ref": "T1", "type": "task", "subject": "Implement refund API endpoint", "description": "Refund API endpoint\n\n## Risks\n- Refund calculation edge cases\n- External payment provider limits", "estimate_hours": 4.8, "priority_id": 2, "parent": "S1", "depends_on": ["T2"], "redmine_id": null},
       {"ref": "T2", "type": "task", "subject": "Build refund UI", "description": "...", "estimate_hours": 4, "priority_id": 2, "parent": "S1", "depends_on": [], "redmine_id": null}
     ],
     "relations": [
@@ -236,9 +240,12 @@ The `plan` section is written by this skill (Checkpoint 1) and updated through C
 
 Rules:
 - `status`: `"proposed"` after Checkpoint 1; `"created"` after Checkpoint 2 succeeds.
+- **The `plan` section holds exactly one plan at a time** — starting a new plan replaces the old `plan` state (confirm with the user first; already-created Redmine issues are untouched).
+- `created_at`: ngày tạo của plan — set when the plan is first persisted (Checkpoint 1); `updated_at` bumps on every state change.
 - `redmine_id`: `null` until the issue is created, then the real ID.
 - `depends_on` (per node): refs of nodes that must be **done first** ("task nào nên làm trước"). Confirmed in 3c.
 - `relations`: the confirmed dependency pairs — `precedes` = ref done first, `follows` = ref done later; `relation_id` filled when the Redmine relation is created (`precedes` type; Redmine mirrors `follows` automatically).
+- Task `description` includes the deliverable, `Part of story #<ref>`, and a `## Risks` section (the problems justifying the estimate, from 3b).
 - Keep the static-list keys verbatim (a `redmine init` run may have written them); this skill only manages the `plan` key plus the lists it needed to fetch itself.
 - Strip all `<insecure-content-...>` wrapper tags from names.
 - **Gotcha**: re-running `redmine init` rewrites `.redmine` from scratch and drops the `plan` section — after any `redmine init`, re-persist `plan` from the last confirmed state (read it back first if the file still has it, or ask the user to re-confirm the stored tree).
@@ -251,6 +258,8 @@ Rules:
 - [ ] State is durable in `.redmine` `plan` — never rely on the conversation alone; keep it in sync on every change.
 - [ ] **Never scan the repository** — architecture comes only from `AGENTS.md` / `CLAUDE.md` / `ARCHITECTURE.md` (+ `docs/architecture.md`); files missing → ask the user.
 - [ ] **Task breakdown happens only in Checkpoint 2** (after architecture grounding) — never in Checkpoint 1; complexity → estimates, module ownership → assignees.
+- [ ] **Estimate rule**: `estimate = implementation time × 1.2`; every leaf task must be **4–8 h** (merge tasks < 4 h, split tasks > 8 h); each task's description lists the risks ("các vấn đề có thể gặp phải") proving the estimate is just enough.
+- [ ] **One plan in memory**: `.redmine` `plan` holds exactly one plan at a time — starting a new plan replaces the old state (confirm first; Redmine issues are unaffected).
 - [ ] **Dependencies**: collect/confirm the ordering ("task nào nên làm trước") in 3c; create relations **only after both issues exist** (3f step 3) with `precedes`; Redmine mirrors `follows` automatically — never create both directions.
 - [ ] A failed relation creation is reported, not fatal — tell the user which pair to retry.
 - [ ] `redmine init` rewrites `.redmine` and drops `plan` — re-persist after any refresh.
