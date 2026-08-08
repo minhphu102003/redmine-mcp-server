@@ -2,12 +2,13 @@ param(
     [string]$Target = "",
     [string]$Repo = "minhphu102003/redmine-mcp-server",
     [string]$Branch = "develop",
-    [string]$CommitWorkflowPath = ""
+    [string]$CommitWorkflowPath = "",
+    [string]$MessageDelivery = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning")
+$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {
@@ -63,6 +64,13 @@ foreach ($skill in $skills) {
             }
         }
     }
+
+    if ($skill -eq "redmine-daily-report" -and -not [string]::IsNullOrWhiteSpace($MessageDelivery)) {
+        $content = [System.IO.File]::ReadAllText($destFile)
+        $content = $content.Replace("{{MESSAGE_DELIVERY}}", $MessageDelivery)
+        [System.IO.File]::WriteAllText($destFile, $content)
+        Write-Host "Configured MESSAGE_DELIVERY -> '$MessageDelivery'"
+    }
 }
 
 Write-Host ""
@@ -74,4 +82,11 @@ if ([string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
     Write-Host "Commit-workflow pre-step disabled (none)."
 } else {
     Write-Host "Commit-workflow pre-step configured: $CommitWorkflowPath"
+}
+if ([string]::IsNullOrWhiteSpace($MessageDelivery)) {
+    Write-Host "Message-delivery placeholder left empty - the daily-report skill presents the approved draft for copy-paste (no sending)."
+} elseif ($MessageDelivery -eq "none") {
+    Write-Host "Message-delivery disabled (none) - the daily-report skill never sends."
+} else {
+    Write-Host "Message-delivery configured: $MessageDelivery"
 }
