@@ -88,6 +88,8 @@ Mixed changes → pick the dominant layer; ask the user if ambiguous.
 - **tracker by change type**: the commit/PR fixes a bug (subject/PR title contains fix/bugfix/hotfix, or the change clearly corrects broken behavior) → **Bug**; otherwise → **Feature**; ambiguous → ask. Confirm the live ID.
 - status **New**, priority **Normal**, estimated_hours **8**, done_ratio **0** — confirm actual IDs from live data.
 - **custom fields**: if the project context shows required custom fields → ask the user for their values at confirmation (Step 4, step 1); otherwise skip them.
+- **category** (optional): **only ask if the project/cache actually has categories** (non-empty list); if there are none → skip silently (do not ask, do not set). When present, pick the best-matching one from the cache / live categories by commit keyword or changed module (e.g. `ChatBOT` for chatbot-related changes); no clear match → propose none. Confirm at Step 4 — never set or skip it silently.
+- **target version** (`fixed_version_id`, optional): **only ask if the project/cache has open versions** (non-empty list with status open); none at all, or none open → skip silently (do not ask, do not set). When present, list the **open** versions as a numbered list in the ask and let the user pick or skip — default "none" unless one clearly matches the changed module (e.g. a version named after it). Confirm at Step 4 — never set or skip it silently.
 - dates pre-proposed (Rule 6); assignee = the mapped member (3a).
 
 ---
@@ -95,11 +97,11 @@ Mixed changes → pick the dominant layer; ask the user if ambiguous.
 ## Step 4 — Create the issue
 
 0. **Check for an existing issue first** (skip if the Pre-step or Step 5 already matched one): search the target project by the drafted subject keyword (without the prefix) — **one** match → tell the user and ask whether to update it instead of creating a duplicate (yes → continue at Step 5); **multiple** → ask which; **none** → proceed.
-1. **Confirm** the full param plan per Rule 4: subject, your drafted description, tracker/status/priority/assignee (live options), pre-proposed dates, estimate, done_ratio, required custom-field values. Apply any adjustment the user makes.
-2. **Create** with all fields: `project_id, subject, description, tracker_id, priority_id, status_id, assigned_to_id, start_date, due_date, estimated_hours, done_ratio`.
+1. **Confirm** the full param plan per Rule 4: subject, your drafted description, tracker/status/priority/assignee (live options), plus the **optional fields only if the data exists** per 3c — category (full category list as numbered list in the ask, only when the project/cache has categories), target version (open versions only, numbered list, skip allowed, only when open versions exist), required custom-field values (only when required). Missing data → skip that param entirely, no empty ask. Apply any adjustment the user makes. Batch confirmations (e.g. tracker/status/priority in one call, category/version in another) — ask-tool limits: 1–4 questions per call, ≤4 clickable options per question, full lists embedded in question text.
+2. **Create** with all fields: `project_id, subject, description, tracker_id, priority_id, status_id, assigned_to_id, start_date, due_date, estimated_hours, done_ratio` plus `category_id` and `fixed_version_id` when the user confirmed them.
 3. **Verify the returned values** (priority/status names especially) — mismatch → update the issue with the correct value and a note explaining the change.
 4. **Read-only server** (`REDMINE_MCP_READ_ONLY`): creation is blocked → present the full text draft (subject + description) for the user to create manually.
-5. **Report**: issue ID, subject, project, tracker, status, assignee, priority, dates, estimate.
+5. **Report**: issue ID, subject, project, tracker, status, assignee, priority, dates, estimate, category, target version.
 
 ---
 
