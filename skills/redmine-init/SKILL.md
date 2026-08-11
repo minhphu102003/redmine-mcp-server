@@ -26,13 +26,25 @@ This skill creates and refreshes a `.redmine` JSON cache file at the git worktre
 1. **Locate the repo root**: run `git rev-parse --show-toplevel`. The `.redmine` file goes at that root (not the current working directory when they differ). If the directory is not a git repository → ask the user where to place the file.
 2. **Check for an existing file**: if `.redmine` already exists at the root → follow the refresh flow (section 3) instead.
 3. **List projects**: call the list-projects capability (e.g. `redmine_list_redmine_projects`) → returns `id`, `name`, `identifier`, `description`, `created_on`.
-4. **Ask the user to choose**: present the project list (id + name + identifier) and ask "repo này tương ứng với project Redmine nào?" using the agent's structured ask tool (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Do NOT guess. **Embed the full project list in the question text as a numbered list** and let the user type the number or name (ask tools accept custom/free-text answers); optionally add 2–4 clickable shortcuts of the most likely projects. If the list is very long (> ~30 rows), cap the embedded list and ask the user to narrow by keyword.
+4. **Ask the user to choose — full list always visible (full-list rule)**: NEVER ask with only a couple of options, and NEVER guess. Before calling any ask tool, render the **complete** project list to the user in the chat message as a markdown table — every single row, no truncation, no capping:
+   ```markdown
+   | # | ID | Project | Identifier |
+   |---|----|---------|------------|
+   | 1 | 313 | [AI] Chatbot Tuyển Sinh | ai-chatbot-tuyen-sinh |
+   | 2 | 156 | [MobileApp] CLICK-Ed app platform | du-an-qa-app |
+   | ... | ... | ... | ... |
+   ```
+   Then ask "repo này tương ứng với project Redmine nào?" with the agent's structured ask tool (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Rules for the ask:
+   - The question text must **repeat the full list as a numbered list** (ask tools accept custom/free-text answers — the user types the number or name from the table).
+   - Always include a catch-all custom/free-text option like "Khác — gõ số hoặc tên từ bảng trên".
+   - Add at most 2–4 clickable shortcuts of the most likely projects **on top of** the full list — they are conveniences, never a replacement; users must always be able to see and choose ALL entries.
+   - Very long list (> ~30 rows): still render the full table, then ask the user to narrow by keyword in a follow-up — never drop rows silently.
 5. **Fetch project context**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
 6. **Map GitHub account ↔ Redmine member**: detect the current GitHub identity and confirm the Redmine member.
    1. Detect GitHub side: run `gh api user` (requires `gh` CLI, installed first per the issue-workflow skill's prerequisites) → returns `login`, `name`, `email`. If `gh` is unavailable, fall back to `git config user.name` + `git config user.email`.
    2. Match the detected GitHub identity against the `members` list from step 5. Match by **name** (case-insensitive) first, then by **email** if name doesn't match.
    3. If exactly **one** confident match → confirm with the user via the structured ask tool: "GitHub account `janedoe` (Jane Doe) maps to Redmine member nào?" with the matched member pre-selected and 1–3 other likely members as clickable shortcuts.
-   4. If **no match** or **multiple matches** → present the full `members` list as a numbered list and ask the user to pick via the structured ask tool (embed full list in question text, user types number or name; ≤4 clickable shortcuts of the most likely picks).
+   4. If **no match** or **multiple matches** → apply the **full-list rule** from step 4: render the complete `members` list as a markdown table (| # | ID | Name | Roles |) in the chat message — all rows visible, no truncation — then present the full list in the question text of the structured ask tool (user types number or name; ≤4 clickable shortcuts of the most likely picks on top, never instead of the full list).
    5. **Optional — map additional committers** (ask only if the user seems interested; do NOT exhaustively map every committer to save tokens): run `git shortlog -sne --since="6 months"` to get a compact list of recent committers (1 line each: `count  Name <email>`). Ask the user: "Có muốn map thêm committer nào không?" — if yes, present the shortlist and let them pick entries to map (same ask pattern). Default: **only the current user** (tiết kiệm token).
    6. Build the `user_mappings` array: each entry `{"github": "<login>", "git_email": "<email>", "redmine_user_id": <id>, "redmine_name": "<name>"}`. Strip wrapper tags from all names.
 7. **Collect member working rules** (ask, never assume): for each member mapped in step 6, ask the user for that person's working rules — "Người này làm role gì và có rule/đặc thù riêng khi làm việc không? (gõ 'bỏ qua' để skip)". Prompt with the researched catalog below as a reminder of what rule areas exist (role/stack, required tests, code-review expectations, AI-assistant usage policy, reporting cadence, definition of done). The user answers, skips, or says "bỏ qua" per member — **never invent a rule**; store only what the user explicitly said, as short verbatim bullets (Vietnamese OK).
@@ -119,6 +131,7 @@ Cross-role dimensions to ask once per person: commit/branch conventions, code-re
 
 ## 6. Gotchas checklist
 
+- [ ] **Full-list rule**: before ANY list-based ask (projects, members), render the complete list as a markdown table in the chat message — every row visible, no capping/truncation; the ask-tool options are only shortcuts on top of the full list, never a replacement, and the question text always repeats the full numbered list so the user can type the number or name.
 - [ ] Strip `<insecure-content-...>` wrapper tags before writing; the file must contain clean names only.
 - [ ] Write at the **git worktree root** (`git rev-parse --show-toplevel`), not the current working directory when they differ.
 - [ ] Not a git repo → ask the user where to place `.redmine`.
