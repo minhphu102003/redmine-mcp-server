@@ -2,8 +2,9 @@
 Test cases for parent_issue_id validation in create_redmine_issue_impl.
 
 Covers creating a new issue as a subtask of an existing issue:
-parent existence, same-project enforcement, nesting-depth limit,
-string parent IDs, and standalone creation without parent.
+parent existence, same-project enforcement, unlimited nesting depth
+(deep subtask parents are allowed), string parent IDs, and standalone
+creation without parent.
 """
 
 import os
@@ -171,8 +172,9 @@ class TestCreateIssueWithParent:
         client.issue.create.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_subtask_parent_already_subtask(self):
-        """Test error when the parent is itself a subtask."""
+    async def test_create_subtask_deep_nesting_success(self):
+        """Test that a subtask can be created under a parent that is itself a
+        subtask (Redmine supports unlimited nesting depth)."""
         client = _make_mock_client()
         parent = _make_parent_issue(project_id=1)
         parent.parent = Mock(id=10, subject="Grandparent")
@@ -186,9 +188,10 @@ class TestCreateIssueWithParent:
             **_deps(client),
         )
 
-        assert "error" in result
-        assert "two levels" in result["error"]
-        client.issue.create.assert_not_called()
+        assert "error" not in result
+        assert result["id"] == 999
+        call_kwargs = client.issue.create.call_args[1]
+        assert call_kwargs.get("parent_issue_id") == 42
 
     @pytest.mark.asyncio
     async def test_create_standalone_does_not_fetch_parent(self):

@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **MCP prompts**: all prompt playbooks (`redmine_server_operating_prompt` and the 28 per-tool prompts) are removed from the MCP surface. All agent-facing guidance now lives in tool `description`s (docstrings) and per-parameter `Field(description=...)` metadata, which clients expose to agents by default; no prompt bootstrapping is required
 
+### Fixed
+- **Unlimited issue nesting**: `create_redmine_issue` no longer rejects a `parent_issue_id` whose parent is itself a subtask. Redmine supports unlimited nesting depth, so subtasks of subtasks (3+ levels) can now be created; the previous "at most two nesting levels" check was removed while keeping parent-exists and same-project validation
+
 ### Changed
 - **Log time via issue update**: `update_redmine_issue` accepts optional `spent_hours`/`activity_id`/`time_comments`/`spent_on` parameters and creates a time entry on the issue after a successful update (returned under the `time_entry` key; a logging failure keeps the update and reports `time_entry_error: true`). Logging requires `spent_hours > 0`; empty `fields` now skips the issue update call
 - **Per-parameter tool descriptions**: every MCP tool now documents each input parameter (purpose, valid values, defaults) via `Annotated[..., Field(description=...)]`, so the `inputSchema` properties are self-describing for agents; enum constraints added for `mode` (workflow context), `action` (time entries) and `report_type` (scrum report)
