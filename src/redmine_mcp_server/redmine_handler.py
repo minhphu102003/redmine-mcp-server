@@ -1193,7 +1193,8 @@ async def create_redmine_issue(
         Field(
             description=(
                 "Create this issue as a subtask of the task with this ID. The parent"
-                " must exist, be in the same project, and not itself be a subtask."
+                " must exist and be in the same project; Redmine allows unlimited"
+                " nesting depth, so the parent may itself be a subtask."
             )
         ),
     ] = None,

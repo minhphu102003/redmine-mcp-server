@@ -608,9 +608,9 @@ the web link to the created issue, e.g. `https://redmine.example.com/issues/42`)
   validates:
   - the parent exists (otherwise a clear error is returned),
   - the parent belongs to the same project (subtasks must share the parent's
-    project),
-  - the parent is not itself a subtask (Redmine supports at most two nesting
-    levels).
+    project).
+  Redmine supports unlimited nesting depth, so the parent may itself be a
+  subtask.
 - Only then is the issue created with `parent_issue_id` set.
 
 ```python

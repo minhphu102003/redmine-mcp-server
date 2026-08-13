@@ -334,9 +334,9 @@ Behavior:
   `REDMINE_ENFORCE_ISSUE_TEMPLATE=true` (see `redmine://issue-template/default`).
 - Autofills required custom fields when autofill is enabled.
 - Supports strict input validation via `REDMINE_STRICT_ISSUE_CREATION_INPUTS`.
-- With `parent_issue_id`: the parent is fetched and validated first (must exist,
-  belong to the same project, and not already be a subtask — Redmine supports at
-  most two nesting levels). Without it, a standalone task is created.
+- With `parent_issue_id`: the parent is fetched and validated first (must exist
+  and belong to the same project; Redmine supports unlimited nesting depth, so
+  the parent may itself be a subtask). Without it, a standalone task is created.
 - Each returned issue includes a `parent` key (`{"id", "subject"}` or `None`),
   so hierarchy is visible in results.
 

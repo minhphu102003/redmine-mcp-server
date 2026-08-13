@@ -460,6 +460,9 @@ async def _validate_parent_issue(
 ) -> Optional[Dict[str, Any]]:
     """Validate an existing issue can be used as a subtask parent.
 
+    Redmine supports unlimited nesting depth, so any existing issue in the
+    same project is a valid parent, even if it is itself a subtask.
+
     Returns an error payload dict, or None when the parent is valid.
     """
     try:
@@ -483,15 +486,6 @@ async def _validate_parent_issue(
             "parent_issue_id": parent_issue_id,
             "project_id": project_id,
             "parent_project_id": parent_project_id,
-        }
-
-    if getattr(parent_issue, "parent", None) is not None:
-        return {
-            "error": (
-                f"Parent issue {parent_issue_id} is already a subtask; "
-                "Redmine supports at most two levels of nesting."
-            ),
-            "parent_issue_id": parent_issue_id,
         }
 
     return None
