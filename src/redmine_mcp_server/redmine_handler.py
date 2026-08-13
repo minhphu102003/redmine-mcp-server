@@ -404,6 +404,20 @@ def _is_true_env(var_name: str, default: str = "false") -> bool:
     return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _conditional_tool(enabled: bool = True):
+    """Return ``@mcp.tool()`` decorator when *enabled* is True, otherwise a no-op."""
+    if enabled:
+        return mcp.tool()
+
+    def _noop(fn: Any) -> Any:
+        return fn
+
+    return _noop
+
+
+_WIKI_TOOLS_ENABLED = not _is_true_env("REDMINE_MCP_DISABLE_WIKI_TOOLS", "false")
+
+
 def _normalize_insecure_text(value: Any) -> str:
     """Normalize possibly wrapped insecure-content text for safe comparisons."""
     text = str(value or "").strip()
@@ -2263,6 +2277,11 @@ async def search_entire_redmine(
     scoped to one project is not enough. Returns grouped results per resource
     type.
     """
+    if not _WIKI_TOOLS_ENABLED:
+        if resources is None:
+            resources = ["issues"]
+        else:
+            resources = [r for r in resources if r != "wiki-pages"]
     return await search_entire_redmine_impl(
         query,
         resources,
@@ -2276,7 +2295,7 @@ async def search_entire_redmine(
     )
 
 
-@mcp.tool()
+@_conditional_tool(_WIKI_TOOLS_ENABLED)
 async def get_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -2318,7 +2337,7 @@ async def get_redmine_wiki_page(
     )
 
 
-@mcp.tool()
+@_conditional_tool(_WIKI_TOOLS_ENABLED)
 async def create_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -2361,7 +2380,7 @@ async def create_redmine_wiki_page(
     )
 
 
-@mcp.tool()
+@_conditional_tool(_WIKI_TOOLS_ENABLED)
 async def update_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -2403,7 +2422,7 @@ async def update_redmine_wiki_page(
     )
 
 
-@mcp.tool()
+@_conditional_tool(_WIKI_TOOLS_ENABLED)
 async def delete_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
