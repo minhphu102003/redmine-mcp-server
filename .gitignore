@@ -32,3 +32,4 @@ docs_internal/
 .agents/private/
 uv.lock
 .omx
+credentials/
