@@ -31,6 +31,9 @@ dependencies = [
     "fastmcp>=3.0.0,<4",
     "python-redmine>=2.5.0",
     "uvicorn>=0.24.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.23.0",
+    "google-auth-httplib2>=0.1.0",
 ]
 
 [project.urls]

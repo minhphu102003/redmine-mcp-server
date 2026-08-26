@@ -1,0 +1,815 @@
+"""Undecorated Google Sheets tool implementations extracted from redmine_handler."""
+
+from __future__ import annotations
+
+import logging
+from datetime import date
+from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+HandleErrorFn = Callable[[Exception, str, Optional[dict[str, Any]]], dict[str, Any]]
+
+
+# --- Tool 1: read_google_sheet ---
+
+
+async def read_google_sheet_impl(
+    spreadsheet_id: str,
+    range_name: str,
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Read data from a Google Sheets range."""
+    try:
+        service = get_sheets_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=range_name)
+            .execute()
+        )
+        values = result.get("values", [])
+        if not values:
+            return {"headers": [], "rows": [], "total_rows": 0}
+
+        headers = values[0]
+        rows = values[1:] if len(values) > 1 else []
+        return {
+            "headers": headers,
+            "rows": rows,
+            "total_rows": len(rows),
+        }
+    except Exception as e:
+        return handle_error(e, f"reading Google Sheet {spreadsheet_id}")
+
+
+# --- Tool 2: write_google_sheet ---
+
+
+async def write_google_sheet_impl(
+    spreadsheet_id: str,
+    range_name: str,
+    values: List[List[str]],
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Write data to a specific Google Sheets range (overwrite)."""
+    try:
+        service = get_sheets_service()
+        body = {"values": values}
+        result = (
+            service.spreadsheets()
+            .values()
+            .update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="USER_ENTERED",
+                body=body,
+            )
+            .execute()
+        )
+        return {
+            "updated_cells": result.get("updatedCells", 0),
+            "updated_rows": result.get("updatedRows", 0),
+            "range": result.get("updatedRange", range_name),
+        }
+    except Exception as e:
+        return handle_error(e, f"writing to Google Sheet {spreadsheet_id}")
+
+
+# --- Tool 3: append_google_sheet ---
+
+
+async def append_google_sheet_impl(
+    spreadsheet_id: str,
+    sheet_name: str,
+    values: List[List[str]],
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Append rows to the end of a Google Sheet."""
+    try:
+        service = get_sheets_service()
+        body = {"values": values}
+        range_name = f"{sheet_name}!A:Z"
+        result = (
+            service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body=body,
+            )
+            .execute()
+        )
+        updates = result.get("updates", {})
+        return {
+            "updated_rows": updates.get("updatedRows", 0),
+            "updated_cells": updates.get("updatedCells", 0),
+            "table_range": updates.get("updatedRange", range_name),
+        }
+    except Exception as e:
+        return handle_error(e, f"appending to Google Sheet {spreadsheet_id}")
+
+
+# --- Tool 4: get_sheet_metadata ---
+
+
+async def get_sheet_metadata_impl(
+    spreadsheet_id: str,
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Get metadata about all sheets in a spreadsheet."""
+    try:
+        service = get_sheets_service()
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheets_info = []
+        for sheet in spreadsheet.get("sheets", []):
+            props = sheet.get("properties", {})
+            sheet_title = props.get("title", "")
+            sheet_id = props.get("sheetId", 0)
+            row_count = props.get("gridProperties", {}).get("rowCount", 0)
+
+            # Get headers (first row)
+            try:
+                header_result = (
+                    service.spreadsheets()
+                    .values()
+                    .get(
+                        spreadsheetId=spreadsheet_id,
+                        range=f"{sheet_title}!A1:Z1",
+                    )
+                    .execute()
+                )
+                header_values = header_result.get("values", [])
+                headers = header_values[0] if header_values else []
+            except Exception:
+                headers = []
+
+            sheets_info.append(
+                {
+                    "name": sheet_title,
+                    "sheet_id": sheet_id,
+                    "headers": headers,
+                    "row_count": row_count,
+                }
+            )
+
+        return {
+            "spreadsheet_title": spreadsheet.get("properties", {}).get("title", ""),
+            "sheets": sheets_info,
+        }
+    except Exception as e:
+        return handle_error(e, f"getting metadata for Google Sheet {spreadsheet_id}")
+
+
+# --- Tool 5: create_test_cases_on_sheet ---
+
+
+async def create_test_cases_on_sheet_impl(
+    spreadsheet_id: str,
+    sheet_name: str,
+    test_cases: List[Dict[str, str]],
+    clear_existing: bool,
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Parse test cases and push to Google Sheets. Create Bugs sheet if needed."""
+    try:
+        from ...serializers.google_sheets import (
+            TESTCASES_HEADERS,
+            BUGS_HEADERS,
+            build_test_case_id,
+            validate_test_case,
+        )
+
+        service = get_sheets_service()
+        today = date.today().isoformat()
+
+        # Validate all test cases
+        all_errors = []
+        for i, tc in enumerate(test_cases):
+            errors = validate_test_case(tc)
+            if errors:
+                all_errors.append({"index": i, "errors": errors})
+        if all_errors:
+            return {
+                "error": "Validation failed for some test cases",
+                "details": all_errors[:5],
+            }
+
+        # Get existing test case IDs to generate next ID
+        existing_ids: List[str] = []
+        try:
+            existing = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!A:A",
+                )
+                .execute()
+            )
+            for row in existing.get("values", [])[1:]:  # skip header
+                if row and row[0]:
+                    existing_ids.append(row[0])
+        except Exception:
+            pass
+
+        # Build rows
+        rows = []
+        for tc in test_cases:
+            tc_id = build_test_case_id(existing_ids)
+            existing_ids.append(tc_id)
+            row = [
+                tc_id,  # A: test_case_id
+                tc.get("module", ""),  # B: module
+                tc.get("title", ""),  # C: title
+                tc.get("precondition", ""),  # D: precondition
+                tc.get("steps", ""),  # E: steps
+                tc.get("expected_result", ""),  # F: expected_result
+                tc.get("tester", ""),  # G: tester
+                today,  # H: created_date
+                "Not Tested",  # I: last_test_result
+                "",  # J: last_test_date
+            ]
+            rows.append(row)
+
+        if not rows:
+            return {"error": "No test cases to create"}
+
+        # Check if sheet exists, create if not
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheet_names = [s["properties"]["title"] for s in spreadsheet.get("sheets", [])]
+
+        if sheet_name not in sheet_names:
+            # Create the test cases sheet
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "requests": [{"addSheet": {"properties": {"title": sheet_name}}}]
+                },
+            ).execute()
+
+        # Clear existing data if requested
+        if clear_existing:
+            service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!A2:Z",
+                body={},
+            ).execute()
+
+        # Write headers if sheet is empty, then append rows
+        # First try to read header
+        try:
+            header_check = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!A1:J1",
+                )
+                .execute()
+            )
+            existing_headers = header_check.get("values", [])
+            if not existing_headers:
+                # Write headers first
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!A1",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [TESTCASES_HEADERS]},
+                ).execute()
+        except Exception:
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!A1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [TESTCASES_HEADERS]},
+            ).execute()
+
+        # Append test case rows
+        body = {"values": rows}
+        append_result = (
+            service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!A:Z",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body=body,
+            )
+            .execute()
+        )
+
+        # Create Bugs sheet if it doesn't exist
+        bugs_sheet_name = "Bugs"
+        bugs_sheet_ready = bugs_sheet_name in sheet_names
+        if not bugs_sheet_ready:
+            try:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        "requests": [
+                            {"addSheet": {"properties": {"title": bugs_sheet_name}}}
+                        ]
+                    },
+                ).execute()
+                # Write Bugs headers
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{bugs_sheet_name}!A1",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [BUGS_HEADERS]},
+                ).execute()
+                bugs_sheet_ready = True
+            except Exception as e:
+                logger.warning("Failed to create Bugs sheet: %s", e)
+
+        updates = append_result.get("updates", {})
+        return {
+            "created": len(rows),
+            "sheet_name": sheet_name,
+            "first_id": rows[0][0] if rows else None,
+            "last_id": rows[-1][0] if rows else None,
+            "range": updates.get("updatedRange", f"{sheet_name}"),
+            "bugs_sheet_ready": bugs_sheet_ready,
+            "bugs_sheet_name": bugs_sheet_name,
+        }
+    except Exception as e:
+        return handle_error(e, f"creating test cases on Google Sheet {spreadsheet_id}")
+
+
+# --- Tool 6: create_redmine_issues_from_bugs ---
+
+
+async def create_redmine_issues_from_bugs_impl(
+    spreadsheet_id: str,
+    sheet_name: str,
+    project_id: int,
+    tracker_id: int,
+    assigned_to_id: Optional[int],
+    bug_row_range: Optional[str],
+    *,
+    get_sheets_service: Callable[[], Any],
+    get_client: Callable[[], Any],
+    map_priority: Callable[[str], int],
+    is_read_only_mode: Callable[[], bool],
+    read_only_error: dict[str, Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Read bug rows from Sheet, create Redmine issues, write issue IDs back."""
+    if is_read_only_mode():
+        return read_only_error
+    try:
+        from ...serializers.google_sheets import (
+            BUGS_HEADERS,
+            format_redmine_issue_id,
+        )
+
+        service = get_sheets_service()
+
+        # Read all bug rows
+        read_range = (
+            f"{sheet_name}!A2:M"
+            if not bug_row_range
+            else f"{sheet_name}!{bug_row_range}"
+        )
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=read_range)
+            .execute()
+        )
+        all_rows = result.get("values", [])
+
+        if not all_rows:
+            return {"created": 0, "failed": 0, "issues": [], "errors": []}
+
+        # Filter: status = "New" and redmine_issue_id is empty
+        bugs_to_create = []
+        for i, row in enumerate(all_rows):
+            row_dict = {}
+            for j, header in enumerate(BUGS_HEADERS):
+                row_dict[header] = row[j] if j < len(row) else ""
+
+            status = row_dict.get("status", "")
+            redmine_id = row_dict.get("redmine_issue_id", "")
+
+            if status == "New" and not redmine_id.strip():
+                bugs_to_create.append((i, row_dict))
+
+        if not bugs_to_create:
+            return {"created": 0, "failed": 0, "issues": [], "errors": []}
+
+        # Create Redmine issues
+        client = get_client()
+        created_issues = []
+        errors = []
+
+        for row_index, bug in bugs_to_create:
+            try:
+                priority_id = map_priority(bug.get("priority", "Medium"))
+
+                # Build issue fields
+                issue_fields = {
+                    "project_id": project_id,
+                    "tracker_id": tracker_id,
+                    "subject": bug.get("title", "Untitled Bug"),
+                    "description": bug.get("description", ""),
+                    "priority_id": priority_id,
+                }
+
+                if assigned_to_id:
+                    issue_fields["assigned_to_id"] = assigned_to_id
+
+                # Create issue on Redmine
+                issue = client.issue.create(**issue_fields)
+                issue_id = issue.id
+
+                # Update sheet row: write redmine_issue_id and change status to Open
+                sheet_row = row_index + 2  # +2 because row 1 = header, 0-indexed
+
+                # Column H = redmine_issue_id (index 7)
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!H{sheet_row}",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [[format_redmine_issue_id(issue_id)]]},
+                ).execute()
+
+                # Column F = status (index 5) → "Open"
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!F{sheet_row}",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [["Open"]]},
+                ).execute()
+
+                created_issues.append(
+                    {
+                        "bug_id": bug.get("bug_id", ""),
+                        "redmine_issue_id": issue_id,
+                        "title": bug.get("title", ""),
+                    }
+                )
+            except Exception as e:
+                errors.append(
+                    {
+                        "bug_id": bug.get("bug_id", ""),
+                        "error": str(e),
+                    }
+                )
+
+        return {
+            "created": len(created_issues),
+            "failed": len(errors),
+            "issues": created_issues,
+            "errors": errors,
+        }
+    except Exception as e:
+        return handle_error(
+            e, f"creating Redmine issues from Google Sheet {spreadsheet_id}"
+        )
+
+
+# --- Tool 7: sync_redmine_status_to_sheet ---
+
+
+async def sync_redmine_status_to_sheet_impl(
+    spreadsheet_id: str,
+    bug_sheet: str,
+    test_case_sheet: str,
+    *,
+    get_sheets_service: Callable[[], Any],
+    get_client: Callable[[], Any],
+    map_redmine_status: Callable[[str, float], Optional[str]],
+    parse_reject_reason: Callable[[List[Dict[str, Any]]], str],
+    is_duplicate_rejection: Callable[[str], bool],
+    parse_duplicate_issue_id: Callable[[str], Optional[str]],
+    is_read_only_mode: Callable[[], bool],
+    read_only_error: dict[str, Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Sync Redmine issue statuses back to Google Sheet."""
+    if is_read_only_mode():
+        return read_only_error
+    try:
+        from ...serializers.google_sheets import BUGS_HEADERS
+
+        service = get_sheets_service()
+        today = date.today().isoformat()
+
+        # Read all bug rows
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=f"{bug_sheet}!A2:M")
+            .execute()
+        )
+        all_rows = result.get("values", [])
+
+        if not all_rows:
+            return {"checked": 0, "updated": 0, "summary": {}, "details": []}
+
+        client = get_client()
+        updated_details = []
+        summary: Dict[str, int] = {}
+        checked = 0
+        updated = 0
+
+        # Pre-read TestCases sheet once to avoid N+1 reads
+        tc_row_map: Dict[str, int] = {}
+        try:
+            tc_result = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{test_case_sheet}!A:A",
+                )
+                .execute()
+            )
+            tc_rows = tc_result.get("values", [])
+            for ti, tc_row in enumerate(tc_rows):
+                if tc_row and tc_row[0]:
+                    tc_row_map[tc_row[0]] = ti + 1
+        except Exception as e:
+            logger.warning("Failed to pre-read TestCases sheet: %s", e)
+
+        for i, row in enumerate(all_rows):
+            row_dict = {}
+            for j, header in enumerate(BUGS_HEADERS):
+                row_dict[header] = row[j] if j < len(row) else ""
+
+            redmine_id_str = row_dict.get("redmine_issue_id", "")
+            if not redmine_id_str.strip():
+                continue
+
+            # Parse single issue ID
+            redmine_id = None
+            clean_id = redmine_id_str.strip().split(",")[0].strip()
+            try:
+                redmine_id = int(clean_id)
+            except ValueError:
+                continue
+
+            checked += 1
+            sheet_row = i + 2  # +2 for header + 0-indexed
+
+            try:
+                issue = client.issue.get(
+                    redmine_id,
+                    include=["journals"],
+                )
+                redmine_status = issue.status.name
+                done_ratio = getattr(issue, "done_ratio", 0) or 0
+                journals = getattr(issue, "journals", []) or []
+
+                # Convert journals to dicts for parsing
+                journal_dicts = []
+                for j in journals:
+                    journal_dicts.append(
+                        {
+                            "notes": getattr(j, "notes", "") or "",
+                            "created_on": str(getattr(j, "created_on", "")),
+                        }
+                    )
+
+                # Map Redmine status → Sheet status
+                new_sheet_status = map_redmine_status(redmine_status, done_ratio)
+
+                # Handle rejection
+                if redmine_status.lower() == "rejected":
+                    reject_reason = parse_reject_reason(journal_dicts)
+                    # Column L = reject_reason (index 11)
+                    service.spreadsheets().values().update(
+                        spreadsheetId=spreadsheet_id,
+                        range=f"{bug_sheet}!L{sheet_row}",
+                        valueInputOption="USER_ENTERED",
+                        body={"values": [[reject_reason]]},
+                    ).execute()
+
+                    # Check if duplicate
+                    if is_duplicate_rejection(reject_reason):
+                        new_sheet_status = "Duplicate"
+                        dup_issue_id = parse_duplicate_issue_id(reject_reason)
+                        if dup_issue_id:
+                            # Column M = duplicate_of (index 12)
+                            service.spreadsheets().values().update(
+                                spreadsheetId=spreadsheet_id,
+                                range=f"{bug_sheet}!M{sheet_row}",
+                                valueInputOption="USER_ENTERED",
+                                body={"values": [[dup_issue_id]]},
+                            ).execute()
+
+                if new_sheet_status:
+                    old_status = row_dict.get("status", "")
+                    if old_status != new_sheet_status:
+                        # Column F = status (index 5)
+                        service.spreadsheets().values().update(
+                            spreadsheetId=spreadsheet_id,
+                            range=f"{bug_sheet}!F{sheet_row}",
+                            valueInputOption="USER_ENTERED",
+                            body={"values": [[new_sheet_status]]},
+                        ).execute()
+                        updated += 1
+                        updated_details.append(
+                            {
+                                "redmine_issue_id": redmine_id,
+                                "old_status": old_status,
+                                "new_status": new_sheet_status,
+                            }
+                        )
+
+                # Column I = redmine_status (index 8)
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{bug_sheet}!I{sheet_row}",
+                    valueInputOption="USER_ENTERED",
+                    body={"values": [[redmine_status]]},
+                ).execute()
+
+                # Track summary
+                status_key = new_sheet_status or row_dict.get("status", "Unknown")
+                summary[status_key] = summary.get(status_key, 0) + 1
+
+                # If Closed → update TestCases last_test_result
+                if new_sheet_status == "Closed":
+                    test_case_id = row_dict.get("test_case_id", "")
+                    if test_case_id and test_case_id in tc_row_map:
+                        try:
+                            tc_sheet_row = tc_row_map[test_case_id]
+                            # Column I = last_test_result (index 8)
+                            service.spreadsheets().values().update(
+                                spreadsheetId=spreadsheet_id,
+                                range=f"{test_case_sheet}!I{tc_sheet_row}",
+                                valueInputOption="USER_ENTERED",
+                                body={"values": [["Pass"]]},
+                            ).execute()
+                            # Column J = last_test_date (index 9)
+                            service.spreadsheets().values().update(
+                                spreadsheetId=spreadsheet_id,
+                                range=f"{test_case_sheet}!J{tc_sheet_row}",
+                                valueInputOption="USER_ENTERED",
+                                body={"values": [[today]]},
+                            ).execute()
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to update test case %s: %s",
+                                test_case_id,
+                                e,
+                            )
+
+            except Exception as e:
+                logger.warning("Failed to sync issue %s: %s", redmine_id, e)
+                summary["error"] = summary.get("error", 0) + 1
+
+        return {
+            "checked": checked,
+            "updated": updated,
+            "summary": summary,
+            "details": updated_details,
+        }
+    except Exception as e:
+        return handle_error(
+            e, f"syncing Redmine status to Google Sheet {spreadsheet_id}"
+        )
+
+
+# --- Tool 8: reopen_bug ---
+
+
+async def reopen_bug_impl(
+    spreadsheet_id: str,
+    sheet_name: str,
+    bug_id: str,
+    reopen_note: str,
+    project_id: int,
+    *,
+    get_sheets_service: Callable[[], Any],
+    get_client: Callable[[], Any],
+    is_read_only_mode: Callable[[], bool],
+    read_only_error: dict[str, Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Reopen a bug by updating status on Redmine and sheet."""
+    if is_read_only_mode():
+        return read_only_error
+    try:
+        from ...serializers.google_sheets import (
+            BUGS_HEADERS,
+            is_valid_status_transition,
+            parse_redmine_issue_id,
+        )
+
+        service = get_sheets_service()
+
+        # Find the bug row by bug_id
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A2:M")
+            .execute()
+        )
+        all_rows = result.get("values", [])
+
+        target_row_index = None
+        target_row_dict = None
+        for i, row in enumerate(all_rows):
+            row_dict = {}
+            for j, header in enumerate(BUGS_HEADERS):
+                row_dict[header] = row[j] if j < len(row) else ""
+            if row_dict.get("bug_id", "") == bug_id:
+                target_row_index = i
+                target_row_dict = row_dict
+                break
+
+        if target_row_dict is None:
+            return {"error": f"Bug {bug_id} not found in sheet"}
+
+        current_status = target_row_dict.get("status", "")
+        if not is_valid_status_transition(current_status, "Reopen"):
+            return {
+                "error": (
+                    f"Cannot reopen bug from status '{current_status}'. "
+                    f"Valid transitions to Reopen: Done → Reopen"
+                )
+            }
+
+        redmine_id = parse_redmine_issue_id(target_row_dict.get("redmine_issue_id", ""))
+        if not redmine_id:
+            return {"error": f"Bug {bug_id} has no Redmine issue ID"}
+
+        # Update Redmine: set status to New and add note
+        redmine_updated = False
+        client = get_client()
+        try:
+            issue = client.issue.get(redmine_id)
+
+            # Find "New" status ID
+            statuses = client.issue_status.all()
+            new_status_id = None
+            for status in statuses:
+                if status.name.lower() == "new":
+                    new_status_id = status.id
+                    break
+
+            if new_status_id:
+                issue.status_id = new_status_id
+                issue.notes = f"[REOPEN] {reopen_note}"
+                issue.save()
+            else:
+                # Fallback: just add a note
+                issue.notes = f"[REOPEN] {reopen_note}"
+                issue.save()
+            redmine_updated = True
+        except Exception as e:
+            return handle_error(e, f"updating Redmine issue {redmine_id} for reopen")
+
+        # Update sheet
+        sheet_row = target_row_index + 2  # +2 for header + 0-indexed
+        sheet_updated = False
+        try:
+            # Column F = status (index 5) → "Reopen"
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!F{sheet_row}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [["Reopen"]]},
+            ).execute()
+
+            # Column I = redmine_status (index 8) → "New"
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!I{sheet_row}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [["New"]]},
+            ).execute()
+            sheet_updated = True
+        except Exception as e:
+            logger.warning(
+                "Redmine issue %s reopened but sheet update failed: %s",
+                redmine_id,
+                e,
+            )
+
+        return {
+            "success": redmine_updated,
+            "redmine_issue_id": redmine_id,
+            "title": target_row_dict.get("title", ""),
+            "reopen_note": reopen_note,
+            "sheet_synced": sheet_updated,
+        }
+    except Exception as e:
+        return handle_error(e, f"reopening bug {bug_id}")

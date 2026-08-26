@@ -75,11 +75,14 @@ from .security import (  # noqa: E402
     SSRFSafeHTTPAdapter,
 )
 from .handler_impl.tools import (  # noqa: E402
+    append_google_sheet_impl,
     cleanup_attachment_files_impl,
     create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
     create_redmine_issue_relation_impl,
     create_redmine_wiki_page_impl,
+    create_redmine_issues_from_bugs_impl,
+    create_test_cases_on_sheet_impl,
     create_time_entry_impl,
     delete_redmine_wiki_page_impl,
     delete_redmine_issue_relation_impl,
@@ -93,17 +96,22 @@ from .handler_impl.tools import (  # noqa: E402
     get_redmine_issue_allowed_statuses_impl,
     get_redmine_project_workflow_impl,
     get_redmine_wiki_page_impl,
+    get_sheet_metadata_impl,
     list_redmine_issue_statuses_impl,
     list_redmine_issues_impl,
     list_redmine_projects_impl,
     list_time_entries_impl,
     list_time_entry_activities_impl,
+    read_google_sheet_impl,
+    reopen_bug_impl,
     search_entire_redmine_impl,
     search_redmine_issues_impl,
     summarize_project_status_impl,
+    sync_redmine_status_to_sheet_impl,
     update_redmine_issue_impl,
     update_redmine_wiki_page_impl,
     update_time_entry_impl,
+    write_google_sheet_impl,
 )
 from .handler_impl.http_routes import (  # noqa: E402
     CleanupTaskManager,
@@ -124,6 +132,14 @@ from .serializers import (  # noqa: E402
     _membership_to_dict,
     _time_entry_to_dict,
     _wiki_page_to_dict,
+)
+from .google_sheets_client import google_sheets_manager  # noqa: E402
+from .serializers.google_sheets import (  # noqa: E402
+    map_priority_to_redmine as _map_priority_to_redmine,
+    map_redmine_status_to_sheet as _map_redmine_status_to_sheet,
+    parse_reject_reason as _parse_reject_reason,
+    is_duplicate_rejection as _is_duplicate_rejection,
+    parse_duplicate_issue_id as _parse_duplicate_issue_id,
 )
 from .resources import (  # noqa: E402
     ISSUE_TEMPLATE_RESOURCE_URI,
@@ -2634,6 +2650,223 @@ async def cleanup_attachment_files() -> Dict[str, Any]:
         attachment_manager_factory=AttachmentFileManager,
         log=logger,
     )
+
+
+# =============================================================================
+# Google Sheets Tools
+# =============================================================================
+
+
+@mcp.tool()
+async def read_google_sheet(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    range: Annotated[
+        str,
+        Field(description="Range to read, e.g. 'TestCases!A1:J100' or 'Sheet1'"),
+    ],
+) -> Dict[str, Any]:
+    """Read data from a specific range on Google Sheets."""
+    return await read_google_sheet_impl(
+        spreadsheet_id,
+        range,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def write_google_sheet(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    range: Annotated[
+        str,
+        Field(description="Range to write, e.g. 'TestCases!A1:J16'"),
+    ],
+    values: Annotated[
+        List[List[str]], Field(description="2D array of values to write")
+    ],
+) -> Dict[str, Any]:
+    """Write data to a specific Google Sheets range (overwrite)."""
+    return await write_google_sheet_impl(
+        spreadsheet_id,
+        range,
+        values,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def append_google_sheet(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    sheet_name: Annotated[
+        str, Field(description="Sheet name to append to, e.g. 'Bugs'")
+    ],
+    values: Annotated[List[List[str]], Field(description="2D array of rows to append")],
+) -> Dict[str, Any]:
+    """Append rows to the end of a Google Sheet (does not overwrite existing data)."""
+    return await append_google_sheet_impl(
+        spreadsheet_id,
+        sheet_name,
+        values,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def get_sheet_metadata(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+) -> Dict[str, Any]:
+    """Get metadata about all sheets in a spreadsheet (names, headers, row counts)."""
+    return await get_sheet_metadata_impl(
+        spreadsheet_id,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def create_test_cases_on_sheet(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    sheet_name: Annotated[
+        str,
+        Field(description="Target sheet name, e.g. 'TestCases'"),
+    ],
+    test_cases: Annotated[
+        List[Dict[str, str]],
+        Field(
+            description=(
+                "List of test case dicts with keys: "
+                "title, module, precondition, steps, expected_result, tester"
+            )
+        ),
+    ],
+    clear_existing: Annotated[
+        bool,
+        Field(description="Clear existing data before writing (keep headers)"),
+    ] = False,
+) -> Dict[str, Any]:
+    """Create test cases on a Google Sheet."""
+    return await create_test_cases_on_sheet_impl(
+        spreadsheet_id,
+        sheet_name,
+        test_cases,
+        clear_existing,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def create_redmine_issues_from_bugs(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    sheet_name: Annotated[
+        str,
+        Field(description="Bug sheet name, e.g. 'Bugs'"),
+    ],
+    project_id: Annotated[int, Field(description="Redmine project ID")],
+    tracker_id: Annotated[
+        int,
+        Field(description="Redmine tracker ID (1=Bug, 2=Feature, 3=Task)"),
+    ],
+    assigned_to_id: Annotated[
+        Optional[int],
+        Field(description="Default assignee user ID on Redmine"),
+    ] = None,
+    bug_row_range: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Specific range to process, e.g. 'A2:M50'. "
+                "None = all rows with status 'New'"
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """Read bug rows from Google Sheet, create Redmine issues, write issue IDs back."""
+    return await create_redmine_issues_from_bugs_impl(
+        spreadsheet_id,
+        sheet_name,
+        project_id,
+        tracker_id,
+        assigned_to_id,
+        bug_row_range,
+        get_sheets_service=google_sheets_manager.get_service,
+        get_client=_get_redmine_client,
+        map_priority=_map_priority_to_redmine,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def sync_redmine_status_to_sheet(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    bug_sheet: Annotated[str, Field(description="Bug sheet name")] = "Bugs",
+    test_case_sheet: Annotated[
+        str, Field(description="Test case sheet name")
+    ] = "TestCases",
+) -> Dict[str, Any]:
+    """Sync Redmine statuses back to Google Sheet."""
+    return await sync_redmine_status_to_sheet_impl(
+        spreadsheet_id,
+        bug_sheet,
+        test_case_sheet,
+        get_sheets_service=google_sheets_manager.get_service,
+        get_client=_get_redmine_client,
+        map_redmine_status=_map_redmine_status_to_sheet,
+        parse_reject_reason=_parse_reject_reason,
+        is_duplicate_rejection=_is_duplicate_rejection,
+        parse_duplicate_issue_id=_parse_duplicate_issue_id,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def reopen_bug(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    sheet_name: Annotated[str, Field(description="Bug sheet name, e.g. 'Bugs'")],
+    bug_id: Annotated[str, Field(description="Bug ID to reopen, e.g. 'BUG-001'")],
+    reopen_note: Annotated[
+        str,
+        Field(description="Note describing why the bug is reopened (what still fails)"),
+    ],
+    project_id: Annotated[int, Field(description="Redmine project ID")],
+) -> Dict[str, Any]:
+    """Reopen a bug on Redmine and Google Sheet."""
+    return await reopen_bug_impl(
+        spreadsheet_id,
+        sheet_name,
+        bug_id,
+        reopen_note,
+        project_id,
+        get_sheets_service=google_sheets_manager.get_service,
+        get_client=_get_redmine_client,
+        is_read_only_mode=_is_read_only_mode,
+        read_only_error=_READ_ONLY_ERROR,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+def _handle_google_sheets_error(
+    e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Error handler for Google Sheets operations."""
+    logger.error("Google Sheets error during %s: %s", operation, e)
+    error_msg = str(e)
+    if "credentials" in error_msg.lower():
+        return {"error": error_msg}
+    if "permission" in error_msg.lower() or "403" in error_msg:
+        return {
+            "error": "Access denied. Check service account permissions "
+            "and ensure the sheet is shared with the service account email."
+        }
+    if "404" in error_msg or "not found" in error_msg.lower():
+        return {"error": f"Spreadsheet not found: {error_msg}"}
+    return {"error": f"Google Sheets error: {error_msg}"}
 
 
 if __name__ == "__main__":
