@@ -813,3 +813,99 @@ async def reopen_bug_impl(
         }
     except Exception as e:
         return handle_error(e, f"reopening bug {bug_id}")
+
+
+# --- Tool 9: set_sheet_data_validation ---
+
+
+async def set_sheet_data_validation_impl(
+    spreadsheet_id: str,
+    sheet_name: str,
+    column: int,
+    options: List[str],
+    *,
+    start_row: int = 2,
+    end_row: int = 1000,
+    strict: bool = True,
+    input_message: str = "",
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Set data validation (dropdown) on a column in a Google Sheet.
+
+    Args:
+        spreadsheet_id: Google Spreadsheet ID.
+        sheet_name: Target sheet name (e.g. 'TestCases').
+        column: Column index (0-based, e.g. 6 for column G).
+        options: List of dropdown options.
+        start_row: Start row (0-based, default 2 = row 3 in sheet, after headers).
+        end_row: End row (0-based, default 1000).
+        strict: If True, only values from the list are allowed.
+        input_message: Message shown when user clicks the cell.
+    """
+    try:
+        service = get_sheets_service()
+
+        # Get sheet ID from sheet name
+        meta = (
+            service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+            .execute()
+        )
+        sheet_id = None
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("title") == sheet_name:
+                sheet_id = s["properties"]["sheetId"]
+                break
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found in spreadsheet"}
+
+        # Set data validation via batchUpdate
+        request_body = {
+            "requests": [
+                {
+                    "setDataValidation": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": start_row,
+                            "endRowIndex": end_row,
+                            "startColumnIndex": column,
+                            "endColumnIndex": column + 1,
+                        },
+                        "rule": {
+                            "condition": {
+                                "type": "ONE_OF_LIST",
+                                "values": [
+                                    {"userEnteredValue": opt} for opt in options
+                                ],
+                            },
+                            "showCustomUi": True,
+                            "strict": strict,
+                            **(
+                                {"inputMessage": input_message} if input_message else {}
+                            ),
+                        },
+                    }
+                }
+            ]
+        }
+        (
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body=request_body)
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "sheet_name": sheet_name,
+            "column": column,
+            "options_count": len(options),
+            "options": options,
+            "start_row": start_row + 1,
+            "end_row": end_row + 1,
+            "strict": strict,
+        }
+    except Exception as e:
+        return handle_error(
+            e, f"setting data validation on {sheet_name} column {column}"
+        )

@@ -1,6 +1,6 @@
 ---
 name: reopen-bug
-description: Use when the user wants to reopen a bug that was previously fixed but still fails retest, e.g. "reopen bug này", "mở lại bug", "bug vẫn lỗi, reopen", "retest fail, reopen", "reopen BUG-001". Updates the Redmine issue status to "New" with a reopen note, and updates the Google Sheet status to "Reopen". Keeps the same Redmine issue ID — no subtask is created. Use ONLY for reopening bugs, NOT for creating issues, syncing status, or generating test cases.
+description: Use when the user wants to reopen a bug that was previously fixed but still fails retest, e.g. "reopen bug này", "mở lại bug", "bug vẫn lỗi, reopen", "retest fail, reopen", "reopen BUG-001". Checks allowed Redmine workflow transitions (never hardcodes "New"), picks the best reopen status, updates Redmine with a reopen note, and updates the Google Sheet. Keeps the same Redmine issue ID — no subtask is created. Use ONLY for reopening bugs, NOT for creating issues, syncing status, or generating test cases.
 ---
 
 # Reopen Bug
@@ -14,14 +14,21 @@ Reopen a bug by updating its status on both Redmine and the Google Sheet. The sk
 ## 1. Core rules
 
 1. **Ask-before-reopen**: confirm bug ID, reopen reason, and spreadsheet before making changes.
-2. **Only reopen from "Done"**: the bug must have status "Done" on the sheet to be reopened. Other statuses → refuse with explanation.
+2. **Only reopen from "Done" or "Closed"**: the bug must have status "Done" or "Closed" on the sheet to be reopened. Other statuses → refuse with explanation.
 3. **Same issue ID**: reopen updates the existing Redmine issue, never creates a subtask.
 4. **Reopen note is mandatory**: the user must provide a reason (what still fails). No reason → ask.
-5. **Redmine update**: set status to "New" (or the Redmine status that means "not fixed") + add `[REOPEN] <note>` to journal.
-6. **Sheet update**: column F (status) → "Reopen", column I (redmine_status) → "New".
-7. **Partial failure handling**: if Redmine update succeeds but sheet update fails, warn the user (Redmine is already mutated).
-8. **Read-only mode**: if `REDMINE_MCP_READ_ONLY` is set, block the update and present the action for manual application.
-9. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
+5. **Check allowed transitions**: call `get_redmine_issue_allowed_statuses` to find which statuses are reachable from the current status. Never hardcode "New" — use the actual allowed status.
+6. **Preferred reopen status** (in priority order): pick the first match from the allowed transitions:
+   - "Reopen" (if exists in Redmine)
+   - "In Progress"
+   - "Feedback"
+   - "Open"
+   - If none of these are allowed → refuse: "Không thể reopen từ trạng thái '<current>'. Các trạng thái cho phép: <list>."
+7. **Redmine update**: set status to the chosen status + add `[REOPEN] <note>` to journal.
+8. **Sheet update**: column F (status) → "Reopen", column I (redmine_status) → chosen status name.
+9. **Partial failure handling**: if Redmine update succeeds but sheet update fails, warn the user (Redmine is already mutated).
+10. **Read-only mode**: if `REDMINE_MCP_READ_ONLY` is set, block the update and present the action for manual application.
+11. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
 
 ---
 
@@ -56,13 +63,19 @@ Ask the user (structured ask tool, plain text as fallback):
 
 ## 4. Step 3 — Update Redmine
 
-1. **Get the issue**: call `get_redmine_issue` with the redmine_issue_id.
-2. **Find "New" status ID**: call `list_redmine_issue_statuses` and find the status named "New" → get its ID.
-3. **Update the issue**:
-   - Set `status_id` to the "New" status ID.
+1. **Get the issue**: call `get_redmine_issue` with the redmine_issue_id to get current status.
+2. **Check allowed transitions**: call `get_redmine_issue_allowed_statuses` with the redmine_issue_id → returns list of reachable statuses.
+3. **Pick reopen status** from allowed transitions (priority order):
+   - "Reopen" → use if available
+   - "In Progress" → use if available
+   - "Feedback" → use if available
+   - "Open" → use if available
+   - None of these → refuse with explanation and list of allowed statuses.
+4. **Update the issue**:
+   - Set `status_id` to the chosen status's ID.
    - Add `[REOPEN] <reopen_note>` to the journal/notes.
-4. **If update fails**: return the error and stop (don't update the sheet).
-5. **If update succeeds**: proceed to step 4.
+5. **If update fails**: return the error and stop (don't update the sheet).
+6. **If update succeeds**: proceed to step 4.
 
 ---
 
@@ -70,7 +83,7 @@ Ask the user (structured ask tool, plain text as fallback):
 
 1. **Find the row** (same row index from step 2).
 2. **Update column F** (status) → "Reopen".
-3. **Update column I** (redmine_status) → "New".
+3. **Update column I** (redmine_status) → chosen status name (e.g. "In Progress", "Feedback").
 4. **If sheet update fails**: log a warning but don't roll back the Redmine update. Report: "Redmine đã cập nhật nhưng sheet cập nhật thất bại. Cần cập nhật sheet thủ công."
 
 ---
@@ -80,8 +93,8 @@ Ask the user (structured ask tool, plain text as fallback):
 On success:
 ```
 Đã reopen bug BUG-001:
-- Redmine issue #1234: status → "New", note added
-- Sheet: status → "Reopen", redmine_status → "New"
+- Redmine issue #1234: status → "In Progress", note added
+- Sheet: status → "Reopen", redmine_status → "In Progress"
 ```
 
 On partial failure:
@@ -94,10 +107,11 @@ Cần cập nhật sheet thủ công.
 
 ## 7. Gotchas checklist
 
-- [ ] Only reopen from "Done" status — validate before attempting.
+- [ ] Only reopen from "Done" or "Closed" status — validate before attempting.
+- [ ] **Never hardcode "New"** — always check allowed transitions via `get_redmine_issue_allowed_statuses`.
+- [ ] Preferred reopen status order: Reopen → In Progress → Feedback → Open.
 - [ ] Reopen note is mandatory — never reopen without a reason.
 - [ ] Same issue ID — never create a subtask for reopening.
-- [ ] Redmine update uses status "New" (or the appropriate "not fixed" status for the instance).
 - [ ] Partial failure: Redmine succeeds + sheet fails → warn, don't rollback.
 - [ ] Respect read-only mode — block if `REDMINE_MCP_READ_ONLY` is set.
 - [ ] Strip `<insecure-content-...>` wrapper tags from Redmine-sourced names.

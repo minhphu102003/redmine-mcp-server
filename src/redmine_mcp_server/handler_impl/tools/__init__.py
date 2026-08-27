@@ -57,6 +57,7 @@ from .google_sheets import (
     get_sheet_metadata_impl,
     read_google_sheet_impl,
     reopen_bug_impl,
+    set_sheet_data_validation_impl,
     sync_redmine_status_to_sheet_impl,
     write_google_sheet_impl,
 )
@@ -102,6 +103,7 @@ __all__ = [
     "get_sheet_metadata_impl",
     "read_google_sheet_impl",
     "reopen_bug_impl",
+    "set_sheet_data_validation_impl",
     "sync_redmine_status_to_sheet_impl",
     "write_google_sheet_impl",
 ]
