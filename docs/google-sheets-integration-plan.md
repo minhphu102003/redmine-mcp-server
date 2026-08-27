@@ -1,203 +1,203 @@
-# Plan: Google Sheets + Redmine Test Management Integration
+# Kế hoạch: Tích hợp Google Sheets + Quản lý kiểm thử Redmine
 
-## Overview
+## Tổng quan
 
-Tich hop Google Sheets API vao `redmine-mcp-server` de xay dung test management pipeline:
+Tích hợp Google Sheets API vào `redmine-mcp-server` để xây dựng quy trình quản lý kiểm thử:
 
 ```
-User Story/Breakdown
+User Story / Phân tách công việc
         ↓
-   AI tao Test Cases (definition + execution tracking)
+   AI tạo Test Cases (định nghĩa + theo dõi thực thi)
         ↓
-  Tester + AI refine (markdown/JSON)
+  Tester + AI chỉnh sửa (markdown/JSON)
         ↓
-  AI tao spreadsheet + 2 sheets co headers san
-  Push test cases → Sheet "TestCases"
+  AI tạo spreadsheet + 2 sheet có headers sẵn
+  Đẩy test cases → Sheet "TestCases"
         ↓
-  Tester dung TestCases de test
+  Tester dùng TestCases để test
         ↓
-  Neu bug ↓
-  Tester tu nhap bug vao Sheet "Bugs" (headers da co san)
-  HOAC yeu cau AI dien noi dung bug giup
+  Nếu bug ↓
+  Tester tự nhập bug vào Sheet "Bugs" (headers đã có sẵn)
+  HOẶC yêu cầu AI điền nội dung bug giúp
         ↓
-  Tester yeu cau AI tao Redmine issues + assign dev
+  Tester yêu cầu AI tạo Redmine issues + assign dev
         ↓
-  Dev fix → AI sync status ve Sheet
+  Dev fix → AI sync trạng thái về Sheet
         ↓
   Tester retest → Closed / Reopen / Reject
 ```
 
-**Phan tach ro rang:**
-- **TestCases**: Library test cases + execution tracking (result + date)
-- **Bugs**: Work tracking — bug reports + Redmine sync + status updates
-- **AI tao san headers**: Khi push test cases, AI cung tao Sheet "Bugs" voi headers san sang de tester nhap lieu
+**Phân tách rõ ràng:**
+- **TestCases**: Thư viện test cases + theo dõi thực thi (kết quả + ngày)
+- **Bugs**: Theo dõi công việc — báo cáo lỗi + đồng bộ Redmine + cập nhật trạng thái
+- **AI tạo sẵn headers**: Khi đẩy test cases, AI cũng tạo Sheet "Bugs" với headers sẵn sàng để tester nhập liệu
 
 ---
 
-## Bug Status Flow
+## Luồng trạng thái lỗi
 
 ```
-New (tester vua phat hien, chua tao issue)
-  ↓  [AI tao Redmine issue]
-Open (da co issue tren Redmine, dev chua pickup)
+New (tester vừa phát hiện, chưa tạo issue)
+  ↓  [AI tạo Redmine issue]
+Open (đã có issue trên Redmine, dev chưa pickup)
   │
-  ├── In Progress (dev pickup, dang fix)
+  ├── In Progress (dev pickup, đang fix)
   │     │
   │     ├── Done (dev fix xong, done_ratio=100%)
   │     │     │
   │     │     ├── Closed (tester retest OK)
-  │     │     ├── Reopen (tester retest fail → quay lai In Progress)
-  │     │     └── Reject (dev reject cuoi cung)
+  │     │     ├── Reopen (tester retest fail → quay lại In Progress)
+  │     │     └── Reject (dev reject cuối cùng)
   │     │
   │     ├── Reject (dev reject sau khi investigate)
   │     ├── Deferred (dev hoãn sang sprint sau)
-  │     └── Need Info (dev can them info tu tester)
+  │     └── Need Info (dev cần thêm info từ tester)
   │
-  ├── Reject (dev reject ngay lap tuc)
+  ├── Reject (dev reject ngay lập tức)
   ├── Deferred (dev/PM hoãn ngay)
-  ├── Need Info (dev can them info ngay)
-  └── Duplicate (bug trung voi issue da co)
+  ├── Need Info (dev cần thêm info ngay)
+  └── Duplicate (bug trùng với issue đã có)
 ```
 
-### Status transitions hop le
+### Các chuyển đổi trạng thái hợp lệ
 
-| Tu | Den | Dieu kien |
+| Từ | Đến | Điều kiện |
 |---|---|---|
-| `New` | `Open` | AI tao Redmine issue thanh cong |
-| `Open` | `In Progress` | Dev pickup (sync tu Redmine) |
+| `New` | `Open` | AI tạo Redmine issue thành công |
+| `Open` | `In Progress` | Dev pickup (đồng bộ từ Redmine) |
 | `Open` | `Reject` | Dev reject ngay |
-| `Open` | `Deferred` | Dev/PM hoan |
-| `Open` | `Need Info` | Dev can them info |
-| `Open` | `Duplicate` | Bug trung voi issue da co |
+| `Open` | `Deferred` | Dev/PM hoãn |
+| `Open` | `Need Info` | Dev cần thêm info |
+| `Open` | `Duplicate` | Bug trùng với issue đã có |
 | `In Progress` | `Done` | Dev fix xong (done_ratio=100%) |
 | `In Progress` | `Reject` | Dev reject sau khi investigate |
-| `In Progress` | `Deferred` | Dev hoan giua chung |
-| `In Progress` | `Need Info` | Dev can them info |
+| `In Progress` | `Deferred` | Dev hoãn giữa chừng |
+| `In Progress` | `Need Info` | Dev cần thêm info |
 | `Done` | `Closed` | Tester retest OK |
 | `Done` | `Reopen` | Tester retest fail |
-| `Done` | `Reject` | Dev reject cuoi cung |
-| `Reopen` | `In Progress` | Dev fix lai |
-| `Need Info` | `Open` | Tester cung cap du info |
-| `Deferred` | `Open` | Sprint sau pickup lai |
-| `Duplicate` | *(end)* | Khong chuyen them |
-| `Closed` | *(end)* | Khong chuyen them |
-| `Reject` | *(end)* | Khong chuyen them |
+| `Done` | `Reject` | Dev reject cuối cùng |
+| `Reopen` | `In Progress` | Dev fix lại |
+| `Need Info` | `Open` | Tester cung cấp đủ info |
+| `Deferred` | `Open` | Sprint sau pickup lại |
+| `Duplicate` | *(kết thúc)* | Không chuyển thêm |
+| `Closed` | *(kết thúc)* | Không chuyển thêm |
+| `Reject` | *(kết thúc)* | Không chuyển thêm |
 
-### Mo ta tung status
+### Mô tả từng trạng thái
 
-| Status | Ai set? | Khi nao |
+| Trạng thái | Ai set? | Khi nào |
 |---|---|---|
-| `New` | Tester/AI | Vua phat hien bug, chua tao issue Redmine |
-| `Open` | AI (auto) | Da tao Redmine issue thanh cong |
-| `In Progress` | AI (sync tu Redmine) | Dev da chuyen status tren Redmine |
-| `Done` | AI (sync tu Redmine) | Dev danh dau done_ratio=100%, san sang retest |
-| `Reopen` | Tester/AI | Retest fail → cap nhat status tren Redmine |
-| `Closed` | Tester/AI | Retest OK → xac nhan fix thanh cong |
-| `Reject` | AI (sync tu Redmine) | Dev cho rang bug ngoai scope, duplicate, khong phai bug |
-| `Deferred` | AI (sync tu Redmine) | Dev/PM quyet dinh hoan sang sprint sau |
-| `Need Info` | AI (sync tu Redmine) | Dev can them info tu tester (khong reproduce duoc) |
-| `Duplicate` | AI (sync tu Redmine) | Bug trung voi issue da co |
+| `New` | Tester/AI | Vừa phát hiện bug, chưa tạo issue Redmine |
+| `Open` | AI (tự động) | Đã tạo Redmine issue thành công |
+| `In Progress` | AI (đồng bộ từ Redmine) | Dev đã chuyển trạng thái trên Redmine |
+| `Done` | AI (đồng bộ từ Redmine) | Dev đánh dấu done_ratio=100%, sẵn sàng retest |
+| `Reopen` | Tester/AI | Retest fail → cập nhật trạng thái trên Redmine |
+| `Closed` | Tester/AI | Retest OK → xác nhận fix thành công |
+| `Reject` | AI (đồng bộ từ Redmine) | Dev cho rằng bug ngoài scope, trùng, không phải bug |
+| `Deferred` | AI (đồng bộ từ Redmine) | Dev/PM quyết định hoãn sang sprint sau |
+| `Need Info` | AI (đồng bộ từ Redmine) | Dev cần thêm info từ tester (không reproduce được) |
+| `Duplicate` | AI (đồng bộ từ Redmine) | Bug trùng với issue đã có |
 
 ---
 
-## Google Sheets Structure
+## Cấu trúc Google Sheets
 
-### Sheet 1: TestCases — Test Case Definition + Execution Tracking
+### Sheet 1: TestCases — Định nghĩa Test Case + Theo dõi thực thi
 
-| Cot | Field | Type | Mo ta |
+| Cột | Trường | Kiểu | Mô tả |
 |---|---|---|---|
-| A | test_case_id | string | ID tu dong (TC-001, TC-002...) |
-| B | module | string | Module/Feature |
-| C | title | string | Tieu de test case |
-| D | precondition | string | Dieu kien tien quyet |
-| E | steps | string | Cac buoc thuc hien (moi buoc 1 dong) |
-| F | expected_result | string | Ket qua mong doi |
-| G | tester | string | Nguoi duoc giao test |
-| H | created_date | string | Ngay tao test case (YYYY-MM-DD) |
+| A | test_case_id | string | ID tự động (TC-001, TC-002...) |
+| B | module | string | Module/Chức năng |
+| C | title | string | Tiêu đề test case |
+| D | precondition | string | Điều kiện tiên quyết |
+| E | steps | string | Các bước thực hiện (mỗi bước 1 dòng) |
+| F | expected_result | string | Kết quả mong đợi |
+| G | tester | string | Người được giao test |
+| H | created_date | string | Ngày tạo test case (YYYY-MM-DD) |
 | I | last_test_result | string | Pass / Fail / Not Tested |
-| J | last_test_date | string | Ngay test gan nhat (YYYY-MM-DD) |
+| J | last_test_date | string | Ngày test gần nhất (YYYY-MM-DD) |
 
-### Sheet 2: Bugs — Work Tracking
+### Sheet 2: Bugs — Theo dõi công việc
 
-| Cot | Field | Type | Mo ta |
+| Cột | Trường | Kiểu | Mô tả |
 |---|---|---|---|
-| A | bug_id | string | ID tu dong (BUG-001...) |
-| B | test_case_id | string | Link ve test case tuong ung |
-| C | title | string | Tieu de bug |
-| D | description | string | Mo ta bug (steps to reproduce, actual, expected) |
+| A | bug_id | string | ID tự động (BUG-001...) |
+| B | test_case_id | string | Liên kết về test case tương ứng |
+| C | title | string | Tiêu đề bug |
+| D | description | string | Mô tả bug (cách tái hiện, thực tế, mong đợi) |
 | E | priority | string | High / Medium / Low |
 | F | status | string | New / Open / In Progress / Done / Reopen / Closed / Reject / Deferred / Need Info / Duplicate |
-| G | assigned_to | string | Ten dev duoc assign |
-| H | redmine_issue_id | string | Redmine issue ID (1 ID duy nhat, luon giu nguyen) |
-| I | redmine_status | string | Trang thai tren Redmine (sync tu Redmine) |
-| J | reporter | string | Nguoi bao bug |
-| K | report_date | string | Ngay bao bug (YYYY-MM-DD) |
-| L | reject_reason | string | Ly do dev reject (lay tu Redmine notes) |
-| M | duplicate_of | string | Bug ID goc neu status = Duplicate |
+| G | assigned_to | string | Tên dev được assign |
+| H | redmine_issue_id | string | Redmine issue ID (1 ID duy nhất, luôn giữ nguyên) |
+| I | redmine_status | string | Trạng thái trên Redmine (đồng bộ từ Redmine) |
+| J | reporter | string | Người báo bug |
+| K | report_date | string | Ngày báo bug (YYYY-MM-DD) |
+| L | reject_reason | string | Lý do dev reject (lấy từ Redmine notes) |
+| M | duplicate_of | string | Bug ID gốc nếu status = Duplicate |
 
-### redmine_issue_id — luon 1 ID duy nhat
+### redmine_issue_id — Luôn 1 ID duy nhất
 
 ```
-Luon la: "1234"  (issue goc, khong bao gio thay doi)
-Reopen → cap nhat status tren Redmine, KHONG tao subtask
+Luôn là: "1234"  (issue gốc, không bao giờ thay đổi)
+Reopen → cập nhật trạng thái trên Redmine, KHÔNG tạo subtask
 ```
 
 ---
 
-## Files
+## Các file
 
-### Files moi
+### Files mới
 
-| File | Mo ta |
+| File | Mô tả |
 |---|---|
-| src/redmine_mcp_server/google_sheets_client.py | Client factory: tao Sheets service tu Service Account JSON |
-| src/redmine_mcp_server/handler_impl/tools/google_sheets.py | Impl functions cho Google Sheets operations |
-| src/redmine_mcp_server/serializers/google_sheets.py | Sheet data serialization (validate, transform) |
+| src/redmine_mcp_server/google_sheets_client.py | Factory client: tạo Sheets service từ Service Account JSON |
+| src/redmine_mcp_server/handler_impl/tools/google_sheets.py | Hàm triển khai cho các thao tác Google Sheets |
+| src/redmine_mcp_server/serializers/google_sheets.py | serialize dữ liệu Sheet (validate, transform) |
 | tests/test_google_sheets_tools.py | Unit tests |
 
-### Files sua doi
+### Files sửa đổi
 
-| File | Thay doi |
+| File | Thay đổi |
 |---|---|
-| pyproject.toml | Them dependencies |
-| src/redmine_mcp_server/redmine_handler.py | Import + register MCP tools |
+| pyproject.toml | Thêm dependencies |
+| src/redmine_mcp_server/redmine_handler.py | Import + đăng ký MCP tools |
 | src/redmine_mcp_server/handler_impl/tools/__init__.py | Export impl functions |
-| .env.example | Them env vars |
-| .env.docker | Them env vars |
+| .env.example | Thêm env vars |
+| .env.docker | Thêm env vars |
 | docker-compose.yml | Mount service account credentials |
-| .gitignore | Them credentials/ folder |
+| .gitignore | Thêm thư mục credentials/ |
 
 ---
 
-## Environment Variables
+## Biến môi trường
 
 ```env
-# Google Sheets Configuration
+# Cấu hình Google Sheets
 GOOGLE_SHEETS_CREDENTIALS_FILE=/app/credentials/service-account.json
 GOOGLE_SHEETS_SPREADSHEET_ID=your_spreadsheet_id_here
 ```
 
 ---
 
-## MCP Tools (8 tools)
+## Công cụ MCP (8 tools)
 
 ### Tool 1: read_google_sheet
 
-Doc data tu 1 range tren Google Sheets.
+Đọc dữ liệu từ 1 range trên Google Sheets.
 
 ```python
 @mcp.tool()
 async def read_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    range: Annotated[str, Field(description="Range to read, e.g. 'TestCases!A1:J100'")],
+    range: Annotated[str, Field(description="Range cần đọc, ví dụ 'TestCases!A1:J100'")],
 ) -> Dict[str, Any]:
 ```
 
-Return:
+Kết quả:
 ```json
 {
   "headers": ["test_case_id", "module", "title", "precondition", "steps", "expected_result", "tester", "created_date", "last_test_result", "last_test_date"],
-  "rows": [["TC-001", "Login", "Valid login", "User has account", "1. Go to login\n2. Enter creds", "Redirect to dashboard", "tester1", "2025-08-26", "Pass", "2025-08-27"]],
+  "rows": [["TC-001", "Login", "Đăng nhập hợp lệ", "User có tài khoản", "1. Vào trang login\n2. Nhập thông tin", "Chuyển đến trang chủ", "tester1", "2025-08-26", "Pass", "2025-08-27"]],
   "total_rows": 15
 }
 ```
@@ -206,18 +206,18 @@ Return:
 
 ### Tool 2: write_google_sheet
 
-Ghi data vao range cu the (overwrite).
+Ghi dữ liệu vào range cụ thể (ghi đè).
 
 ```python
 @mcp.tool()
 async def write_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    range: Annotated[str, Field(description="Range to write, e.g. 'TestCases!A1:J16'")],
-    values: Annotated[List[List[str]], Field(description="2D array of values to write")],
+    range: Annotated[str, Field(description="Range cần ghi, ví dụ 'TestCases!A1:J16'")],
+    values: Annotated[List[List[str]], Field(description="Mảng 2 chiều chứa dữ liệu cần ghi")],
 ) -> Dict[str, Any]:
 ```
 
-Return:
+Kết quả:
 ```json
 {
   "updated_cells": 160,
@@ -230,18 +230,18 @@ Return:
 
 ### Tool 3: append_google_sheet
 
-Them rows moi vao cuoi sheet (khong overwrite).
+Thêm rows mới vào cuối sheet (không ghi đè).
 
 ```python
 @mcp.tool()
 async def append_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    sheet_name: Annotated[str, Field(description="Sheet name to append to")],
-    values: Annotated[List[List[str]], Field(description="2D array of rows to append")],
+    sheet_name: Annotated[str, Field(description="Tên sheet cần thêm dữ liệu")],
+    values: Annotated[List[List[str]], Field(description="Mảng 2 chiều chứa các rows cần thêm")],
 ) -> Dict[str, Any]:
 ```
 
-Return:
+Kết quả:
 ```json
 {
   "updated_rows": 5,
@@ -254,7 +254,7 @@ Return:
 
 ### Tool 4: get_sheet_metadata
 
-Lay thong tin ve cac sheet trong spreadsheet.
+Lấy thông tin về các sheet trong spreadsheet.
 
 ```python
 @mcp.tool()
@@ -263,10 +263,10 @@ async def get_sheet_metadata(
 ) -> Dict[str, Any]:
 ```
 
-Return:
+Kết quả:
 ```json
 {
-  "spreadsheet_title": "QA Test Management",
+  "spreadsheet_title": "Quản lý kiểm thử QA",
   "sheets": [
     {
       "name": "TestCases",
@@ -288,38 +288,38 @@ Return:
 
 ### Tool 5: create_test_cases_on_sheet
 
-Parse test cases tu markdown/JSON → push len Google Sheets. Tu dong tao Sheet "Bugs" voi headers san sang neu chua co.
+Phân tích test cases từ markdown/JSON → đẩy lên Google Sheets. Tự động tạo Sheet "Bugs" với headers sẵn sàng nếu chưa có.
 
 ```python
 @mcp.tool()
 async def create_test_cases_on_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    sheet_name: Annotated[str, Field(description="Target sheet name, e.g. 'TestCases'")],
-    test_cases: Annotated[List[Dict[str, str]], Field(description="List of test case dicts with keys: title, module, precondition, steps, expected_result, tester")],
-    clear_existing: Annotated[bool, Field(description="Clear existing data before writing (keep headers)")] = False,
+    sheet_name: Annotated[str, Field(description="Tên sheet đích, ví dụ 'TestCases'")],
+    test_cases: Annotated[List[Dict[str, str]], Field(description="Danh sách test case dict với các khóa: title, module, precondition, steps, expected_result, tester")],
+    clear_existing: Annotated[bool, Field(description="Xóa dữ liệu cũ trước khi ghi (giữ headers)")] = False,
 ) -> Dict[str, Any]:
 ```
 
-Flow:
-1. Validate input test cases
-2. Generate test_case_id tu dong (TC-001, TC-002...)
-3. Set created_date = today, last_test_result = "Not Tested"
-4. Kiem tra Sheet "Bugs" co ton tai chua → neu chua tao moi voi headers
-5. Neu clear_existing=True → xoa data tu row 2 tro di
-6. Append headers (neu sheet trong) + rows vao TestCases
-7. Return summary
+Quy trình:
+1. Validate dữ liệu đầu vào
+2. Tạo test_case_id tự động (TC-001, TC-002...)
+3. Đặt created_date = hôm nay, last_test_result = "Not Tested"
+4. Kiểm tra Sheet "Bugs" đã tồn tại chưa → nếu chưa tạo mới với headers
+5. Nếu clear_existing=True → xóa dữ liệu từ row 2 trở đi
+6. Thêm headers (nếu sheet trống) + rows vào TestCases
+7. Trả về tổng kết
 
-TestCases headers khi tao moi:
+Headers khi tạo mới TestCases:
 ```
 test_case_id | module | title | precondition | steps | expected_result | tester | created_date | last_test_result | last_test_date
 ```
 
-Bugs headers khi tao moi:
+Headers khi tạo mới Bugs:
 ```
 bug_id | test_case_id | title | description | priority | status | assigned_to | redmine_issue_id | redmine_status | reporter | report_date | reject_reason | duplicate_of
 ```
 
-Return:
+Kết quả:
 ```json
 {
   "created": 15,
@@ -336,36 +336,36 @@ Return:
 
 ### Tool 6: create_redmine_issues_from_bugs
 
-Doc bug rows tu Sheet → tao Redmine issues → ghi issue ID nguoc lai.
+Đọc bug rows từ Sheet → tạo Redmine issues → ghi issue ID ngược lại.
 
 ```python
 @mcp.tool()
 async def create_redmine_issues_from_bugs(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    sheet_name: Annotated[str, Field(description="Bug sheet name, e.g. 'Bugs'")],
-    project_id: Annotated[int, Field(description="Redmine project ID")],
-    tracker_id: Annotated[int, Field(description="Redmine tracker ID (1=Bug, 2=Feature, 3=Task)")],
-    assigned_to_id: Annotated[Optional[int], Field(description="Default assignee user ID on Redmine")] = None,
-    bug_row_range: Annotated[Optional[str], Field(description="Specific range, e.g. 'A2:M50'. None = all rows with status 'New'")] = None,
+    sheet_name: Annotated[str, Field(description="Tên sheet bug, ví dụ 'Bugs'")],
+    project_id: Annotated[int, Field(description="ID dự án Redmine")],
+    tracker_id: Annotated[int, Field(description="ID tracker Redmine (1=Bug, 2=Feature, 3=Task)")],
+    assigned_to_id: Annotated[Optional[int], Field(description="ID user được assign mặc định trên Redmine")] = None,
+    bug_row_range: Annotated[Optional[str], Field(description="Range cụ thể, ví dụ 'A2:M50'. None = tất cả rows có trạng thái 'New'")] = None,
 ) -> Dict[str, Any]:
 ```
 
-Flow:
-1. Doc bug rows tu Sheet (filter: status = "New" va redmine_issue_id trong)
-2. Validate status transitions: chi cho phep New → Open
-3. Map fields: title → subject, description → description, priority → priority_id, assigned_to → assigned_to_id
-4. Goi create_redmine_issue (su dung existing tool)
-5. Ghi redmine_issue_id (column H) + update status (column F) → "Open"
-6. Return summary
+Quy trình:
+1. Đọc bug rows từ Sheet (lọc: status = "New" và redmine_issue_id trống)
+2. Validate chuyển đổi trạng thái: chỉ cho phép New → Open
+3. Ánh xạ trường: title → subject, description → description, priority → priority_id, assigned_to → assigned_to_id
+4. Gọi create_redmine_issue (sử dụng tool hiện có)
+5. Ghi redmine_issue_id (cột H) + cập nhật status (cột F) → "Open"
+6. Trả về tổng kết
 
-Return:
+Kết quả:
 ```json
 {
   "created": 5,
   "failed": 0,
   "issues": [
-    {"bug_id": "BUG-001", "redmine_issue_id": 1234, "title": "Login fails with special chars"},
-    {"bug_id": "BUG-002", "redmine_issue_id": 1235, "title": "Dashboard timeout on large dataset"}
+    {"bug_id": "BUG-001", "redmine_issue_id": 1234, "title": "Đăng nhập lỗi khi nhập ký tự đặc biệt"},
+    {"bug_id": "BUG-002", "redmine_issue_id": 1235, "title": "Dashboard timeout khi dữ liệu lớn"}
   ],
   "errors": []
 }
@@ -375,39 +375,39 @@ Return:
 
 ### Tool 7: sync_redmine_status_to_sheet
 
-Doc issue IDs tu Sheet "Bugs" → check Redmine → update Sheet. Detect reject/deferred/need_info/duplicate o moi giai doan.
+Đọc issue IDs từ Sheet "Bugs" → kiểm tra Redmine → cập nhật Sheet. Phát hiện reject/deferred/need_info/duplicate ở mọi giai đoạn.
 
 ```python
 @mcp.tool()
 async def sync_redmine_status_to_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    bug_sheet: Annotated[str, Field(description="Bug sheet name")] = "Bugs",
-    test_case_sheet: Annotated[str, Field(description="Test case sheet name")] = "TestCases",
+    bug_sheet: Annotated[str, Field(description="Tên sheet bug")] = "Bugs",
+    test_case_sheet: Annotated[str, Field(description="Tên sheet test case")] = "TestCases",
 ) -> Dict[str, Any]:
 ```
 
-Flow:
-1. Doc tat ca bug rows tu Bugs sheet
-2. Chi process nhung row co redmine_issue_id (column H khong trong)
-3. Voi moi issue ID: goi get_redmine_issue → lay status name + done_ratio + journals
-4. Map Redmine status → Sheet status:
+Quy trình:
+1. Đọc tất cả bug rows từ Bugs sheet
+2. Chỉ xử lý những row có redmine_issue_id (cột H không trống)
+3. Với mỗi issue ID: gọi get_redmine_issue → lấy status name + done_ratio + journals
+4. Ánh xạ Redmine status → Sheet status:
 
-| Redmine status | Sheet status | Xu ly them |
+| Redmine status | Sheet status | Xử lý thêm |
 |---|---|---|
 | New | Open | — |
 | In Progress | In Progress | — |
 | Resolved (done_ratio=100%) | Done | — |
-| Closed | Closed | Cap nhat TestCases: last_test_result = "Pass" |
-| Rejected | Reject | Lay reject reason tu notes → column L |
-| Rejected (contains "duplicate") | Duplicate | Parse issue ID tuong ung → column M |
+| Closed | Closed | Cập nhật TestCases: last_test_result = "Pass" |
+| Rejected | Reject | Lấy lý do reject từ notes → cột L |
+| Rejected (chứa "duplicate") | Duplicate | Phân tích issue ID tương ứng → cột M |
 | Deferred | Deferred | — |
 | Need Info / Feedback | Need Info | — |
 
-5. Validate status transitions hop le truoc khi cap nhat
-6. Neu status chuyen thanh "Closed" → cap nhat TestCases: last_test_result = "Pass", last_test_date = today
-7. Return summary
+5. Validate chuyển đổi trạng thái hợp lệ trước khi cập nhật
+6. Nếu trạng thái chuyển thành "Closed" → cập nhật TestCases: last_test_result = "Pass", last_test_date = hôm nay
+7. Trả về tổng kết
 
-Return:
+Kết quả:
 ```json
 {
   "checked": 20,
@@ -430,37 +430,37 @@ Return:
 
 ### Tool 8: reopen_bug
 
-Cap nhat status tren Redmine khi tester retest fail. Giu nguyen issue ID, KHONG tao subtask.
+Cập nhật trạng thái trên Redmine khi tester retest fail. Giữ nguyên issue ID, KHÔNG tạo subtask.
 
 ```python
 @mcp.tool()
 async def reopen_bug(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
-    sheet_name: Annotated[str, Field(description="Bug sheet name, e.g. 'Bugs'")],
-    bug_id: Annotated[str, Field(description="Bug ID to reopen, e.g. 'BUG-001'")],
-    reopen_note: Annotated[str, Field(description="Note describing why the bug is reopened (what still fails)")],
-    project_id: Annotated[int, Field(description="Redmine project ID")],
+    sheet_name: Annotated[str, Field(description="Tên sheet bug, ví dụ 'Bugs'")],
+    bug_id: Annotated[str, Field(description="Bug ID cần reopen, ví dụ 'BUG-001'")],
+    reopen_note: Annotated[str, Field(description="Ghi chú lý do reopen (phần nào vẫn còn lỗi)")],
+    project_id: Annotated[int, Field(description="ID dự án Redmine")],
 ) -> Dict[str, Any]:
 ```
 
-Flow:
-1. Doc bug row tu Sheet theo bug_id
-2. Validate: chi cho phep Reopen tu trang thai "Done"
-3. Lay redmine_issue_id tu column H (1 ID duy nhat)
-4. Cap nhat status tren Redmine: update status → "New" (hoac status ma Redmine su dung cho "chua fix")
-5. Them reopen_note vao Redmine journal/notes
-6. Update column F → "Reopen"
-7. Update column I → "New" (trang thai tren Redmine)
-8. Validate: sau Reopen, trang thai tiep theo chi co the la "In Progress"
-9. Return summary
+Quy trình:
+1. Đọc bug row từ Sheet theo bug_id
+2. Validate: chỉ cho phép Reopen từ trạng thái "Done"
+3. Lấy redmine_issue_id từ cột H (1 ID duy nhất)
+4. Cập nhật trạng thái trên Redmine: update status → "New" (hoặc trạng thái mà Redmine dùng cho "chưa fix")
+5. Thêm reopen_note vào Redmine journal/notes
+6. Cập nhật cột F → "Reopen"
+7. Cập nhật cột I → "New" (trạng thái trên Redmine)
+8. Validate: sau Reopen, trạng thái tiếp theo chỉ có thể là "In Progress"
+9. Trả về tổng kết
 
-Return:
+Kết quả:
 ```json
 {
   "success": true,
   "redmine_issue_id": 1234,
-  "title": "Login fails with special chars",
-  "reopen_note": "Still fails when password contains special chars: @, #, $"
+  "title": "Đăng nhập lỗi khi nhập ký tự đặc biệt",
+  "reopen_note": "Vẫn lỗi khi mật khẩu chứa ký tự đặc biệt: @, #, $"
 }
 ```
 
@@ -471,7 +471,7 @@ Return:
 ```toml
 # pyproject.toml
 dependencies = [
-    # ...existing...
+    # ...hiện có...
     "google-api-python-client>=2.100.0",
     "google-auth>=2.23.0",
     "google-auth-httplib2>=0.1.0",
@@ -480,19 +480,19 @@ dependencies = [
 
 ---
 
-## Architecture
+## Kiến trúc
 
 ```
 src/redmine_mcp_server/
-├── google_sheets_client.py              ← NEW
+├── google_sheets_client.py              ← MỚI
 │   class GoogleSheetsManager:
 │     __init__(credentials_file: str)
 │     get_service() → googleapiclient.discovery.Resource
-│     - Lazy singleton per credentials file
-│     - Auto-reconnect on auth errors
+│     - Singleton懒加载 theo credentials file
+│     - Tự động kết nối lại khi lỗi xác thực
 │
 ├── handler_impl/tools/
-│   ├── google_sheets.py                 ← NEW
+│   ├── google_sheets.py                 ← MỚI
 │   │   read_google_sheet_impl()
 │   │   write_google_sheet_impl()
 │   │   append_google_sheet_impl()
@@ -502,19 +502,19 @@ src/redmine_mcp_server/
 │   │   sync_redmine_status_to_sheet_impl()
 │   │   reopen_bug_impl()
 │   │
-│   └── __init__.py                      ← MODIFY: add exports
+│   └── __init__.py                      ← SỬA: thêm exports
 │
 ├── serializers/
-│   └── google_sheets.py                 ← NEW
+│   └── google_sheets.py                 ← MỚI
 │     _validate_test_case(row) → dict
 │     _validate_bug(row) → dict
 │     _build_test_case_id(existing_ids) → str
 │     _build_bug_id(existing_ids) → str
 │     _map_priority_to_redmine(priority) → int
 │     _is_valid_status_transition(current, target) → bool
-│     _parse_redmine_issue_id(id_string) → str  (luon 1 ID)
+│     _parse_redmine_issue_id(id_string) → str  (luôn 1 ID)
 │
-├── redmine_handler.py                   ← MODIFY: register tools
+├── redmine_handler.py                   ← SỬA: đăng ký tools
 │   @mcp.tool() read_google_sheet(...)
 │   @mcp.tool() write_google_sheet(...)
 │   @mcp.tool() append_google_sheet(...)
@@ -533,27 +533,27 @@ src/redmine_mcp_server/
 # docker-compose.yml
 services:
   redmine-mcp-server:
-    # ...existing...
+    # ...hiện có...
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
-      - ./credentials:/app/credentials:ro    # ← NEW
+      - ./credentials:/app/credentials:ro    # ← MỚI
     env_file:
       - .env.docker
 ```
 
 ```env
 # .env.docker
-# ...existing...
+# ...hiện có...
 GOOGLE_SHEETS_CREDENTIALS_FILE=/app/credentials/service-account.json
 GOOGLE_SHEETS_SPREADSHEET_ID=your_id_here
 ```
 
 ---
 
-## Error Handling
+## Xử lý lỗi
 
-Follow existing pattern tu `handler_impl/errors.py`:
+Theo pattern hiện có từ `handler_impl/errors.py`:
 
 ```python
 # google_sheets.py
@@ -570,70 +570,70 @@ async def read_google_sheet_impl(...):
         return {"error": str(e)}
     except HttpError as e:
         if e.resp.status == 404:
-            return {"error": f"Spreadsheet not found: {spreadsheet_id}"}
+            return {"error": f"Không tìm thấy spreadsheet: {spreadsheet_id}"}
         elif e.resp.status == 403:
-            return {"error": "Access denied. Check service account permissions."}
+            return {"error": "Truy cập bị từ chối. Kiểm tra quyền service account."}
         else:
-            return {"error": f"Google Sheets API error: {e}"}
+            return {"error": f"Lỗi Google Sheets API: {e}"}
     except Exception as e:
-        return {"error": f"Unexpected error reading sheet: {e}"}
+        return {"error": f"Lỗi không mong đợi khi đọc sheet: {e}"}
 ```
 
 ---
 
-## Skills (tao sau khi tools xong)
+## Kỹ năng (tạo sau khi tools xong)
 
-| Skill | Trigger Phrase | Mo ta |
+| Kỹ năng | Câu kích hoạt | Mô tả |
 |---|---|---|
-| testcase-generation | "Tao test case tu user story nay..." | AI doc file user story → tao test cases → push Sheet |
-| bug-reporting | "Ghi bug nay vao sheet..." | AI tao bug row tren Sheet tu mo ta |
-| bug-to-redmine | "Tao issue cho cac bug..." | Doc Sheet → tao Redmine issues + assign |
-| status-sync | "Check dev fix chua..." | Doc Sheet → check Redmine → update Sheet |
-| reopen-bug | "Reopen bug nay..." | Cap nhat status tren Redmine + update Sheet |
+| testcase-generation | "Tạo test case từ user story này..." | AI đọc file user story → tạo test cases → đẩy Sheet |
+| bug-reporting | "Ghi bug này vào sheet..." | AI tạo bug row trên Sheet từ mô tả |
+| bug-to-redmine | "Tạo issue cho các bug..." | Đọc Sheet → tạo Redmine issues + assign |
+| status-sync | "Check dev fix chưa..." | Đọc Sheet → kiểm tra Redmine → cập nhật Sheet |
+| reopen-bug | "Reopen bug này..." | Cập nhật trạng thái trên Redmine + cập nhật Sheet |
 
 ---
 
-## Implementation Order
+## Thứ tự triển khai
 
-| Step | Task | Est. |
+| Bước | Công việc | Ước tính |
 |---|---|---|
-| 1 | google_sheets_client.py — Client factory + env config | 30 min |
-| 2 | serializers/google_sheets.py — Validation + transform + status transitions | 45 min |
-| 3 | handler_impl/tools/google_sheets.py — 4 CRUD tools co ban | 1h |
-| 4 | Register tools trong redmine_handler.py | 15 min |
-| 5 | Tool 5: create_test_cases_on_sheet (2 sheets headers) | 45 min |
-| 6 | Tool 6: create_redmine_issues_from_bugs | 1h |
-| 7 | Tool 7: sync_redmine_status_to_sheet (detect reject/deferred/need_info/duplicate) | 1.5h |
-| 8 | Tool 8: reopen_bug (giu nguyen issue ID) | 45 min |
-| 9 | Unit tests | 1h |
-| 10 | Docker + env config | 15 min |
-| 11 | Skills definitions | 1h |
-| 12 | Docs update | 30 min |
+| 1 | google_sheets_client.py — Factory client + env config | 30 phút |
+| 2 | serializers/google_sheets.py — Validate + transform + trạng thái chuyển đổi | 45 phút |
+| 3 | handler_impl/tools/google_sheets.py — 4 công cụ CRUD cơ bản | 1 giờ |
+| 4 | Đăng ký tools trong redmine_handler.py | 15 phút |
+| 5 | Tool 5: create_test_cases_on_sheet (2 sheet headers) | 45 phút |
+| 6 | Tool 6: create_redmine_issues_from_bugs | 1 giờ |
+| 7 | Tool 7: sync_redmine_status_to_sheet (phát hiện reject/deferred/need_info/duplicate) | 1.5 giờ |
+| 8 | Tool 8: reopen_bug (giữ nguyên issue ID) | 45 phút |
+| 9 | Unit tests | 1 giờ |
+| 10 | Docker + env config | 15 phút |
+| 11 | Định nghĩa kỹ năng | 1 giờ |
+| 12 | Cập nhật tài liệu | 30 phút |
 
 ---
 
-## Da quyet dinh
+## Đã quyết định
 
-- [x] 2 sheets (TestCases + Bugs) — khong tach 3 sheets
-- [x] TestCases = definition + execution tracking (last_test_result + last_test_date)
-- [x] Bugs = work tracking + Redmine sync
-- [x] Sync chi tu Bugs sheet (khong sync tu TestCases)
-- [x] Chi giu priority (bo severity) — tester tu set High/Medium/Low
-- [x] 10 status values: New, Open, In Progress, Done, Reopen, Closed, Reject, Deferred, Need Info, Duplicate
-- [x] Reject/duplicate/deferred/need_info detect o moi giai doan (khong chi sau Done)
-- [x] Reopen = giu nguyen issue ID, KHONG tao subtask
-- [x] Luon 1 ID duy nhat trong redmine_issue_id column
-- [x] Status transitions validate hop le
-- [x] Duplicate: them column duplicate_of, parse reject reason chua "duplicate"
-- [x] Need Info: dev can them info tu tester
-- [x] Deferred: dev/PM hoan sang sprint sau
-- [x] TestCases cap nhat last_test_result = "Pass" khi bug linked Closed
-- [x] AI tao san Bugs sheet headers khi push test cases
-- [x] Priority mapping: de xay sau (khong lien quan den issue hien tai)
+- [x] 2 sheet (TestCases + Bugs) — không tách 3 sheet
+- [x] TestCases = định nghĩa + theo dõi thực thi (last_test_result + last_test_date)
+- [x] Bugs = theo dõi công việc + đồng bộ Redmine
+- [x] Đồng bộ chỉ từ Bugs sheet (không đồng bộ từ TestCases)
+- [x] Chỉ giữ priority (bỏ severity) — tester tự set High/Medium/Low
+- [x] 10 giá trị trạng thái: New, Open, In Progress, Done, Reopen, Closed, Reject, Deferred, Need Info, Duplicate
+- [x] Phát hiện reject/duplicate/deferred/need_info ở mọi giai đoạn (không chỉ sau Done)
+- [x] Reopen = giữ nguyên issue ID, KHÔNG tạo subtask
+- [x] Luôn 1 ID duy nhất trong cột redmine_issue_id
+- [x] Validate chuyển đổi trạng thái hợp lệ
+- [x] Duplicate: thêm cột duplicate_of, phân tích reject reason chứa "duplicate"
+- [x] Need Info: dev cần thêm info từ tester
+- [x] Deferred: dev/PM hoãn sang sprint sau
+- [x] TestCases cập nhật last_test_result = "Pass" khi bug linked Closed
+- [x] AI tạo sẵn Bugs sheet headers khi push test cases
+- [x] Ánh xạ Priority: để xây sau (không liên quan đến issue hiện tại)
 
-## Con open questions
+## Các câu hỏi còn mở
 
-- **Redmine status names**: Can biet exact status names tren Redmine instance de map dung
-- **Assignee mapping**: assigned_to trong Sheet la ten hay ID? Can resolve ten → user ID tren Redmine
-- **Read-only mode**: Google Sheets tools co can bi anh huong boi REDMINE_MCP_READ_ONLY khong?
-- **Redmine status cho Reopen**: Khi reopen, status tren Redmine nen dat la "New" hay "Reopened"? Tuy Redmine config
+- **Tên trạng thái Redmine**: Cần biết tên chính xác các trạng thái trên Redmine instance để ánh xạ đúng
+- **Ánh xạ assignee**: assigned_to trong Sheet là tên hay ID? Cần chuyển tên → user ID trên Redmine
+- **Chế độ chỉ đọc**: Các công cụ Google Sheets có bị ảnh hưởng bởi REDMINE_MCP_READ_ONLY không?
+- **Trạng thái Redmine cho Reopen**: Khi reopen, trạng thái trên Redmine nên đặt là "New" hay "Reopened"? Tùy cấu hình Redmine
