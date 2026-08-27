@@ -7,6 +7,8 @@ import os
 import threading
 from typing import Any, Dict, List, Optional
 
+from .serializers.google_sheets import BUGS_HEADERS, TESTCASES_HEADERS
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -144,6 +146,139 @@ class GoogleSheetsManager:
             .batchUpdate(spreadsheetId=spreadsheet_id, body=request_body)
             .execute()
         )
+
+    def create_spreadsheet(self, title: str) -> Dict[str, Any]:
+        """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+
+        Includes styled headers (blue bg, white bold text), frozen header row,
+        and auto-resized columns.
+
+        Args:
+            title: The spreadsheet title.
+
+        Returns:
+            Dict with spreadsheet_id, spreadsheet_url, and sheet IDs.
+
+        Raises:
+            Exception: On API failure.
+        """
+        service = self.get_service()
+
+        # Step 1: Create spreadsheet
+        create_body = {
+            "properties": {"title": title},
+            "sheets": [
+                {"properties": {"title": "TestCases"}},
+                {"properties": {"title": "Bugs"}},
+            ],
+        }
+        result = service.spreadsheets().create(body=create_body).execute()
+
+        spreadsheet_id = result["spreadsheetId"]
+        spreadsheet_url = result["spreadsheetUrl"]
+
+        # Get sheet IDs from metadata
+        sheets_info = {}
+        for sheet in result.get("sheets", []):
+            props = sheet.get("properties", {})
+            sheets_info[props["title"]] = props["sheetId"]
+
+        # Step 2: Write headers
+        test_cols = len(TESTCASES_HEADERS)
+        bug_cols = len(BUGS_HEADERS)
+        test_last_col = chr(ord("A") + test_cols - 1) if test_cols <= 26 else "Z"
+        bug_last_col = chr(ord("A") + bug_cols - 1) if bug_cols <= 26 else "Z"
+
+        headers_body = {
+            "valueInputOption": "USER_ENTERED",
+            "data": [
+                {
+                    "range": f"TestCases!A1:{test_last_col}1",
+                    "values": [TESTCASES_HEADERS],
+                },
+                {
+                    "range": f"Bugs!A1:{bug_last_col}1",
+                    "values": [BUGS_HEADERS],
+                },
+            ],
+        }
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id, body=headers_body
+        ).execute()
+
+        # Step 3: Style headers + freeze row + auto-resize
+        def hex_to_rgb(hex_color: str) -> Dict[str, float]:
+            h = hex_color.lstrip("#")
+            return {
+                "red": int(h[0:2], 16) / 255.0,
+                "green": int(h[2:4], 16) / 255.0,
+                "blue": int(h[4:6], 16) / 255.0,
+            }
+
+        header_format = {
+            "backgroundColor": hex_to_rgb("#4472C4"),
+            "textFormat": {
+                "foregroundColor": hex_to_rgb("#FFFFFF"),
+                "fontSize": 11,
+                "bold": True,
+            },
+            "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE",
+        }
+
+        requests = []
+        for sheet_name in ["TestCases", "Bugs"]:
+            sheet_id = sheets_info[sheet_name]
+            num_cols = test_cols if sheet_name == "TestCases" else bug_cols
+
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": num_cols,
+                        },
+                        "cell": {"userEnteredFormat": header_format},
+                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                    }
+                }
+            )
+            requests.append(
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id,
+                            "gridProperties": {"frozenRowCount": 1},
+                        },
+                        "fields": "gridProperties.frozenRowCount",
+                    }
+                }
+            )
+            requests.append(
+                {
+                    "autoResizeDimensions": {
+                        "dimensions": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 0,
+                            "endIndex": num_cols,
+                        }
+                    }
+                }
+            )
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests}
+        ).execute()
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "spreadsheet_url": spreadsheet_url,
+            "sheets": sheets_info,
+        }
 
 
 google_sheets_manager = GoogleSheetsManager()

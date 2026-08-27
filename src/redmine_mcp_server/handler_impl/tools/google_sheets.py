@@ -950,3 +950,31 @@ async def set_sheet_data_validation_impl(
         return handle_error(
             e, f"setting data validation on {sheet_name} column {column}"
         )
+
+
+# --- Tool 10: create_test_sheet_structure ---
+
+
+async def create_test_sheet_structure_impl(
+    title: str,
+    *,
+    get_sheets_service: Callable[[], Any],
+    handle_error: HandleErrorFn,
+) -> Dict[str, Any]:
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets, styled headers, frozen row, auto-resized columns."""
+    try:
+        from redmine_mcp_server.google_sheets_client import google_sheets_manager
+
+        result = google_sheets_manager.create_spreadsheet(title)
+        return {
+            "success": True,
+            "spreadsheet_id": result["spreadsheet_id"],
+            "spreadsheet_url": result["spreadsheet_url"],
+            "sheets": result["sheets"],
+            "message": (
+                f"Spreadsheet '{title}' created with sheets: TestCases, Bugs. "
+                f"Share it with the service account email before using QA skills."
+            ),
+        }
+    except Exception as e:
+        return handle_error(e, f"creating spreadsheet '{title}'")
