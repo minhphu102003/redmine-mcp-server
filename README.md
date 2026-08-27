@@ -66,7 +66,41 @@ docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 
 See [.env.example](./.env.example) for all available settings (read-only mode, attachment cleanup, SSL, SSRF protection, ...).
 
-### 3. Connect your MCP client
+### 3. Google Sheets (for testers)
+
+If you use the QA test management skills (`testcase-generation`, `bug-reporting`, etc.), you need to set up Google Sheets access.
+
+**Step 1: Create a Service Account** (one-time, project admin)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a project (or use existing) → enable **Google Sheets API**
+3. **APIs & Services → Credentials → Create Credentials → Service Account**
+4. Name it (e.g. `redmine-mcp-sheets`) → **Create and Continue** → **Done**
+5. Click the service account → **Keys → Add Key → Create new key → JSON**
+6. Save the JSON file as `credentials/service-account.json`
+
+**Step 2: Get the Service Account Email**
+
+Your service account email is:
+```
+redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com
+```
+
+**Step 3: Create your Google Sheet and share it**
+
+1. Go to [sheets.new](https://sheets.new) → create a new spreadsheet
+2. Name it (e.g. `MyProject - QA Test Management`)
+3. Click **Share** → paste `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` → choose **Editor** → **Send**
+4. Copy the spreadsheet ID from the URL:
+   ```
+   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+                                         ^^^^^^^^^^^^^^^^^
+   ```
+5. During `redmine init` (tester flow), paste this URL or ID when asked
+
+The MCP server authenticates with the service account — you only need to share your sheet with its email. The service account email is safe to share; without the JSON key file, it grants no access.
+
+### 4. Connect your MCP client
 
 The server exposes MCP at `http://127.0.0.1:8000/mcp`. Register it in your agent. The `X-Redmine-*` headers are required only when `REDMINE_AUTH_MODE=dynamic` — in the default `legacy` mode the server uses the API key from `.env.docker` and ignores them:
 
@@ -159,13 +193,35 @@ To keep keys out of git, read them from environment variables instead of literal
 
 ## Install the skills — the workflow itself
 
-This repo ships three skills that teach your agent the workflow above:
+This repo ships skills that teach your agent the workflow above:
 
+**Core skills (all users):**
 - [`redmine-init`](./skills/redmine-init/README.md) — maps the current repo to its Redmine project and writes the `.redmine` cache (project ID, members, trackers, ...)
 - [`redmine-issue-workflow`](./skills/redmine-issue-workflow/README.md) — creates/updates Redmine issues from GitHub commits and PRs (author mapping, `[FE/BE/Devops]` naming, description template, changelog, time logging)
 - [`redmine-planning`](./skills/redmine-planning/README.md) — breaks **one user story** down into tasks with the right assignees (optionally via lower-level sub-stories) in two checkpoints: a confirmed, ambiguity-free business proposal first, then an architecture-grounded task breakdown (estimates, assignees, dependencies) before creating everything in Redmine. Never plans a whole sprint at once — stories are processed one at a time to avoid context overflow
 
-Install all three into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
+**QA skills (testers, requires Google Sheets setup above):**
+- [`testcase-generation`](./skills/testcase-generation/README.md) — generates test cases from user stories, writes to Google Sheets
+- [`bug-reporting`](./skills/bug-reporting/README.md) — creates bug entries in Google Sheets
+- [`bug-to-redmine`](./skills/bug-to-redmine/README.md) — pushes bugs from Google Sheets to Redmine issues
+- [`status-sync`](./skills/status-sync/README.md) — syncs Redmine issue statuses back to Google Sheets
+- [`reopen-bug`](./skills/reopen-bug/README.md) — reopens bugs on Redmine and Google Sheets
+
+Install skills into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
+
+**For developers** (issue workflow, planning, daily report):
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-dev.ps1 | iex
+```
+
+**For testers** (QA test management with Google Sheets):
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-tester.ps1 | iex
+```
+
+**For both** (all skills):
 
 ```powershell
 irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex

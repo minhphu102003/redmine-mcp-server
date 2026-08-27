@@ -22,6 +22,7 @@ Create or update a Redmine issue from a GitHub commit/PR. **Generic across proje
 5. **Description is auto-drafted by you**, not the user: fill the template (Step 6) fully from commit/PR/repo context. The user only reviews/edits the draft at confirmation.
 6. **Dates are pre-proposed**: start = commit date, due = start + 1 day — present as defaults, the user adjusts if needed.
 7. **Two modes**: **create** (new issue from commit/PR) and **update** (reflect PR/commit onto an existing issue). Mode = user-provided issue ID, or a subject-prefix match on an existing issue (Step 5).
+8. **Subject format**: `[<module>] [<role>] <title>` — module and role are chosen by the user, title comes from commit subject (or fallback if meaningless).
 
 ---
 
@@ -71,19 +72,38 @@ Agent rule: a real existing path → read and follow that file. Otherwise (empty
 - No mapping (or no `user_mappings` section) → match against the live `members` list.
 - No confident match → **ask the user**.
 
-### 3b. [FE/BE/Devops] prefix by files changed
+### 3b. Ask user for prefix — `[Module] [Role]`
 
-| Files changed | Prefix |
-|---|---|
-| Backend code (API, backend services, backend tests, backend dependencies) | `[BE]` |
-| Frontend code (UI, widgets, web assets) | `[FE]` |
-| Infrastructure (Docker, nginx, CI/workflows, deployment scripts) | `[Devops]` |
+Ask the user two questions:
 
-Mixed changes → pick the dominant layer; ask the user if ambiguous.
+1. **Module/Feature name**: what module does this change belong to? (e.g. `Auth`, `Payment`, `Dashboard`, `Chat`)
+2. **Role**: what layer?
+   - `Backend`
+   - `Frontend`
+   - `Mobile`
+   - `Devops`
+   - `Other` — gõ tay
 
-### 3c. Issue naming defaults (all confirmed per Rule 4)
+The user chooses both. Never auto-detect from files changed.
 
-- **subject** = `[FE/BE/Devops] <commit subject verbatim>` — English, no extra prefixes. (For uncommitted changes there is no commit subject → ask the user for a short English subject, or derive it from the diff.)
+### 3c. Title from commit subject (or fallback if meaningless)
+
+- **Commit subject is meaningful** (describes what changed clearly) → use it as the title.
+- **Commit subject is meaningless** (e.g. "fix", "update", "wip", "temp", "asdf", "123", single generic word) → ask the user:
+
+  "Commit message không rõ nghĩa. Bạn muốn đọc change từ đâu?"
+  - **PR** — paste PR number/URL → read title + files changed from PR
+  - **Uncommitted changes** — `git diff` to see what changed
+  - **Specific commit** — paste commit hash → read that commit's changes
+  - **Gõ tay** — user types the title directly
+
+  After reading the actual changes, derive a meaningful title from them.
+
+### 3d. Subject format
+
+**subject** = `[<module>] [<role>] <title>` — e.g. `[Auth] [Backend] Fix login timeout`, `[Payment] [Frontend] Add checkout button`
+
+### 3e. Other issue defaults (all confirmed per Rule 4)
 - **description** = your auto-drafted English template (Step 6) — never ask the user to write it.
 - **tracker by change type**: the commit/PR fixes a bug (subject/PR title contains fix/bugfix/hotfix, or the change clearly corrects broken behavior) → **Bug**; otherwise → **Feature**; ambiguous → ask. Confirm the live ID.
 - status **New**, priority **Normal**, estimated_hours **8**, done_ratio **0** — confirm actual IDs from live data.

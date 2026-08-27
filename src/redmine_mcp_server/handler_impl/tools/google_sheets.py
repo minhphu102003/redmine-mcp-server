@@ -373,11 +373,49 @@ async def create_redmine_issues_from_bugs_impl(
         return read_only_error
     try:
         from ...serializers.google_sheets import (
-            BUGS_HEADERS,
+            bug_row_to_dict,
             format_redmine_issue_id,
         )
 
         service = get_sheets_service()
+
+        # Pre-read TestCases sheet to build test_case_id → module mapping
+        test_case_sheet_name = "TestCases"
+        tc_module_map: Dict[str, str] = {}
+        try:
+            tc_result = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{test_case_sheet_name}!A:B",
+                )
+                .execute()
+            )
+            tc_rows = tc_result.get("values", [])
+            # tc_rows[0] is header, data starts from index 1
+            for tc_row in tc_rows[1:]:
+                if tc_row and len(tc_row) >= 2:
+                    tc_id = tc_row[0].strip()
+                    module = tc_row[1].strip() if len(tc_row) > 1 else ""
+                    if tc_id:
+                        tc_module_map[tc_id] = module
+        except Exception as e:
+            logger.warning(
+                "Failed to pre-read TestCases sheet for module lookup: %s", e
+            )
+
+        # Read "New" status ID from Redmine for default status
+        client = get_client()
+        new_status_id = None
+        try:
+            statuses = client.issue_status.all()
+            for status in statuses:
+                if status.name == "New":
+                    new_status_id = status.id
+                    break
+        except Exception as e:
+            logger.warning("Failed to read Redmine statuses: %s", e)
 
         # Read all bug rows
         read_range = (
@@ -399,9 +437,7 @@ async def create_redmine_issues_from_bugs_impl(
         # Filter: status = "New" and redmine_issue_id is empty
         bugs_to_create = []
         for i, row in enumerate(all_rows):
-            row_dict = {}
-            for j, header in enumerate(BUGS_HEADERS):
-                row_dict[header] = row[j] if j < len(row) else ""
+            row_dict = bug_row_to_dict(row)
 
             status = row_dict.get("status", "")
             redmine_id = row_dict.get("redmine_issue_id", "")
@@ -413,7 +449,6 @@ async def create_redmine_issues_from_bugs_impl(
             return {"created": 0, "failed": 0, "issues": [], "errors": []}
 
         # Create Redmine issues
-        client = get_client()
         created_issues = []
         errors = []
 
@@ -421,14 +456,28 @@ async def create_redmine_issues_from_bugs_impl(
             try:
                 priority_id = map_priority(bug.get("priority", "Medium"))
 
+                # Auto-lookup module from linked test case
+                linked_tc_id = bug.get("test_case_id", "").strip()
+                module = tc_module_map.get(linked_tc_id, "") if linked_tc_id else ""
+
+                # Format subject: [<module>] [BUG] <title>
+                title = bug.get("title", "Untitled Bug")
+                if module:
+                    subject = f"[{module}] [BUG] {title}"
+                else:
+                    subject = f"[BUG] {title}"
+
                 # Build issue fields
                 issue_fields = {
                     "project_id": project_id,
                     "tracker_id": tracker_id,
-                    "subject": bug.get("title", "Untitled Bug"),
+                    "subject": subject,
                     "description": bug.get("description", ""),
                     "priority_id": priority_id,
                 }
+
+                if new_status_id:
+                    issue_fields["status_id"] = new_status_id
 
                 if assigned_to_id:
                     issue_fields["assigned_to_id"] = assigned_to_id
@@ -460,7 +509,7 @@ async def create_redmine_issues_from_bugs_impl(
                     {
                         "bug_id": bug.get("bug_id", ""),
                         "redmine_issue_id": issue_id,
-                        "title": bug.get("title", ""),
+                        "subject": subject,
                     }
                 )
             except Exception as e:
@@ -505,7 +554,7 @@ async def sync_redmine_status_to_sheet_impl(
     if is_read_only_mode():
         return read_only_error
     try:
-        from ...serializers.google_sheets import BUGS_HEADERS
+        from ...serializers.google_sheets import bug_row_to_dict
 
         service = get_sheets_service()
         today = date.today().isoformat()
@@ -548,9 +597,7 @@ async def sync_redmine_status_to_sheet_impl(
             logger.warning("Failed to pre-read TestCases sheet: %s", e)
 
         for i, row in enumerate(all_rows):
-            row_dict = {}
-            for j, header in enumerate(BUGS_HEADERS):
-                row_dict[header] = row[j] if j < len(row) else ""
+            row_dict = bug_row_to_dict(row)
 
             redmine_id_str = row_dict.get("redmine_issue_id", "")
             if not redmine_id_str.strip():
@@ -708,7 +755,7 @@ async def reopen_bug_impl(
         return read_only_error
     try:
         from ...serializers.google_sheets import (
-            BUGS_HEADERS,
+            bug_row_to_dict,
             is_valid_status_transition,
             parse_redmine_issue_id,
         )
@@ -727,9 +774,7 @@ async def reopen_bug_impl(
         target_row_index = None
         target_row_dict = None
         for i, row in enumerate(all_rows):
-            row_dict = {}
-            for j, header in enumerate(BUGS_HEADERS):
-                row_dict[header] = row[j] if j < len(row) else ""
+            row_dict = bug_row_to_dict(row)
             if row_dict.get("bug_id", "") == bug_id:
                 target_row_index = i
                 target_row_dict = row_dict
@@ -751,28 +796,24 @@ async def reopen_bug_impl(
         if not redmine_id:
             return {"error": f"Bug {bug_id} has no Redmine issue ID"}
 
-        # Update Redmine: set status to New and add note
+        # Update Redmine: set status to "In Progress" and add note
         redmine_updated = False
         client = get_client()
         try:
             issue = client.issue.get(redmine_id)
 
-            # Find "New" status ID
+            # Find "In Progress" status ID
             statuses = client.issue_status.all()
-            new_status_id = None
+            target_status_id = None
             for status in statuses:
-                if status.name.lower() == "new":
-                    new_status_id = status.id
+                if status.name == "In Progress":
+                    target_status_id = status.id
                     break
 
-            if new_status_id:
-                issue.status_id = new_status_id
-                issue.notes = f"[REOPEN] {reopen_note}"
-                issue.save()
-            else:
-                # Fallback: just add a note
-                issue.notes = f"[REOPEN] {reopen_note}"
-                issue.save()
+            if target_status_id:
+                issue.status_id = target_status_id
+            issue.notes = f"[REOPEN] {reopen_note}"
+            issue.save()
             redmine_updated = True
         except Exception as e:
             return handle_error(e, f"updating Redmine issue {redmine_id} for reopen")
@@ -789,12 +830,12 @@ async def reopen_bug_impl(
                 body={"values": [["Reopen"]]},
             ).execute()
 
-            # Column I = redmine_status (index 8) → "New"
+            # Column I = redmine_status (index 8) → "In Progress"
             service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=f"{sheet_name}!I{sheet_row}",
                 valueInputOption="USER_ENTERED",
-                body={"values": [["New"]]},
+                body={"values": [["In Progress"]]},
             ).execute()
             sheet_updated = True
         except Exception as e:
