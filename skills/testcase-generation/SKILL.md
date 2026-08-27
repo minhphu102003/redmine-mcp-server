@@ -32,16 +32,28 @@ Generate test cases from a user story, let the user review and refine them in a 
 **Memory check first**: before asking the user for a spreadsheet ID, check if `.google-sheets` exists at the git worktree root (`git rev-parse --show-toplevel`).
 
 1. If `.google-sheets` exists → read it and find the mapping for the current project (match `redmine_project_id` against `.redmine` `project.id`).
-2. If a mapping exists → use its `spreadsheet_id`, `sheets.testcases`, `sheets.bugs`. Skip to step 3.
-3. If `.google-sheets` doesn't exist, or no mapping for this project → fall back to asking the user.
+2. If a mapping exists → use its `spreadsheet_id`, `sheets.testcases`, `sheets.bugs`. Skip to "Resolve user story source" below.
+3. If `.google-sheets` doesn't exist, or no mapping for this project → **setup new project sheet**:
 
-Ask the user (structured ask tool, plain text as fallback):
+   a. Read `.redmine` → `projects` array (all projects the user has access to). Full-list rule: show all, no truncation.
+   b. Ask user: "Bạn đang làm test case cho project nào?" with project list.
+   c. User picks a project → instruct:
+      ```
+      1. Go to https://sheets.new → create a new spreadsheet
+      2. Name it: '<project_name> - QA Test Management'
+      3. Click Share → paste: redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com → Editor → Send
+      4. Paste the spreadsheet URL here
+      ```
+   d. Extract spreadsheet_id from URL → verify access → verify sheet structure (TestCases/Bugs tabs).
+   e. Save mapping to `.google-sheets`: `{redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets}`.
+   f. Proceed with this project.
 
-1. **Source of the user story**: where is the story?
-   - A file path (e.g. `docs/user-stories/login.md`)
-   - Pasted text
-   - A Redmine issue ID (read via MCP tools)
-2. **Spreadsheet ID**: or use `GOOGLE_SHEETS_SPREADSHEET_ID` env var if set. If `.google-sheets` has a mapping, suggest it as the default.
+**Resolve user story source**: where is the story?
+- A file path (e.g. `docs/user-stories/login.md`)
+- Pasted text
+- A Redmine issue ID (read via MCP tools)
+
+**Verify access**: before proceeding, call `get_sheet_metadata` with the spreadsheet_id to confirm the service account can access it. If access denied → remind the user to share the sheet with the service account email (Editor permission).
 
 ---
 

@@ -30,7 +30,24 @@ Log a bug to the Google Sheet "Bugs" from a description. The skill auto-generate
 **Memory check first** (both files must exist after init):
 
 1. Read `.redmine` → `user_mappings[0].redmine_name` → auto-fill `reporter`. If missing → init was not run, tell user to run `redmine init` first.
-2. Read `.google-sheets` → `spreadsheet_id` + `sheets.bugs`. If missing → fall back to asking.
+2. Read `.google-sheets` → find mapping for current project (match `redmine_project_id` against `.redmine` `project.id`).
+3. If mapping exists → use its `spreadsheet_id` + `sheets.bugs`.
+4. If no mapping → **setup new project sheet**:
+
+   a. Read `.redmine` → `projects` array (full-list rule).
+   b. Ask user: "Bạn đang report bug cho project nào?" with project list.
+   c. User picks a project → instruct:
+      ```
+      1. Go to https://sheets.new → create a new spreadsheet
+      2. Name it: '<project_name> - QA Test Management'
+      3. Click Share → paste: redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com → Editor → Send
+      4. Paste the spreadsheet URL here
+      ```
+   d. Extract spreadsheet_id → verify access → verify sheet structure.
+   e. Save mapping to `.google-sheets`.
+   f. Proceed with this project.
+
+**Verify access**: before writing, call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
 
 Ask the user (structured ask tool, plain text as fallback):
 

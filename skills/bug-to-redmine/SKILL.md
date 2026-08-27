@@ -36,6 +36,22 @@ Read bug rows from the Google Sheet "Bugs" and create Redmine issues for each. T
 
 1. Read `.google-sheets` → find the project mapping. If the tester has only one project → use its `redmine_project_id` automatically. If multiple → ask which project.
 2. Read `.redmine` → get trackers, members, priorities, statuses for the confirmed project.
+3. If no mapping for the chosen project → **setup new project sheet**:
+
+   a. Read `.redmine` → `projects` array (full-list rule).
+   b. Ask user: "Bạn muốn tạo Redmine issues cho project nào?" with project list.
+   c. User picks a project → instruct:
+      ```
+      1. Go to https://sheets.new → create a new spreadsheet
+      2. Name it: '<project_name> - QA Test Management'
+      3. Click Share → paste: redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com → Editor → Send
+      4. Paste the spreadsheet URL here
+      ```
+   d. Extract spreadsheet_id → verify access → verify sheet structure.
+   e. Save mapping to `.google-sheets`.
+   f. Proceed.
+
+**Verify access**: call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
 
 Ask the user (structured ask tool, plain text as fallback):
 

@@ -2,13 +2,12 @@ param(
     [string]$Target = "",
     [string]$Repo = "minhphu102003/redmine-mcp-server",
     [string]$Branch = "develop",
-    [string]$CommitWorkflowPath = "",
-    [string]$MessageDelivery = ""
+    [string]$CommitWorkflowPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
+$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {
@@ -40,12 +39,6 @@ foreach ($skill in $skills) {
 
     if ($local) {
         Copy-Item -Path (Join-Path $localSkills "$skill\SKILL.md") -Destination $destFile -Force
-        # Copy extra files (e.g. USER_STORY_TEMPLATE.md)
-        $extraFiles = Get-ChildItem -Path (Join-Path $localSkills $skill) -File | Where-Object { $_.Name -ne "SKILL.md" -and $_.Name -ne "README.md" }
-        foreach ($f in $extraFiles) {
-            Copy-Item -Path $f.FullName -Destination $dest -Force
-            Write-Host "Installed: $(Join-Path $dest $f.Name) (local copy)"
-        }
         Write-Host "Installed: $destFile (local copy)"
     } else {
         $url = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/SKILL.md" -f $Repo, $Branch, $skill
@@ -54,17 +47,6 @@ foreach ($skill in $skills) {
             Write-Host "Installed: $destFile (from $url)"
         } catch {
             throw "Failed to download skill '$skill' from $url. Check that the repo is public and the branch exists."
-        }
-        # Download extra files for testcase-generation
-        if ($skill -eq "testcase-generation") {
-            $extraUrl = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/USER_STORY_TEMPLATE.md" -f $Repo, $Branch, $skill
-            $extraFile = Join-Path $dest "USER_STORY_TEMPLATE.md"
-            try {
-                Invoke-WebRequest -Uri $extraUrl -OutFile $extraFile
-                Write-Host "Installed: $extraFile (from $extraUrl)"
-            } catch {
-                Write-Host "WARNING: Failed to download USER_STORY_TEMPLATE.md — the skill may not work correctly."
-            }
         }
     }
 
@@ -81,17 +63,10 @@ foreach ($skill in $skills) {
             }
         }
     }
-
-    if ($skill -eq "redmine-daily-report" -and -not [string]::IsNullOrWhiteSpace($MessageDelivery)) {
-        $content = [System.IO.File]::ReadAllText($destFile)
-        $content = $content.Replace("{{MESSAGE_DELIVERY}}", $MessageDelivery)
-        [System.IO.File]::WriteAllText($destFile, $content)
-        Write-Host "Configured MESSAGE_DELIVERY -> '$MessageDelivery'"
-    }
 }
 
 Write-Host ""
-Write-Host "Skills installed into: $destRoot"
+Write-Host "Dev skills installed into: $destRoot"
 Write-Host "opencode and Claude Code / Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
 if ([string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
     Write-Host "Commit-workflow placeholder left empty - the commit pre-step is skipped (the skill works on an existing commit/PR)."
@@ -99,11 +74,4 @@ if ([string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
     Write-Host "Commit-workflow pre-step disabled (none)."
 } else {
     Write-Host "Commit-workflow pre-step configured: $CommitWorkflowPath"
-}
-if ([string]::IsNullOrWhiteSpace($MessageDelivery)) {
-    Write-Host "Message-delivery placeholder left empty - the daily-report skill presents the approved draft for copy-paste (no sending)."
-} elseif ($MessageDelivery -eq "none") {
-    Write-Host "Message-delivery disabled (none) - the daily-report skill never sends."
-} else {
-    Write-Host "Message-delivery configured: $MessageDelivery"
 }

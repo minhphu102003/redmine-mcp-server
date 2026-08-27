@@ -61,6 +61,7 @@ Ask the user (structured ask tool, plain text as fallback):
    - Add at most 2–4 clickable shortcuts of the most likely projects **on top of** the full list — they are conveniences, never a replacement; users must always be able to see and choose ALL entries.
    - Very long list (> ~30 rows): still render the full table, then ask the user to narrow by keyword in a follow-up — never drop rows silently.
 5. **Fetch project context**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
+5b. **For testers only — save all projects**: if role = Tester or Both, the `projects` list (from step 3) is saved into `.redmine` as `projects` array. This allows QA skills to list all projects when setting up Google Sheets, without calling `list_redmine_projects` again. Devs do NOT get this field — they only need the single `project`.
 6. **Map GitHub account ↔ Redmine member**: detect the current GitHub identity and confirm the Redmine member.
    1. Detect GitHub side: run `gh api user` (requires `gh` CLI, installed first per the issue-workflow skill's prerequisites) → returns `login`, `name`, `email`. If `gh` is unavailable, fall back to `git config user.name` + `git config user.email`.
    2. Match the detected GitHub identity against the `members` list from step 5. Match by **name** (case-insensitive) first, then by **email** if name doesn't match.
@@ -79,32 +80,33 @@ Ask the user (structured ask tool, plain text as fallback):
 
 After `.redmine` is created, set up Google Sheets memory for test management.
 
-**No credential setup needed**: the MCP server handles Google Sheets authentication internally. The skill only needs to call MCP tools to create/read spreadsheets.
+**Service Account**: `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
+The MCP server authenticates with this service account. Users create their own Google Sheet and share it with this email (Editor permission).
 
 1. **Check existing `.google-sheets`**: if the file exists at the git worktree root → follow the refresh flow (section 3b) instead.
-2. **Ask about spreadsheet setup**: for each project the tester works on, ask:
+2. **Ask per project**: iterate over ALL projects from `.redmine` (full-list rule). For each project:
 
-   **"Project '<project_name>' (ID: <id>) — bạn muốn:"**
-   - **Tạo spreadsheet mới** — agent tạo sheet qua MCP tools (server tự xử lý auth)
-   - **Dùng spreadsheet có sẵn** — user cung cấp URL hoặc ID
-   - **Bỏ qua project này** — chưa cần sheet
+   **"Project '<project_name>' (ID: <id>) — setup Google Sheet:"**
+   ```
+   1. Go to https://sheets.new → create a new spreadsheet
+   2. Name it: '<project_name> - QA Test Management' (or your preferred name)
+   3. Click Share → paste: redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com → Editor → Send
+   4. Copy the spreadsheet URL and paste it here
+   5. Type 'skip' to skip this project
+   ```
 
-   Full-list rule: present ALL projects from `.redmine` (the ones the tester works on), not just one.
+   Each project gets its own spreadsheet mapping. The user creates and shares one sheet per project.
 
-3. **For "Tạo spreadsheet mới"**:
-   - Ask: tên sheet mặc định? (default: `<project_name> - QA Test Management`)
-   - Ask: share với ai? (default: tester email từ `.redmine` `user_mappings`, hoặc nhập email mới)
-   - Create the spreadsheet via Google Sheets MCP tool (server handles auth)
-   - Share with the specified email with Editor permission
-   - Create "TestCases" sheet with 10 headers
-   - Create "Bugs" sheet with 13 headers
-   - Store the spreadsheet_id in `.google-sheets`
+3. **Parse the user's response per project**:
+   - Extract spreadsheet ID from the URL (part between `/d/` and `/edit`)
+   - If user pastes just the ID, use it directly
+   - If "skip" → no mapping for this project
+   - Verify access by calling `get_sheet_metadata` MCP tool with the spreadsheet_id
 
-4. **For "Dùng spreadsheet có sẵn"**:
-   - Ask: spreadsheet URL or ID
-   - Verify access by reading the sheet metadata via MCP tool
-   - Check if "TestCases" and "Bugs" sheets exist → if not, ask whether to create them
-   - Store the spreadsheet_id in `.google-sheets`
+4. **Verify sheet structure**:
+   - Check if "TestCases" and "Bugs" sheets exist in the spreadsheet
+   - If not, ask whether to create them
+   - If creating: create "TestCases" with 10 headers, "Bugs" with 13 headers
 
 5. **Write `.google-sheets`**: exact schema in section 5.
 6. **Verify**: read the file back; confirm it parses as valid JSON.
@@ -147,9 +149,16 @@ Cross-role dimensions to ask once per person: commit/branch conventions, code-re
 
 ### 3b. Refresh `.google-sheets`
 
+Also triggered when user says: "thêm project mới vào google sheets", "add project to sheet", "map project với sheet".
+
 1. Read the existing `.google-sheets`.
 2. **Verify each mapped spreadsheet still exists** by reading its metadata. If a spreadsheet was deleted or access was revoked → warn the user and remove the mapping.
-3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → ask the user whether to set up sheets for them (same flow as 2b steps 3–5).
+3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → for each new project:
+   - Show project name + ID
+   - Instruct user to create sheet and share with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
+   - User pastes spreadsheet URL
+   - Verify access + sheet structure
+   - Add mapping to `.google-sheets`
 4. **Remove stale projects**: if a project in `.google-sheets` no longer exists in `.redmine` → remove the mapping.
 5. **Sync sheet structure**: for each mapped spreadsheet, verify "TestCases" and "Bugs" sheets exist → if not, ask whether to create them.
 6. Overwrite `.google-sheets` with fresh `fetched_at`.
@@ -162,6 +171,10 @@ Cross-role dimensions to ask once per person: commit/branch conventions, code-re
 {
   "version": 1,
   "project": {"id": 12, "name": "Example Project", "identifier": "example-project", "created_on": "2026-01-15T08:30:00Z"},
+  "projects": [
+    {"id": 12, "name": "Example Project", "identifier": "example-project"},
+    {"id": 45, "name": "Another Project", "identifier": "another-project"}
+  ],
   "trackers": [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}],
   "categories": [],
   "members": [{"id": 101, "user": {"id": 5, "name": "Jane Doe"}, "roles": [{"id": 4, "name": "Developer"}]}],
@@ -184,6 +197,8 @@ Cross-role dimensions to ask once per person: commit/branch conventions, code-re
 - `fetched_at`: current time, ISO 8601 with `Z` (UTC).
 - Keep keys verbatim; empty lists stay as `[]`.
 - Strip all `<insecure-content-...>` wrapper tags from names.
+- `project`: the main project this repo maps to (always present, singular).
+- `projects` (testers only): array of all projects the user has access to — `[{id, name, identifier}]`. Used by QA skills to list projects when setting up Google Sheets. Devs do NOT have this field.
 - `member_rules` (optional): per-member working rules as told by the user — `roles` = role/stack tags (backend, frontend, mobile, devops, ai, da, qa, full-stack, ...), `rules` = short verbatim bullets (Vietnamese OK). A member without entries means the user skipped them — never invent rules.
 
 ---

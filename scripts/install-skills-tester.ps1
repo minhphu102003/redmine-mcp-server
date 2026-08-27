@@ -1,14 +1,12 @@
 param(
     [string]$Target = "",
     [string]$Repo = "minhphu102003/redmine-mcp-server",
-    [string]$Branch = "develop",
-    [string]$CommitWorkflowPath = "",
-    [string]$MessageDelivery = ""
+    [string]$Branch = "develop"
 )
 
 $ErrorActionPreference = "Stop"
 
-$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
+$skills = @("redmine-init", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {
@@ -67,43 +65,11 @@ foreach ($skill in $skills) {
             }
         }
     }
-
-    if ($skill -eq "redmine-issue-workflow" -and -not [string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
-        $content = [System.IO.File]::ReadAllText($destFile)
-        $content = $content.Replace("{{COMMIT_WORKFLOW_PATH}}", $CommitWorkflowPath)
-        [System.IO.File]::WriteAllText($destFile, $content)
-        Write-Host "Configured COMMIT_WORKFLOW_PATH -> '$CommitWorkflowPath'"
-
-        if ($CommitWorkflowPath -ne "none") {
-            $wfPath = Join-Path $Target $CommitWorkflowPath
-            if (-not (Test-Path -LiteralPath $wfPath)) {
-                Write-Host "WARNING: commit workflow file not found at '$wfPath' - the commit pre-step will be skipped."
-            }
-        }
-    }
-
-    if ($skill -eq "redmine-daily-report" -and -not [string]::IsNullOrWhiteSpace($MessageDelivery)) {
-        $content = [System.IO.File]::ReadAllText($destFile)
-        $content = $content.Replace("{{MESSAGE_DELIVERY}}", $MessageDelivery)
-        [System.IO.File]::WriteAllText($destFile, $content)
-        Write-Host "Configured MESSAGE_DELIVERY -> '$MessageDelivery'"
-    }
 }
 
 Write-Host ""
-Write-Host "Skills installed into: $destRoot"
+Write-Host "Tester skills installed into: $destRoot"
 Write-Host "opencode and Claude Code / Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
-if ([string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
-    Write-Host "Commit-workflow placeholder left empty - the commit pre-step is skipped (the skill works on an existing commit/PR)."
-} elseif ($CommitWorkflowPath -eq "none") {
-    Write-Host "Commit-workflow pre-step disabled (none)."
-} else {
-    Write-Host "Commit-workflow pre-step configured: $CommitWorkflowPath"
-}
-if ([string]::IsNullOrWhiteSpace($MessageDelivery)) {
-    Write-Host "Message-delivery placeholder left empty - the daily-report skill presents the approved draft for copy-paste (no sending)."
-} elseif ($MessageDelivery -eq "none") {
-    Write-Host "Message-delivery disabled (none) - the daily-report skill never sends."
-} else {
-    Write-Host "Message-delivery configured: $MessageDelivery"
-}
+Write-Host ""
+Write-Host "QA skills installed: testcase-generation, bug-reporting, bug-to-redmine, status-sync, reopen-bug"
+Write-Host "Also installed: redmine-init (needed for .redmine and .google-sheets memory)"
