@@ -106,6 +106,7 @@ from .handler_impl.tools import (  # noqa: E402
     reopen_bug_impl,
     search_entire_redmine_impl,
     search_redmine_issues_impl,
+    set_sheet_data_validation_impl,
     summarize_project_status_impl,
     sync_redmine_status_to_sheet_impl,
     update_redmine_issue_impl,
@@ -2847,6 +2848,64 @@ async def reopen_bug(
         get_client=_get_redmine_client,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def set_sheet_data_validation(
+    spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
+    sheet_name: Annotated[
+        str,
+        Field(description="Target sheet name, e.g. 'TestCases'"),
+    ],
+    column: Annotated[
+        int,
+        Field(description="Column index (0-based). E.g. 0=A, 6=G, 7=H"),
+    ],
+    options: Annotated[
+        List[str],
+        Field(description="List of dropdown options, e.g. ['Pass', 'Fail', 'Blocked']"),
+    ],
+    start_row: Annotated[
+        int,
+        Field(description="Start row index (0-based, default 2 = row 3 after headers)"),
+    ] = 2,
+    end_row: Annotated[
+        int,
+        Field(description="End row index (0-based, default 1000)"),
+    ] = 1000,
+    strict: Annotated[
+        bool,
+        Field(description="If True, only values from the list are allowed"),
+    ] = True,
+    input_message: Annotated[
+        str,
+        Field(description="Tooltip message shown when user clicks the cell"),
+    ] = "",
+) -> Dict[str, Any]:
+    """Set data validation (dropdown list) on a column in a Google Sheet.
+
+    Use this to create dropdown menus for columns like tester, priority,
+    status, or test result. The dropdown appears in the Google Sheets UI
+    and restricts cell values to the provided options.
+
+    Common use cases:
+    - tester column: list of team member names
+    - priority column: ['Low', 'Normal', 'High', 'Urgent']
+    - last_test_result column: ['Not Tested', 'Pass', 'Fail', 'Blocked']
+    - status column (Bugs): ['New', 'Open', 'In Progress', 'Done', ...]
+    """
+    return await set_sheet_data_validation_impl(
+        spreadsheet_id,
+        sheet_name,
+        column,
+        options,
+        start_row=start_row,
+        end_row=end_row,
+        strict=strict,
+        input_message=input_message,
+        get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
     )
 

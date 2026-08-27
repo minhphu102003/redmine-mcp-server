@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,73 @@ class GoogleSheetsManager:
         """Reset the service (useful for testing or credential rotation)."""
         self._service = None
         self._credentials_file = None
+
+    def set_data_validation(
+        self,
+        spreadsheet_id: str,
+        sheet_id: int,
+        start_row: int,
+        end_row: int,
+        start_col: int,
+        end_col: int,
+        options: List[str],
+        *,
+        strict: bool = True,
+        input_message: str = "",
+    ) -> Dict[str, Any]:
+        """Set data validation (dropdown) on a cell range.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_id: Sheet tab ID (0-based, from sheet metadata).
+            start_row: Start row index (0-based, inclusive).
+            end_row: End row index (0-based, exclusive).
+            start_col: Start column index (0-based, inclusive).
+            end_col: End column index (0-based, exclusive).
+            options: List of dropdown options.
+            strict: If True, only values from the list are allowed.
+            input_message: Message shown when user clicks the cell.
+
+        Returns:
+            API response dict.
+
+        Raises:
+            Exception: On API failure.
+        """
+        service = self.get_service()
+        request_body = {
+            "requests": [
+                {
+                    "setDataValidation": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": start_row,
+                            "endRowIndex": end_row,
+                            "startColumnIndex": start_col,
+                            "endColumnIndex": end_col,
+                        },
+                        "rule": {
+                            "condition": {
+                                "type": "ONE_OF_LIST",
+                                "values": [
+                                    {"userEnteredValue": opt} for opt in options
+                                ],
+                            },
+                            "showCustomUi": True,
+                            "strict": strict,
+                            **(
+                                {"inputMessage": input_message} if input_message else {}
+                            ),
+                        },
+                    }
+                }
+            ]
+        }
+        return (
+            service.spreadsheets()
+            .batchUpdate(spreadsheetId=spreadsheet_id, body=request_body)
+            .execute()
+        )
 
 
 google_sheets_manager = GoogleSheetsManager()

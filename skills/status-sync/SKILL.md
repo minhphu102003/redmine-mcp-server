@@ -1,6 +1,6 @@
 ---
 name: status-sync
-description: Use when the user wants to sync Redmine issue statuses back to the Google Sheet "Bugs", e.g. "check dev fix chưa", "sync trạng thái từ Redmine", "update sheet status from Redmine", "đồng bộ trạng thái Redmine về sheet", "check Redmine status". Reads bugs with redmine_issue_id, checks Redmine for current status/done_ratio/journals, maps to sheet status, detects reject/deferred/need_info/duplicate, and updates TestCases when bugs close. Use ONLY for status synchronization, NOT for creating issues, reopening bugs, or generating test cases.
+description: Use when the user wants to sync Redmine issue statuses back to the Google Sheet "Bugs", e.g. "check dev fix chưa", "sync trạng thái từ Redmine", "update sheet status from Redmine", "đồng bộ trạng thái Redmine về sheet", "check Redmine status". Requires: Bugs sheet with redmine_issue_id already filled (run bug-to-redmine first). Reads bugs with redmine_issue_id, checks Redmine for current status/done_ratio/journals, maps to sheet status, detects reject/deferred/need_info/duplicate, and updates TestCases when bugs close. Use ONLY for status synchronization, NOT for creating issues, reopening bugs, or generating test cases.
 ---
 
 # Status Sync
@@ -12,6 +12,24 @@ Synchronize Redmine issue statuses back to the Google Sheet "Bugs". The skill ch
 ---
 
 ## 1. Core rules
+
+### Prerequisites (MUST have before using this skill)
+
+| Prerequisite | Required? | How to get it |
+|---|---|---|
+| **Bugs sheet** | ✅ Must | Created by `testcase-generation` or `bug-reporting` skill |
+| **Bugs with `redmine_issue_id`** | ✅ Must | Created by `bug-to-redmine` skill (column H must be filled) |
+| **TestCases sheet** | Optional | Created by `testcase-generation` skill |
+
+**If no bugs have `redmine_issue_id` → tell the user to run `bug-to-redmine` first.**
+
+### Skill flow dependency
+
+```
+testcase-generation → bug-reporting → bug-to-redmine → status-sync ← YOU ARE HERE
+```
+
+### Rules
 
 1. **Ask-before-sync**: confirm spreadsheet ID and sheet names before reading/writing.
 2. **Only process linked bugs**: only rows where redmine_issue_id (column H) is not empty.
@@ -132,6 +150,7 @@ Chi tiết thay đổi:
 
 ## 7. Gotchas checklist
 
+- [ ] **MUST have bugs with redmine_issue_id** — if no bugs are linked, tell user to run `bug-to-redmine` first.
 - [ ] Only process rows with non-empty redmine_issue_id.
 - [ ] Pre-read TestCases once to avoid N+1 API calls.
 - [ ] Reject reason comes from journal notes, not from the issue status itself.

@@ -448,7 +448,29 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 
 4. **Verify**: read back the sheet to confirm the data was written correctly.
 
-5. **Report**:
+5. **Set up dropdowns (data validation)**: after writing data, apply dropdown validation to key columns using `set_sheet_data_validation`:
+
+   | Column | Index | Options | Source |
+   |--------|-------|---------|--------|
+   | `tester` | 6 (G) | Team member names | `.redmine` → `members[].user.name` |
+   | `last_test_result` | 8 (I) | Not Tested, Pass, Fail, Blocked | Static |
+
+   Example: set tester dropdown for TestCases sheet:
+   ```
+   set_sheet_data_validation(
+     spreadsheet_id="<id>",
+     sheet_name="TestCases",
+     column=6,
+     options=["Nguyen Van A", "Tran Thi B", "Le Van C"],
+     start_row=2,
+     end_row=1000,
+     input_message="Select tester"
+   )
+   ```
+
+   **Only set dropdowns once** (on first push or sheet creation). Skip if dropdowns already exist.
+
+6. **Report**:
    ```
    Push successful!
    - Test cases: N
