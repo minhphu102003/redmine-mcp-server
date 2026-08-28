@@ -53,6 +53,20 @@ foreach ($skill in $skills) {
         } catch {
             throw "Failed to download skill '$skill' from $url. Check that the repo is public and the branch exists."
         }
+        # Download extra files for redmine-init
+        if ($skill -eq "redmine-init") {
+            $extraFiles = @("member-rules-catalog.md", "google-sheets-schema.md")
+            foreach ($extraFile in $extraFiles) {
+                $extraUrl = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/{3}" -f $Repo, $Branch, $skill, $extraFile
+                $extraPath = Join-Path $dest $extraFile
+                try {
+                    Invoke-WebRequest -Uri $extraUrl -OutFile $extraPath
+                    Write-Host "Installed: $extraPath (from $extraUrl)"
+                } catch {
+                    Write-Host "WARNING: Failed to download $extraFile — the skill may not work correctly."
+                }
+            }
+        }
         # Download extra files for testcase-generation
         if ($skill -eq "testcase-generation") {
             $extraUrl = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/USER_STORY_TEMPLATE.md" -f $Repo, $Branch, $skill

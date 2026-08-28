@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 
 # --- Constants ---
 
-TESTCASES_HEADERS = [
+# Internal keys (lowercase) - used for dict access and validation
+TESTCASES_KEYS = [
     "test_case_id",
     "module",
     "title",
@@ -20,7 +21,7 @@ TESTCASES_HEADERS = [
     "last_test_date",
 ]
 
-BUGS_HEADERS = [
+BUGS_KEYS = [
     "bug_id",
     "test_case_id",
     "title",
@@ -35,6 +36,10 @@ BUGS_HEADERS = [
     "reject_reason",
     "duplicate_of",
 ]
+
+# Display headers (UPPERCASE) - written to Google Sheets
+TESTCASES_HEADERS = [k.upper() for k in TESTCASES_KEYS]
+BUGS_HEADERS = [k.upper() for k in BUGS_KEYS]
 
 VALID_BUG_STATUSES = [
     "New",
@@ -52,6 +57,54 @@ VALID_BUG_STATUSES = [
 VALID_TEST_RESULTS = ["Pass", "Fail", "Not Tested"]
 
 VALID_PRIORITIES = ["High", "Medium", "Low"]
+
+# Color mappings for dropdown options (hex colors)
+TEST_RESULT_COLORS = {
+    "Pass": "#00FF00",  # Green
+    "Fail": "#FF0000",  # Red
+    "Not Tested": "#D9D9D9",  # Gray
+}
+
+PRIORITY_COLORS = {
+    "High": "#FF0000",  # Red
+    "Medium": "#FFC000",  # Orange
+    "Low": "#00FF00",  # Green
+}
+
+STATUS_COLORS = {
+    "New": "#D9D9D9",  # Gray
+    "Open": "#BDD7EE",  # Light blue
+    "In Progress": "#FFC000",  # Orange
+    "Done": "#00FF00",  # Green
+    "Reopen": "#FF9999",  # Light red
+    "Closed": "#A9A9A9",  # Dark gray
+    "Reject": "#FF0000",  # Red
+    "Deferred": "#FF9999",  # Light red
+    "Need Info": "#FFC000",  # Orange
+    "Duplicate": "#A9A9A9",  # Dark gray
+}
+
+# Data validation column indices (0-based)
+TESTCASES_VALIDATIONS = {
+    6: None,  # TESTER - dynamic from Redmine members
+    8: VALID_TEST_RESULTS,  # LAST_TEST_RESULT
+}
+
+BUGS_VALIDATIONS = {
+    4: VALID_PRIORITIES,  # PRIORITY
+    5: VALID_BUG_STATUSES,  # STATUS
+    6: None,  # ASSIGNED_TO - dynamic from Redmine members
+}
+
+# Conditional formatting color mappings (column index -> {option: hex_color})
+TESTCASES_COLORS = {
+    8: TEST_RESULT_COLORS,  # LAST_TEST_RESULT
+}
+
+BUGS_COLORS = {
+    4: PRIORITY_COLORS,  # PRIORITY
+    5: STATUS_COLORS,  # STATUS
+}
 
 # --- Status Transitions ---
 
@@ -236,26 +289,26 @@ def map_redmine_status_to_sheet(
 
 
 def bug_row_to_dict(row: List[str]) -> Dict[str, str]:
-    """Convert a bug sheet row (list) to a dict using BUGS_HEADERS."""
+    """Convert a bug sheet row (list) to a dict using lowercase keys."""
     result = {}
-    for i, header in enumerate(BUGS_HEADERS):
-        result[header] = row[i] if i < len(row) else ""
+    for i, key in enumerate(BUGS_KEYS):
+        result[key] = row[i] if i < len(row) else ""
     return result
 
 
 def dict_to_bug_row(data: Dict[str, str]) -> List[str]:
-    """Convert a bug dict to a sheet row list using BUGS_HEADERS."""
-    return [data.get(header, "") for header in BUGS_HEADERS]
+    """Convert a bug dict to a sheet row list using lowercase keys."""
+    return [data.get(key, "") for key in BUGS_KEYS]
 
 
 def test_case_row_to_dict(row: List[str]) -> Dict[str, str]:
-    """Convert a test case sheet row (list) to a dict using TESTCASES_HEADERS."""
+    """Convert a test case sheet row (list) to a dict using lowercase keys."""
     result = {}
-    for i, header in enumerate(TESTCASES_HEADERS):
-        result[header] = row[i] if i < len(row) else ""
+    for i, key in enumerate(TESTCASES_KEYS):
+        result[key] = row[i] if i < len(row) else ""
     return result
 
 
 def dict_to_test_case_row(data: Dict[str, str]) -> List[str]:
-    """Convert a test case dict to a sheet row list using TESTCASES_HEADERS."""
-    return [data.get(header, "") for header in TESTCASES_HEADERS]
+    """Convert a test case dict to a sheet row list using lowercase keys."""
+    return [data.get(key, "") for key in TESTCASES_KEYS]

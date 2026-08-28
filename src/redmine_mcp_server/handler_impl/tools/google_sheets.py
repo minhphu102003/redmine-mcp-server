@@ -957,15 +957,27 @@ async def set_sheet_data_validation_impl(
 
 async def create_test_sheet_structure_impl(
     title: str,
+    member_names: Optional[List[str]] = None,
     *,
     get_sheets_service: Callable[[], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
-    """Create a new Google Spreadsheet with TestCases and Bugs sheets, styled headers, frozen row, auto-resized columns."""
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+
+    Includes UPPERCASE headers, styled headers (blue bg, white bold text),
+    frozen header row, auto-resized columns, and data validation dropdowns.
+
+    Args:
+        title: The spreadsheet title.
+        member_names: List of Redmine member names for TESTER/ASSIGNED_TO dropdowns.
+
+    Returns:
+        Dict with success, spreadsheet_id, spreadsheet_url, sheets info.
+    """
     try:
         from redmine_mcp_server.google_sheets_client import google_sheets_manager
 
-        result = google_sheets_manager.create_spreadsheet(title)
+        result = google_sheets_manager.create_spreadsheet(title, member_names)
         return {
             "success": True,
             "spreadsheet_id": result["spreadsheet_id"],
@@ -973,6 +985,7 @@ async def create_test_sheet_structure_impl(
             "sheets": result["sheets"],
             "message": (
                 f"Spreadsheet '{title}' created with sheets: TestCases, Bugs. "
+                f"UPPERCASE headers + data validation dropdowns applied. "
                 f"Share it with the service account email before using QA skills."
             ),
         }
