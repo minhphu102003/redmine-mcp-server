@@ -2914,20 +2914,28 @@ async def set_sheet_data_validation(
 @mcp.tool()
 async def create_test_sheet_structure(
     title: str = Field(description="The spreadsheet title"),
+    member_names: Optional[List[str]] = Field(
+        default=None,
+        description="List of Redmine member names for TESTER/ASSIGNED_TO dropdowns",
+    ),
 ) -> Dict[str, Any]:
-    """Create a new Google Spreadsheet with TestCases and Bugs sheets, including styled headers.
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+
+    Includes UPPERCASE headers, styled headers (blue bg, white bold text),
+    frozen header row, auto-resized columns, and data validation dropdowns
+    for tester, status, priority, last_test_result, and assigned_to columns.
 
     Use this to set up a new test management spreadsheet for a project.
-    Headers are styled with blue background, white text, bold, frozen row, auto-resized columns.
 
     After creation, share the spreadsheet URL with the service account email
     (found in README) before using other QA tools.
 
     Returns:
-        spreadsheet_id, spreadsheet_url, and sheet info.
+        spreadsheet_id, spreadsheet_url, sheets info, created/skipped lists.
     """
     return await create_test_sheet_structure_impl(
         title,
+        member_names=member_names,
         get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
     )

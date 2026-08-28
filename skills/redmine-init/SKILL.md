@@ -1,15 +1,11 @@
 ---
 name: redmine-init
-description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. Also asks the user to map their GitHub account to a Redmine member and stores the mapping in `.redmine` so the issue-workflow skill can auto-assign assignees without guessing. Also asks the user for each team member's working rules (role/stack, coding conventions, testing, code review, AI-assistant usage, reporting — the user may answer or skip per member) and stores them in `.redmine` (`member_rules`) so the planning/issue skills respect each person's constraints. For testers: also initializes Google Sheets memory (`.google-sheets`) mapping projects to test management spreadsheets, with support for creating new sheets or linking existing ones. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
+description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. For testers: also initializes Google Sheets memory (`.google-sheets`) mapping projects to test management spreadsheets. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
 ---
 
 # Redmine Init
 
-This skill creates and refreshes a `.redmine` JSON cache file at the git worktree root of the current repository. The cache maps the repository to exactly one Redmine project and snapshots its static ID lists, so the `redmine-issue-workflow` skill can create issues fast without re-fetching every value.
-
-For testers, it also creates/refreshes a `.google-sheets` memory file that maps Redmine projects to their test management spreadsheets (TestCases + Bugs sheets), so Google Sheets skills can operate without asking for spreadsheet IDs every time.
-
-**IMPORTANT:** Tool calls below are described by **capability**, not by name — use whatever tool the current agent provides (e.g. Redmine MCP tools, Google Sheets MCP tools).
+Creates/refreshes a `.redmine` JSON cache at the git worktree root mapping the repo to a Redmine project with static ID lists. For testers, also creates/refreshes `.google-sheets` memory. Tool calls below are described by **capability**, not by name — use whatever tool the current agent provides.
 
 ---
 
@@ -34,13 +30,22 @@ Ask the user (structured ask tool, plain text as fallback):
 **"Bạn là ai trong dự án này?"**
 1. **Developer** — chỉ cần init `.redmine` (Redmine cache)
 2. **Tester** — cần init `.redmine` + `.google-sheets` (Google Sheets memory)
-3. **Cả hai** — init cả hai file
+3. **Leader** — init `.redmine` + hỏi mapping GitHub + hỏi member working rules
+4. **Cả hai** — init cả hai file
 
 | Role | Files created | Flow |
 |---|---|---|
 | Developer | `.redmine` | Section 2a (Dev flow) |
 | Tester | `.redmine` + `.google-sheets` | Section 2a + 2b (Dev flow + Tester flow) |
+| Leader | `.redmine` | Section 2a (Dev flow) + Step 6 + Step 7 |
 | Cả hai | `.redmine` + `.google-sheets` | Section 2a + 2b |
+
+**Role-based behavior:**
+| Feature | Developer | Tester | Leader |
+|---|---|---|---|
+| GitHub↔Redmine mapping | ✅ Asked | ❌ Skipped | ✅ Asked |
+| Member working rules | ❌ Skipped | ❌ Skipped | ✅ Asked |
+| `.google-sheets` | ❌ Not created | ✅ Created | ❌ Not created |
 
 ### 2a. Dev flow — Init `.redmine`
 
@@ -62,18 +67,18 @@ Ask the user (structured ask tool, plain text as fallback):
    - Very long list (> ~30 rows): still render the full table, then ask the user to narrow by keyword in a follow-up — never drop rows silently.
 5. **Fetch project context**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
 5b. **For testers only — save all projects**: if role = Tester or Both, the `projects` list (from step 3) is saved into `.redmine` as `projects` array. This allows QA skills to list all projects when setting up Google Sheets, without calling `list_redmine_projects` again. Devs do NOT get this field — they only need the single `project`.
-6. **Map GitHub account ↔ Redmine member**: detect the current GitHub identity and confirm the Redmine member.
+6. **Map GitHub account ↔ Redmine member (dev/leader only)**: **SKIP this step if role = Tester.** Testers don't need GitHub↔Redmine mapping — they work in Google Sheets, not Git commits.
    1. Detect GitHub side: run `gh api user` (requires `gh` CLI, installed first per the issue-workflow skill's prerequisites) → returns `login`, `name`, `email`. If `gh` is unavailable, fall back to `git config user.name` + `git config user.email`.
    2. Match the detected GitHub identity against the `members` list from step 5. Match by **name** (case-insensitive) first, then by **email** if name doesn't match.
    3. If exactly **one** confident match → confirm with the user via the structured ask tool: "GitHub account `janedoe` (Jane Doe) maps to Redmine member nào?" with the matched member pre-selected and 1–3 other likely members as clickable shortcuts.
    4. If **no match** or **multiple matches** → apply the **full-list rule** from step 4: render the complete `members` list as a markdown table (| # | ID | Name | Roles |) in the chat message — all rows visible, no truncation — then present the full list in the question text of the structured ask tool (user types number or name; ≤4 clickable shortcuts of the most likely picks on top, never instead of the full list).
    5. **Optional — map additional committers** (ask only if the user seems interested; do NOT exhaustively map every committer to save tokens): run `git shortlog -sne --since="6 months"` to get a compact list of recent committers (1 line each: `count  Name <email>`). Ask the user: "Có muốn map thêm committer nào không?" — if yes, present the shortlist and let them pick entries to map (same ask pattern). Default: **only the current user** (tiết kiệm token).
    6. Build the `user_mappings` array: each entry `{"github": "<login>", "git_email": "<email>", "redmine_user_id": <id>, "redmine_name": "<name>"}`. Strip wrapper tags from all names.
-7. **Collect member working rules** (ask, never assume): for each member mapped in step 6, ask the user for that person's working rules — "Người này làm role gì và có rule/đặc thù riêng khi làm việc không? (gõ 'bỏ qua' để skip)". Prompt with the researched catalog below as a reminder of what rule areas exist (role/stack, required tests, code-review expectations, AI-assistant usage policy, reporting cadence, definition of done). The user answers, skips, or says "bỏ qua" per member — **never invent a rule**; store only what the user explicitly said, as short verbatim bullets (Vietnamese OK).
+7. **Collect member working leaders only**: **SKIP this step if role ≠ Leader.** Only team leaders/tech leads need to provide working rules for team members. For each member mapped in step 6, ask the user for that person's working rules — "Người này làm role gì và có rule/đặc thù riêng khi làm việc không? (gõ 'bỏ qua' để skip)". Prompt with the researched catalog below as a reminder of what rule areas exist (role/stack, required tests, code-review expectations, AI-assistant usage policy, reporting cadence, definition of done). The user answers, skips, or says "bỏ qua" per member — **never invent a rule**; store only what the user explicitly said, as short verbatim bullets (Vietnamese OK). Non-leaders skip this entirely — no rules are collected.
 8. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
 9. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
 10. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
-11. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count, the `member_rules` count, the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
+11. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count (dev/leader only), the `member_rules` count (leaders only), the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
 12. **If role = Tester or Both → continue to section 2b (Google Sheets memory setup)**.
 
 ### 2b. Tester flow — Init `.google-sheets`
@@ -103,49 +108,39 @@ The MCP server authenticates with this service account. Users create their own G
    - If "skip" → no mapping for this project
    - Verify access by calling `get_sheet_metadata` MCP tool with the spreadsheet_id
 
-4. **Verify sheet structure**:
-   - Check if "TestCases" and "Bugs" sheets exist in the spreadsheet
-   - If not, ask whether to create them
-   - If creating: create "TestCases" with 10 headers, "Bugs" with 13 headers
+4. **Auto-create sheet structure**:
+   - Call `create_test_sheet_structure` MCP tool with:
+     - `title`: spreadsheet title
+     - `member_names`: list of member names from `.redmine` members
+   - Tool automatically:
+     - Creates "TestCases" and "Bugs" sheets with UPPERCASE headers
+     - Applies data validation dropdowns:
+       - TESTER (col G) → member names
+       - LAST_TEST_RESULT (col I) → Pass/Fail/Not Tested
+       - PRIORITY (col E) → High/Medium/Low
+       - STATUS (col F) → 10 statuses
+       - ASSIGNED_TO (col G) → member names
+   - Skips sheets that already have data
 
 5. **Write `.google-sheets`**: exact schema in section 5.
 6. **Verify**: read the file back; confirm it parses as valid JSON.
-7. **Report**: project-sheet mappings, sheet URLs.
+7. **Report**: project-sheet mappings, sheet URLs, created sheets.
 
-### Member rules catalog (research summary — use as prompt material)
+### Member rules catalog (leaders only)
 
-Researched rule areas per role (ask the user which apply; do NOT assume any apply):
-
-| Role | Typical rule areas |
-|---|---|
-| Backend | API-first contract (OpenAPI), schema/validation, authn/z + PII handling, error handling, database access rules, performance/scalability, test coverage |
-| Frontend (web) | Design system + tokens, responsive + accessibility, performance (bundle/lazy), state management pattern, API contract alignment, e2e for critical flows |
-| Mobile | Platform (native Swift/Kotlin vs Flutter/React Native), offline/caching + network retries, store policies + signing/release, crash monitoring, performance (cold start, memory, battery), secure storage |
-| DevOps | CI/CD quality gates, IaC (Terraform/Ansible), Docker/K8s, observability/alerting, release management + rollback, security gates, secrets handling |
-| AI (LLM) | RAG + evals (golden datasets), prompt management, guardrails, inference latency/cost, drift monitoring, model API rate limits/retries/fallbacks |
-| Data analyst (DA) | SQL + BI dashboards, metric definitions, data quality/freshness, source of truth |
-| Data engineer | dbt models, orchestration (Airflow), lineage, data quality tests, schema migrations |
-| QA | Test pyramid, page objects/factories, e2e on critical paths only, adversarial/negative paths, contract testing |
-| Full-stack | Both sides of the API contract, end-to-end feature ownership incl. tests |
-| Lead (Tech/Team/Project) | Architecture decisions + review/approval gates (review rules, who must approve PRs/merge), task delegation (what they assign vs. keep), technical risk ownership, mentoring/onboarding, reporting to stakeholders, definition of done enforcement |
-| Security | Threat modeling, SAST/DAST, auth, compliance |
-| SRE | SLOs, error budgets, incidents, chaos testing |
-| PM/PO | Intent + acceptance criteria + out-of-scope, definition of ready |
-
-Cross-role dimensions to ask once per person: commit/branch conventions, code-review expectations, AI-assistant usage policy (allowed? verify output?), reporting cadence (standup/weekly), definition of done, preferred communication.
+> **Leaders**: see [member-rules-catalog.md](./member-rules-catalog.md) for the full role-by-rule-area table. Ask the user which apply per member; never assume.
 
 ---
 
 ## 3. Refresh flow (`.redmine` already exists)
 
 1. Read the existing `.redmine`.
-2. **Reuse the stored `project.id`** — do NOT re-ask which project.
-3. If the user hints the repo maps to a *different* project than the file says → confirm with the user before overwriting.
-4. Re-fetch project context + priorities (step 5 of the init flow) and overwrite the file with a fresh `fetched_at`, keeping the same schema.
-5. **Refresh `user_mappings`**: keep existing mappings whose `redmine_user_id` is still in the new `members` list; drop entries for members that no longer exist; do NOT re-ask for existing mappings.
-6. **Refresh `member_rules`**: keep entries whose `redmine_user_id` still exists in the new `members` list, drop stale ones; do NOT re-ask every person's rules — only ask again if the user explicitly wants to update them.
-7. Verify and report as in init steps 10–11.
-8. **If role = Tester or Both → continue to section 3b (Google Sheets refresh)**.
+2. **Reuse the stored `project.id`** — do NOT re-ask which project. Just re-fetch project context using the stored ID.
+3. Re-fetch project context + priorities (step 5 of the init flow) and overwrite the file with a fresh `fetched_at`, keeping the same schema.
+4. **Refresh `user_mappings` (dev/leader only, skip for testers)**: keep existing mappings whose `redmine_user_id` is still in the new `members` list; drop entries for members that no longer exist; do NOT re-ask for existing mappings.
+5. **Refresh `member_rules` (leaders only, skip for non-leaders)**: keep entries whose `redmine_user_id` still exists in the new `members` list, drop stale ones; do NOT re-ask every person's rules — only ask again if the user is a leader and explicitly wants to update them.
+6. Verify and report as in init steps 10–11.
+7. **If role = Tester or Both → continue to section 3b (Google Sheets refresh)**.
 
 ### 3b. Refresh `.google-sheets`
 
@@ -193,53 +188,17 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 }
 ```
 
-- `version`: `1`.
-- `fetched_at`: current time, ISO 8601 with `Z` (UTC).
-- Keep keys verbatim; empty lists stay as `[]`.
-- Strip all `<insecure-content-...>` wrapper tags from names.
+- `version`: `1`. Keep keys verbatim; empty lists as `[]`. `fetched_at` = ISO 8601 UTC.
 - `project`: the main project this repo maps to (always present, singular).
-- `projects` (testers only): array of all projects the user has access to — `[{id, name, identifier}]`. Used by QA skills to list projects when setting up Google Sheets. Devs do NOT have this field.
-- `member_rules` (optional): per-member working rules as told by the user — `roles` = role/stack tags (backend, frontend, mobile, devops, ai, da, qa, full-stack, ...), `rules` = short verbatim bullets (Vietnamese OK). A member without entries means the user skipped them — never invent rules.
+- `projects` (testers only): `[{id, name, identifier}]` — used by QA skills.
+- `user_mappings` (dev/leader only): GitHub↔Redmine mapping. Optional — if absent, issue-workflow asks per author.
+- `member_rules` (leaders only): per-member working rules as told by the user. Never invent rules.
 
 ---
 
-## 5. `.google-sheets` schema (exact)
+## 5. `.google-sheets` schema
 
-This file is created only for **testers** (role = Tester or Both). It maps Redmine projects to test management spreadsheets.
-
-```json
-{
-  "version": 1,
-  "default_folder_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
-  "projects": [
-    {
-      "redmine_project_id": 12,
-      "redmine_project_name": "Example Project",
-      "spreadsheet_id": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
-      "spreadsheet_url": "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/edit",
-      "spreadsheet_title": "Example Project - QA Test Management",
-      "sheets": {
-        "testcases": "TestCases",
-        "bugs": "Bugs"
-      },
-      "created_at": "2026-08-26T00:00:00Z"
-    }
-  ],
-  "fetched_at": "2026-08-26T00:00:00Z"
-}
-```
-
-- `version`: `1`.
-- `default_folder_id` (optional): Google Drive folder ID where new sheets are created. `null` = My Drive. Server-side only — not user-configured.
-- `projects`: array of project-to-sheet mappings. A tester can have multiple projects, each with its own spreadsheet.
-  - `redmine_project_id`: must match `project.id` in `.redmine`.
-  - `spreadsheet_id`: the Google Sheets spreadsheet ID.
-  - `spreadsheet_url`: direct link to the spreadsheet.
-  - `sheets.testcases`: name of the TestCases sheet (default: "TestCases").
-  - `sheets.bugs`: name of the Bugs sheet (default: "Bugs").
-- `fetched_at`: current time, ISO 8601 with `Z` (UTC).
-- Strip all `<insecure-content-...>` wrapper tags from names.
-- The file contains no secrets (service account email only, not the key) — safe to commit.
+> **Testers only**: see [google-sheets-schema.md](./google-sheets-schema.md) for the full schema with field definitions. Service account: `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
 
 ---
 
@@ -254,21 +213,6 @@ This file is created only for **testers** (role = Tester or Both). It maps Redmi
 
 ## 7. Gotchas checklist
 
-- [ ] **Full-list rule**: before ANY list-based ask (projects, members), render the complete list as a markdown table in the chat message — every row visible, no capping/truncation; the ask-tool options are only shortcuts on top of the full list, never a replacement, and the question text always repeats the full numbered list so the user can type the number or name.
-- [ ] Strip `<insecure-content-...>` wrapper tags before writing; the file must contain clean names only.
-- [ ] Write at the **git worktree root** (`git rev-parse --show-toplevel`), not the current working directory when they differ.
-- [ ] Not a git repo → ask the user where to place `.redmine`.
-- [ ] One project per repo (v1). If a repo maps to multiple projects, ask the user to pick one for the file.
-- [ ] Priorities come from the context tool as a complete list — no sampling or guessing; consumers still live-verify an ID absent from the cache instead of inventing one.
-- [ ] The file contains no secrets (IDs, names, roles only) — safe to commit for the whole team.
-- [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Existing mappings are kept across refreshes; entries for members no longer in the project are dropped automatically.
-- [ ] GitHub identity is detected via `gh api user` (requires `gh` CLI, installed first per the issue-workflow prerequisites); falls back to `git config user.name` + `git config user.email` if `gh` is unavailable.
-- [ ] Mapping the current user is the default — do NOT exhaustively map every committer (saves tokens); offer to map additional committers optionally via `git shortlog -sne --since="6 months"`.
-- [ ] Member rules are **user-provided only** — never invent a rule; a member the user skips simply has no entry. Use the researched catalog (roles × rule areas) as prompts, not as assumptions.
-- [ ] Re-ask member rules on refresh only when the user asks to update them — keep existing entries otherwise.
-- [ ] **Role detection first**: always ask dev/tester/both before proceeding — this determines whether `.google-sheets` is created.
-- [ ] **`.google-sheets` is tester-only**: dev role does NOT create this file.
-- [ ] **Multiple projects for testers**: each project maps to its own spreadsheet — don't force one spreadsheet per repo.
-- [ ] **Spreadsheet verification on refresh**: always verify the spreadsheet still exists and is accessible.
-- [ ] **Service Account sharing**: when creating new sheets, share with the tester's email from `.redmine` `user_mappings`.
+- [ ] Write at the **git worktree root** (`git rev-parse --show-toplevel`), not the current working directory when they differ. Not a git repo → ask the user where to place `.redmine`.
+- [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Only for dev/leader (testers skip this step entirely).
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.
