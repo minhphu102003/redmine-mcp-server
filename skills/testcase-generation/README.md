@@ -34,8 +34,8 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 | Location | Works with |
 |---|---|
-| `.agents/skills/testcase-generation/` (inside your repo) | opencode + Claude Code + Agent SDK |
-| `.claude/skills/testcase-generation/` (inside your repo) | Claude Code + opencode |
+| `.agents/skills/testcase-generation/` (inside your repo) | opencode + Agent SDK |
+| `.opencode/skills/testcase-generation/` (inside your repo) | opencode |
 
 ```bash
 cp -r <path-to-this-repo>/skills/testcase-generation .agents/skills/

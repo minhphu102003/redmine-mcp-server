@@ -135,4 +135,4 @@ Rules: the approved text is sent verbatim; sending happens only after approval (
 - [ ] Team/aggregate reports are declined — one person per run.
 - [ ] `.redmine` is read-only in this skill — never write to it.
 - [ ] Delivery only via a configured `{{MESSAGE_DELIVERY}}`; otherwise copy-paste block.
-- [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.
+- [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / opencode) for the skill to load.

@@ -22,7 +22,6 @@ htmlcov/
 .pytest_cache/
 CLAUDE.md
 RELEASE_SOP.md
-.claude
 attachments
 plans
 .mcpregistry_github_token

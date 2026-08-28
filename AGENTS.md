@@ -1,6 +1,6 @@
 # AGENTS.md - Guide for AI Coding Assistants
 
-This document provides essential context and instructions for AI agents (like Claude, Cursor, or ChatGPT) working on the `redmine-mcp-server` repository.
+This document provides essential context and instructions for AI agents (like opencode, Cursor, or ChatGPT) working on the `redmine-mcp-server` repository.
 
 ## Project Overview
 `redmine-mcp-server` is a production-ready Model Context Protocol (MCP) server that bridges Redmine project management with AI agents. It is written in Python 3.10+ using FastMCP v3 and FastAPI.

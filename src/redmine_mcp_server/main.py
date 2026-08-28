@@ -199,6 +199,7 @@ def register_oauth_routes(target_app):
 
 
 # Export the Starlette app for testing and external use
+# Use streamable-http transport (works for opencode)
 app = mcp.http_app(stateless_http=True)
 
 # Register OAuth2 middleware and endpoints only when auth mode is oauth

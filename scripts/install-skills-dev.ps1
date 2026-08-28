@@ -81,7 +81,7 @@ foreach ($skill in $skills) {
 
 Write-Host ""
 Write-Host "Dev skills installed into: $destRoot"
-Write-Host "opencode and Claude Code / Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
+Write-Host "opencode and Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
 if ([string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
     Write-Host "Commit-workflow placeholder left empty - the commit pre-step is skipped (the skill works on an existing commit/PR)."
 } elseif ($CommitWorkflowPath -eq "none") {

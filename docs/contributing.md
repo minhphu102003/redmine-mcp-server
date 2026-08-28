@@ -188,8 +188,8 @@ git commit -m "docs: update installation instructions for Python 3.10"
 ```
 
 **Important:**
-- Do NOT include Claude Code attribution in commit messages
-- Do NOT append "Generated with [Claude Code]" or "Co-Authored-By: Claude"
+- Do NOT include opencode attribution in commit messages
+- Do NOT append "Generated with [opencode]" or "Co-Authored-By: opencode"
 - Keep commit messages clean and focused on actual changes
 
 ### 6. Push and Create Pull Request

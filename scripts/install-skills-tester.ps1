@@ -83,7 +83,7 @@ foreach ($skill in $skills) {
 
 Write-Host ""
 Write-Host "Tester skills installed into: $destRoot"
-Write-Host "opencode and Claude Code / Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
+Write-Host "opencode and Agent SDK auto-scan .agents/skills/. You are free to move the folders anywhere else."
 Write-Host ""
 Write-Host "QA skills installed: testcase-generation, bug-reporting, bug-to-redmine, status-sync, reopen-bug"
 Write-Host "Also installed: redmine-init (needed for .redmine and .google-sheets memory)"

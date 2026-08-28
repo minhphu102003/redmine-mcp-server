@@ -48,8 +48,8 @@ MCP clients handle the OAuth flow automatically — when connecting to the serve
 | Client | OAuth2 | Notes |
 |--------|--------|-------|
 | **VS Code** (1.102+) | Yes | Full OAuth 2.1 with PKCE and DCR |
-| **Claude Code** | Yes | Auto browser flow on 401. Use `--callback-port` for fixed port |
-| **Claude Desktop** | Yes | Via Settings → Connectors. Requires DCR |
+| **opencode** | Yes | Auto browser flow on 401. Use `--callback-port` for fixed port |
+| **opencode** | Yes | Via Settings → Connectors. Requires DCR |
 | **Codex CLI** | Yes | Use `codex mcp login`. Configurable callback port |
 | **Kiro** | Yes | Configurable `oauth.redirectUri`. Implementation is newer |
 
@@ -60,11 +60,11 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 | Client | Redirect URI |
 |--------|-------------|
 | VS Code | `http://127.0.0.1:PORT/callback` |
-| Claude Code | `http://127.0.0.1:PORT/oauth/callback` |
+| opencode | `http://127.0.0.1:PORT/oauth/callback` |
 | Codex CLI | `http://127.0.0.1:PORT/callback` |
 | Kiro | Configurable via `oauth.redirectUri` |
 
-> **Note on DCR:** Some clients (Claude Desktop, VS Code) expect Dynamic Client Registration. Redmine's Doorkeeper does not support DCR, so you must pre-register the app manually (Step 1) and configure the client with the `client_id`/`client_secret`.
+> **Note on DCR:** Some clients (opencode, VS Code) expect Dynamic Client Registration. Redmine's Doorkeeper does not support DCR, so you must pre-register the app manually (Step 1) and configure the client with the `client_id`/`client_secret`.
 
 ## Migrating from Legacy Mode
 

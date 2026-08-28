@@ -1,6 +1,6 @@
 # Redmine MCP Server
 
-Redmine MCP Server connects your AI coding agent (opencode, Claude Code, VS Code, ...) to your Redmine instance. But it is **not just a box of tools** — it ships with agent skills that package a complete workflow: install the skills into your repo once, and your agent automates the whole "commit → Redmine issue" loop end-to-end. You only confirm each step; the agent does the rest.
+Redmine MCP Server connects your AI coding agent (opencode, VS Code, ...) to your Redmine instance. But it is **not just a box of tools** — it ships with agent skills that package a complete workflow: install the skills into your repo once, and your agent automates the whole "commit → Redmine issue" loop end-to-end. You only confirm each step; the agent does the rest.
 
 ## The workflow
 
@@ -22,7 +22,7 @@ Redmine MCP Server connects your AI coding agent (opencode, Claude Code, VS Code
       changelog entry, logs the time  → all confirmed first
 ```
 
-**You only confirm. Everything else is automated.** Confirmations use your agent's structured ask UI (opencode `question`, Claude Code `AskUserQuestion`), so you pick from real option lists — no IDs to memorize, no text to draft.
+**You only confirm. Everything else is automated.** Confirmations use your agent's structured ask UI (opencode `question`), so you pick from real option lists — no IDs to memorize, no text to draft.
 
 ## Setup — 3 steps to get the workflow running
 
@@ -127,16 +127,6 @@ Use `~/.config/opencode/opencode.json` to apply it to all projects. Restart open
 </details>
 
 <details>
-<summary><b>Claude Code</b> — `claude mcp add`</summary>
-
-```bash
-claude mcp add --transport http redmine http://127.0.0.1:8000/mcp \
-  --header "X-Redmine-URL: https://redmine.yourcompany.com" \
-  --header "X-Redmine-API-Key: your_api_key"
-```
-</details>
-
-<details>
 <summary><b>VS Code</b> — `code --add-mcp`</summary>
 
 ```bash
@@ -207,7 +197,7 @@ This repo ships skills that teach your agent the workflow above:
 - [`status-sync`](./skills/status-sync/README.md) — syncs Redmine issue statuses back to Google Sheets
 - [`reopen-bug`](./skills/reopen-bug/README.md) — reopens bugs on Redmine and Google Sheets
 
-Install skills into your repo with one command (opencode and Claude Code auto-scan `.agents/skills/`):
+Install skills into your repo with one command (opencode auto-scans `.agents/skills/`):
 
 **For developers** (issue workflow, planning, daily report):
 
@@ -226,21 +216,6 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 ```powershell
 irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
 ```
-
-**Claude Code global install** (all projects, `~/.claude/skills/`):
-
-```powershell
-# Install all skills
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex
-
-# Dev only (redmine-init, redmine-issue-workflow, redmine-planning, redmine-daily-report)
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex -DevOnly
-
-# Tester only (redmine-init, testcase-generation, bug-reporting, bug-to-redmine, status-sync, reopen-bug)
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex -TesterOnly
-```
-
-Skills are installed to `~/.claude/skills/` and auto-loaded by Claude Code. Restart Claude Code after installation. Run `/list-skills` to verify.
 
 **GitHub OAuth is built in** — the workflow authenticates to GitHub through the `gh` CLI (device flow, no tokens to paste):
 

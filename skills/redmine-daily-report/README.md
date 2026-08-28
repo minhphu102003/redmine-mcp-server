@@ -38,14 +38,14 @@ If you have a local clone of this repo (e.g. `D:\redmine-mcp-server`), run the s
 & D:\redmine-mcp-server\scripts\install-skills.ps1
 ```
 
-The script installs into `.agents/skills/`, which **opencode and Claude Code / Agent SDK auto-scan** — no config required. You are free to move the skill folder to another location afterwards (see table below).
+The script installs into `.agents/skills/`, which **opencode and Agent SDK auto-scan** — no config required. You are free to move the skill folder to another location afterwards (see table below).
 
 ### Manual copy
 
 | Location | Works with |
 |---|---|
-| `.agents/skills/redmine-daily-report/` (inside your repo) | opencode + Claude Code + Agent SDK (auto-scan) |
-| `.claude/skills/redmine-daily-report/` (inside your repo) | Claude Code + opencode (auto-scan) |
+| `.agents/skills/redmine-daily-report/` (inside your repo) | opencode + Agent SDK (auto-scan) |
+| `.opencode/skills/redmine-daily-report/` (inside your repo) | opencode (auto-scan) |
 | `.opencode/skills/redmine-daily-report/` (inside your repo) | opencode only |
 | `~/.config/opencode/skills/redmine-daily-report/` (global) | opencode, all projects |
 
@@ -55,7 +55,7 @@ Example for opencode (project-level), from the project you want the skill in:
 cp -r <path-to-this-repo>/skills/redmine-daily-report .agents/skills/
 ```
 
-Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup.
+Then **restart your agent** (quit and reopen opencode) — skills are loaded at startup.
 
 To use the cache fast path, also install the sibling [`redmine-init`](../redmine-init/README.md) skill and run `redmine init` once in your repository — it writes the `.redmine` file this skill reads.
 

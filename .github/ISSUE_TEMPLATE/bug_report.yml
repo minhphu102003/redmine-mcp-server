@@ -73,8 +73,8 @@ body:
       label: MCP Client
       description: Which MCP client are you using?
       options:
-        - Claude Desktop
-        - Claude Code (CLI)
+        - opencode
+        - opencode (CLI)
         - Cursor
         - VS Code with MCP extension
         - Other (specify in additional context)

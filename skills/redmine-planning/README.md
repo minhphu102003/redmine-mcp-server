@@ -58,7 +58,7 @@ If the installer does not list this skill yet (older commit), copy manually:
 cp -r <path-to-this-repo>/skills/redmine-planning .agents/skills/
 ```
 
-Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup.
+Then **restart your agent** (quit and reopen opencode / opencode) — skills are loaded at startup.
 
 ### Prerequisites
 

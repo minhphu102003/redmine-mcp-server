@@ -60,7 +60,7 @@ Ask the user (structured ask tool, plain text as fallback):
    | 2 | 156 | [MobileApp] CLICK-Ed app platform | du-an-qa-app |
    | ... | ... | ... | ... |
    ```
-   Then ask "repo này tương ứng với project Redmine nào?" with the agent's structured ask tool (opencode `question`, Claude Code `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Rules for the ask:
+   Then ask "repo này tương ứng với project Redmine nào?" with the agent's structured ask tool (opencode `question`, opencode `AskUserQuestion`, Codex `request_user_input`; plain text as fallback). Rules for the ask:
    - The question text must **repeat the full list as a numbered list** (ask tools accept custom/free-text answers — the user types the number or name from the table).
    - Always include a catch-all custom/free-text option like "Khác — gõ số hoặc tên từ bảng trên".
    - Add at most 2–4 clickable shortcuts of the most likely projects **on top of** the full list — they are conveniences, never a replacement; users must always be able to see and choose ALL entries.
@@ -215,4 +215,4 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 
 - [ ] Write at the **git worktree root** (`git rev-parse --show-toplevel`), not the current working directory when they differ. Not a git repo → ask the user where to place `.redmine`.
 - [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Only for dev/leader (testers skip this step entirely).
-- [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / Claude Code) for the skill to load.
+- [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / opencode) for the skill to load.

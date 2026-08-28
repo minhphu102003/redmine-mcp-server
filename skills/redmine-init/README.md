@@ -42,14 +42,14 @@ If you have a local clone of this repo (e.g. `D:\redmine-mcp-server`), run the s
 & D:\redmine-mcp-server\scripts\install-skills.ps1
 ```
 
-The script installs into `.agents/skills/`, which **opencode and Claude Code / Agent SDK auto-scan** — no config required. You are free to move the skill folders to another location afterwards (see table below).
+The script installs into `.agents/skills/`, which **opencode and Agent SDK auto-scan** — no config required. You are free to move the skill folders to another location afterwards (see table below).
 
 ### Manual copy
 
 | Location | Works with |
 |---|---|
-| `.agents/skills/redmine-init/` (inside your repo) | opencode + Claude Code + Agent SDK (auto-scan) |
-| `.claude/skills/redmine-init/` (inside your repo) | Claude Code + opencode (auto-scan) |
+| `.agents/skills/redmine-init/` (inside your repo) | opencode + Agent SDK (auto-scan) |
+| `.opencode/skills/redmine-init/` (inside your repo) | opencode (auto-scan) |
 | `.opencode/skills/redmine-init/` (inside your repo) | opencode only |
 | `~/.config/opencode/skills/redmine-init/` (global) | opencode, all projects |
 
@@ -61,7 +61,7 @@ cp -r <path-to-this-repo>/skills/redmine-init .agents/skills/
 
 Also copy `redmine-issue-workflow` (see its [README](../redmine-issue-workflow/README.md)) — it is the consumer that reads the cache when creating issues.
 
-Then **restart your agent** (quit and reopen opencode / Claude Code) — skills are loaded at startup.
+Then **restart your agent** (quit and reopen opencode) — skills are loaded at startup.
 
 ### Prerequisites
 
