@@ -227,6 +227,21 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
 ```
 
+**Claude Code global install** (all projects, `~/.claude/skills/`):
+
+```powershell
+# Install all skills
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex
+
+# Dev only (redmine-init, redmine-issue-workflow, redmine-planning, redmine-daily-report)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex -DevOnly
+
+# Tester only (redmine-init, testcase-generation, bug-reporting, bug-to-redmine, status-sync, reopen-bug)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude.ps1 | iex -TesterOnly
+```
+
+Skills are installed to `~/.claude/skills/` and auto-loaded by Claude Code. Restart Claude Code after installation. Run `/list-skills` to verify.
+
 **GitHub OAuth is built in** — the workflow authenticates to GitHub through the `gh` CLI (device flow, no tokens to paste):
 
 ```bash
