@@ -107,6 +107,7 @@ from .handler_impl.tools import (  # noqa: E402
     search_entire_redmine_impl,
     search_redmine_issues_impl,
     set_sheet_data_validation_impl,
+    create_test_sheet_structure_impl,
     summarize_project_status_impl,
     sync_redmine_status_to_sheet_impl,
     update_redmine_issue_impl,
@@ -2905,6 +2906,28 @@ async def set_sheet_data_validation(
         end_row=end_row,
         strict=strict,
         input_message=input_message,
+        get_sheets_service=google_sheets_manager.get_service,
+        handle_error=_handle_google_sheets_error,
+    )
+
+
+@mcp.tool()
+async def create_test_sheet_structure(
+    title: str = Field(description="The spreadsheet title"),
+) -> Dict[str, Any]:
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets, including styled headers.
+
+    Use this to set up a new test management spreadsheet for a project.
+    Headers are styled with blue background, white text, bold, frozen row, auto-resized columns.
+
+    After creation, share the spreadsheet URL with the service account email
+    (found in README) before using other QA tools.
+
+    Returns:
+        spreadsheet_id, spreadsheet_url, and sheet info.
+    """
+    return await create_test_sheet_structure_impl(
+        title,
         get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
     )
