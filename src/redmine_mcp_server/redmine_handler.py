@@ -2750,6 +2750,12 @@ async def create_test_cases_on_sheet(
             )
         ),
     ],
+    us_title: Annotated[
+        str,
+        Field(
+            description="User story title used for the US section header row, e.g. 'Login Feature'"
+        ),
+    ],
     clear_existing: Annotated[
         bool,
         Field(description="Clear existing data before writing (keep headers)"),
@@ -2761,7 +2767,10 @@ async def create_test_cases_on_sheet(
         sheet_name,
         test_cases,
         clear_existing,
+        us_title,
         get_sheets_service=google_sheets_manager.get_service,
+        get_user_memory=get_user_memory_impl,
+        set_user_memory=set_user_memory_impl,
         handle_error=_handle_google_sheets_error,
     )
 
@@ -2947,8 +2956,9 @@ async def create_test_sheet_structure(
       re-sharing needed.
 
     Both modes include UPPERCASE headers, styled headers (blue bg, white bold
-    text), frozen header row, auto-resized columns, and data validation
-    dropdowns for tester, status, priority, last_test_result, and assigned_to.
+    text), frozen header row, column widths sized to each header text +
+    consistent 12px L/R padding, and data validation dropdowns for tester,
+    status, priority, last_test_result, and assigned_to.
 
     Returns:
         spreadsheet_id, spreadsheet_url, sheets info, and (for the existing-

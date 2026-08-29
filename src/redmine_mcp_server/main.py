@@ -208,7 +208,9 @@ from contextlib import asynccontextmanager  # noqa: E402
 
 async def health_check(request):
     """Health check endpoint."""
-    return JSONResponse({"status": "ok", "service": "redmine_mcp_tools", "auth_mode": REDMINE_AUTH_MODE})
+    return JSONResponse(
+        {"status": "ok", "service": "redmine_mcp_tools", "auth_mode": REDMINE_AUTH_MODE}
+    )
 
 
 # SSE app for Claude Desktop

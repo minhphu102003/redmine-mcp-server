@@ -32,8 +32,15 @@ def _import_memory_impl():
     import sys
 
     # Get the path to memory.py
-    module_path = Path(__file__).parent.parent / "src" / "redmine_mcp_server" / "handler_impl" / "tools" / "memory.py"
-    
+    module_path = (
+        Path(__file__).parent.parent
+        / "src"
+        / "redmine_mcp_server"
+        / "handler_impl"
+        / "tools"
+        / "memory.py"
+    )
+
     spec = importlib.util.spec_from_file_location(
         "redmine_mcp_server.handler_impl.tools.memory",
         module_path,
@@ -224,7 +231,9 @@ class TestMemoryTools:
         memory_mod = _import_memory_impl()
 
         mock_get = MagicMock(return_value=None)
-        result = await memory_mod.get_user_memory_impl("nonexistent", get_entry=mock_get)
+        result = await memory_mod.get_user_memory_impl(
+            "nonexistent", get_entry=mock_get
+        )
 
         assert "error" in result
         assert "nonexistent" in result["error"]
@@ -248,7 +257,9 @@ class TestMemoryTools:
         memory_mod = _import_memory_impl()
 
         mock_delete = MagicMock(return_value={"status": "deleted"})
-        result = await memory_mod.delete_user_memory_impl(".redmine", delete_entry=mock_delete)
+        result = await memory_mod.delete_user_memory_impl(
+            ".redmine", delete_entry=mock_delete
+        )
 
         mock_delete.assert_called_once_with(".redmine")
         assert result["status"] == "deleted"

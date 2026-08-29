@@ -83,6 +83,27 @@ async def write_google_sheet_impl(
 # --- Tool 3: append_google_sheet ---
 
 
+import re
+
+# Markdown detection compiled pattern (shared by append and create_test_cases)
+_MARKDOWN_RE = re.compile(r"\*\*|\*|`|\[.+\]\(")
+
+
+def _has_markdown(text: str) -> bool:
+    """Return True if text contains bold/italic/code/hyperlink markdown."""
+    return bool(_MARKDOWN_RE.search(text or ""))
+
+
+def _rich_text_runs(text: str) -> List[Dict[str, Any]]:
+    """Parse markdown text and return Google Sheets textFormatRuns list.
+
+    Supports: ***bold italic***, **bold**, *italic*, `code`, [label](url).
+    """
+    from ...serializers.google_sheets import parse_markdown_to_rich_text
+
+    return parse_markdown_to_rich_text(text)
+
+
 async def append_google_sheet_impl(
     spreadsheet_id: str,
     sheet_name: str,
@@ -91,7 +112,11 @@ async def append_google_sheet_impl(
     get_sheets_service: Callable[[], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
-    """Append rows to the end of a Google Sheet."""
+    """Append rows to the end of a Google Sheet.
+
+    Cells containing markdown (bold/italic/code/hyperlink) in the first
+    5 columns are automatically formatted as rich text after writing.
+    """
     try:
         service = get_sheets_service()
         body = {"values": values}
@@ -109,13 +134,116 @@ async def append_google_sheet_impl(
             .execute()
         )
         updates = result.get("updates", {})
+        updated_rows = updates.get("updatedRows", 0)
+        table_range = updates.get("updatedRange", range_name)
+
+        # Post-process: apply rich text to markdown cells in the written rows
+        if updated_rows > 0:
+            _apply_markdown_rich_text(
+                service=service,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_row=1,  # rows appended from row 1 onward
+                row_count=updated_rows,
+                markdown_col_indices={3, 4, 5},  # D, E, F
+            )
+
         return {
-            "updated_rows": updates.get("updatedRows", 0),
+            "updated_rows": updated_rows,
             "updated_cells": updates.get("updatedCells", 0),
-            "table_range": updates.get("updatedRange", range_name),
+            "table_range": table_range,
         }
     except Exception as e:
         return handle_error(e, f"appending to Google Sheet {spreadsheet_id}")
+
+
+def _apply_markdown_rich_text(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_row: int,
+    row_count: int,
+    markdown_col_indices: set[int],
+) -> None:
+    """Apply rich-text formatting to cells in markdown columns that contain
+    markdown tokens, using textFormatRuns via repeatCell."""
+    try:
+        # Read back the written values to find which cells need formatting
+        end_row = start_row + row_count
+        read_range = f"{sheet_name}!A{start_row}:Z{end_row}"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=read_range)
+            .execute()
+        )
+        written = result.get("values", [])
+    except Exception:
+        return
+
+    if not written:
+        return
+
+    # Build repeatCell requests for cells with markdown
+    requests: List[Dict[str, Any]] = []
+    for row_offset, row in enumerate(written):
+        actual_row = start_row + row_offset
+        for col_idx in markdown_col_indices:
+            if col_idx >= len(row):
+                continue
+            cell_text = row[col_idx] if row[col_idx] else ""
+            if not _has_markdown(cell_text):
+                continue
+            rich_runs = _rich_text_runs(cell_text)
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": None,  # filled after sheetId lookup
+                            "startRowIndex": actual_row - 1,
+                            "endRowIndex": actual_row,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
+                        },
+                        "cell": {"textFormatRuns": rich_runs},
+                        "fields": "textFormatRuns",
+                    }
+                }
+            )
+
+    if not requests:
+        return
+
+    # Resolve sheetId from sheet name
+    try:
+        meta = (
+            service.spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                fields="sheets.properties",
+            )
+            .execute()
+        )
+        sheet_id_map = {
+            s["properties"]["title"]: s["properties"]["sheetId"]
+            for s in meta.get("sheets", [])
+        }
+        target_sheet_id = sheet_id_map.get(sheet_name)
+    except Exception:
+        return
+
+    if target_sheet_id is None:
+        return
+
+    for req in requests:
+        req["repeatCell"]["range"]["sheetId"] = target_sheet_id
+
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests}
+        ).execute()
+    except Exception as e:
+        logger.warning("_apply_markdown_rich_text failed: %s", e)
 
 
 # --- Tool 4: get_sheet_metadata ---
@@ -179,8 +307,11 @@ async def create_test_cases_on_sheet_impl(
     sheet_name: str,
     test_cases: List[Dict[str, str]],
     clear_existing: bool,
+    us_title: str,
     *,
     get_sheets_service: Callable[[], Any],
+    get_user_memory: Callable[[str], Any],
+    set_user_memory: Callable[[str, Dict[str, Any]], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
     """Parse test cases and push to Google Sheets. Create Bugs sheet if needed."""
@@ -189,6 +320,7 @@ async def create_test_cases_on_sheet_impl(
             TESTCASES_HEADERS,
             BUGS_HEADERS,
             build_test_case_id,
+            parse_markdown_to_rich_text,
             validate_test_case,
         )
 
@@ -297,6 +429,114 @@ async def create_test_cases_on_sheet_impl(
                 body={"values": [TESTCASES_HEADERS]},
             ).execute()
 
+        # Auto US section header — read color index + counter from memory
+        US_COLOR_PALETTE = [
+            "#4285F4",
+            "#34A853",
+            "#FBBC04",
+            "#EA4335",
+            "#9334E6",
+            "#FF6D01",
+            "#46BDC6",
+            "#7BAAF7",
+        ]
+        MEMORY_KEY = ".google-sheets"
+
+        memory = await get_user_memory(MEMORY_KEY)
+        memory_value: Dict[str, Any] = {}
+        if isinstance(memory, dict) and "value" in memory:
+            memory_value = memory["value"] if isinstance(memory["value"], dict) else {}
+        projects = (
+            memory_value.get("projects", []) if isinstance(memory_value, dict) else []
+        )
+
+        project_entry: Optional[Dict[str, Any]] = None
+        for p in projects:
+            if p.get("spreadsheet_id") == spreadsheet_id:
+                project_entry = p
+                break
+
+        if project_entry is None:
+            project_entry = {
+                "spreadsheet_id": spreadsheet_id,
+                "us_color_index": 0,
+                "us_id_counter": 1,
+            }
+            projects.append(project_entry)
+            memory_value = {"projects": projects}
+
+        us_color_index = project_entry.get("us_color_index", 0)
+        us_id_counter = project_entry.get("us_id_counter", 1)
+
+        color = US_COLOR_PALETTE[us_color_index % len(US_COLOR_PALETTE)]
+        us_id_str = f"US-{us_id_counter}"
+        us_title_cell = f"[{us_id_str}] {us_title}"
+
+        project_entry["us_color_index"] = us_color_index + 1
+        project_entry["us_id_counter"] = us_id_counter + 1
+        memory_to_save = {"projects": projects}
+        set_user_memory_result = await set_user_memory(MEMORY_KEY, memory_to_save)
+        del set_user_memory_result
+
+        from ..google_sheets_client import google_sheets_manager
+
+        sheet_meta = (
+            service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+            .execute()
+        )
+        sheet_id: Optional[int] = None
+        for s in sheet_meta.get("sheets", []):
+            if s["properties"]["title"] == sheet_name:
+                sheet_id = s["properties"]["sheetId"]
+                break
+
+        total_rows_in_sheet = 1
+        if sheet_id is not None:
+            try:
+                dim_meta = (
+                    service.spreadsheets()
+                    .get(
+                        spreadsheetId=spreadsheet_id,
+                        fields=f"sheets.properties.sheetId,sheets.properties.gridProperties.rowCount",
+                    )
+                    .execute()
+                )
+                for s in dim_meta.get("sheets", []):
+                    if s["properties"].get("sheetId") == sheet_id:
+                        total_rows_in_sheet = s["properties"].get("rowCount", 1)
+                        break
+            except Exception:
+                pass
+
+        existing_count = 0
+        try:
+            count_result = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A:A")
+                .execute()
+            )
+            existing_count = len(count_result.get("values", [])) - 1
+            if existing_count < 0:
+                existing_count = 0
+        except Exception:
+            pass
+
+        if clear_existing:
+            us_header_row_index = 1
+        else:
+            us_header_row_index = 1 + existing_count
+
+        if sheet_id is not None and existing_count > 0:
+            google_sheets_manager.add_us_section_header(
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                us_title=us_title_cell,
+                row_index=us_header_row_index,
+                color=color,
+            )
+
         # Append test case rows
         body = {"values": rows}
         append_result = (
@@ -311,6 +551,24 @@ async def create_test_cases_on_sheet_impl(
             )
             .execute()
         )
+
+        # Post-process: apply rich text to markdown columns (precondition D, steps E, expected_result F)
+        if rows:
+            first_new_row = (
+                len(existing_ids) + 2
+            )  # row index (1-based) of first appended row
+            _apply_markdown_rich_text(
+                service=service,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_row=first_new_row,
+                row_count=len(rows),
+                markdown_col_indices={
+                    3,
+                    4,
+                    5,
+                },  # D: precondition, E: steps, F: expected_result
+            )
 
         # Create Bugs sheet if it doesn't exist
         bugs_sheet_name = "Bugs"
@@ -967,7 +1225,8 @@ async def create_test_sheet_structure_impl(
     OR add TestCases/Bugs sheets to an existing spreadsheet.
 
     Includes UPPERCASE headers, styled headers (blue bg, white bold text),
-    frozen header row, auto-resized columns, and data validation dropdowns.
+    frozen header row, column widths sized to each header text + consistent
+    12px L/R padding, and data validation dropdowns.
 
     Args:
         title: The spreadsheet title (used only when creating a new spreadsheet).
