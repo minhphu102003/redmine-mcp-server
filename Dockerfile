@@ -51,7 +51,7 @@ COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser README.md ./
 
 # Create directories for logs and data
-RUN mkdir -p /app/logs /app/data /app/data/attachments && \
+RUN mkdir -p /app/logs /app/data /app/data/attachments /app/data/memory && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user

@@ -32,3 +32,4 @@ docs_internal/
 uv.lock
 .omx
 credentials/
+data/memory/

@@ -59,12 +59,12 @@ testcase-generation → bug-reporting → bug-to-redmine → status-sync ← YOU
 
 ## 2. Step 1 — Clarify the parameters
 
-**Memory check first**: before asking the user for a spreadsheet ID, check if `~/.redmine-mcp/.google-sheets` exists and has a mapping for the current project.
+**Memory check first**: before asking the user for a spreadsheet ID, call `get_user_memory(key=".google-sheets")` to check if a mapping exists for the current project.
 
 1. If `.google-sheets` exists and has a mapping → use its `spreadsheet_id`, `sheets.testcases`, `sheets.bugs`. Skip to "Verify access".
 2. If no mapping → **setup new project sheet**:
 
-   a. Read `~/.redmine-mcp/.redmine` → `projects` array (full-list rule).
+   a. Call `get_user_memory(key=".redmine")` → `projects` array (full-list rule).
    b. Ask user: "Bạn đang sync status cho project nào?" with project list.
    c. User picks a project → instruct:
       ```
@@ -74,15 +74,15 @@ testcase-generation → bug-reporting → bug-to-redmine → status-sync ← YOU
       4. Paste the spreadsheet URL here
       ```
    d. Extract spreadsheet_id → verify access → verify sheet structure.
-   e. Save mapping to `~/.redmine-mcp/.google-sheets`.
+   e. Save mapping: call `set_user_memory(key=".google-sheets", value=<updated_data>)`.
    f. Proceed with this project.
 
 **Verify access**: call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
 
 Ask the user (structured ask tool, plain text as fallback):
 
-1. **Bug sheet name**: default = "Bugs" (or from `~/.redmine-mcp/.google-sheets` mapping).
-2. **TestCases sheet name**: default = "TestCases" (or from `~/.redmine-mcp/.google-sheets` mapping).
+1. **Bug sheet name**: default = "Bugs" (or from `get_user_memory(key=".google-sheets")` mapping).
+2. **TestCases sheet name**: default = "TestCases" (or from `get_user_memory(key=".google-sheets")` mapping).
 
 ---
 

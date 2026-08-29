@@ -29,13 +29,13 @@ Generate test cases from a user story, let the user review and refine them in a 
 
 ## 2. Step 1 — Resolve spreadsheet
 
-**Memory check first**: before asking the user for a spreadsheet ID, check if `~/.redmine-mcp/.google-sheets` exists.
+**Memory check first**: before asking the user for a spreadsheet ID, call `get_user_memory(key=".google-sheets")` to check if a mapping exists.
 
 1. If `.google-sheets` exists → read it and find the mapping for the current project (match `redmine_project_id` against `.redmine` `project.id`).
 2. If a mapping exists → use its `spreadsheet_id`, `sheets.testcases`, `sheets.bugs`. Skip to "Resolve user story source" below.
 3. If `.google-sheets` doesn't exist, or no mapping for this project → **setup new project sheet**:
 
-   a. Read `~/.redmine-mcp/.redmine` → `projects` array (all projects the user has access to). Full-list rule: show all, no truncation.
+   a. Call `get_user_memory(key=".redmine")` → `projects` array (all projects the user has access to). Full-list rule: show all, no truncation.
    b. Ask user: "Bạn đang làm test case cho project nào?" with project list.
    c. User picks a project → instruct:
       ```
@@ -45,7 +45,7 @@ Generate test cases from a user story, let the user review and refine them in a 
       4. Paste the spreadsheet URL here
       ```
    d. Extract spreadsheet_id from URL → verify access → verify sheet structure (TestCases/Bugs tabs).
-   e. Save mapping to `~/.redmine-mcp/.google-sheets`: `{redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets}`.
+   e. Save mapping: call `set_user_memory(key=".google-sheets", value={redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets})`.
    f. Proceed with this project.
 
 **Resolve user story source**: where is the story?
@@ -464,7 +464,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 
    | Column | Index | Options | Source |
    |--------|-------|---------|--------|
-   | `tester` | 6 (G) | Team member names | `~/.redmine-mcp/.redmine` → `members[].user.name` |
+   | `tester` | 6 (G) | Team member names | `get_user_memory(key=".redmine")` → `members[].user.name` |
    | `last_test_result` | 8 (I) | Not Tested, Pass, Fail, Blocked | Static |
 
    Example: set tester dropdown for TestCases sheet:

@@ -135,6 +135,13 @@ from .serializers import (  # noqa: E402
     _time_entry_to_dict,
     _wiki_page_to_dict,
 )
+from . import memory_store  # noqa: E402
+from .handler_impl.tools.memory import (  # noqa: E402
+    get_user_memory_impl,
+    set_user_memory_impl,
+    delete_user_memory_impl,
+    list_user_memory_impl,
+)
 from .google_sheets_client import google_sheets_manager  # noqa: E402
 from .serializers.google_sheets import (  # noqa: E402
     map_priority_to_redmine as _map_priority_to_redmine,
@@ -2957,6 +2964,104 @@ def _handle_google_sheets_error(
     if "404" in error_msg or "not found" in error_msg.lower():
         return {"error": f"Spreadsheet not found: {error_msg}"}
     return {"error": f"Google Sheets error: {error_msg}"}
+
+
+# --- Memory Tools (server-side) ---
+
+
+@mcp.tool()
+async def get_user_memory(
+    key: Annotated[
+        str,
+        Field(
+            description=(
+                "Memory key to retrieve. Common keys: '.redmine' (Redmine project "
+                "cache), '.google-sheets' (spreadsheet mappings). Any string key "
+                "is accepted."
+            )
+        ),
+    ],
+) -> Dict[str, Any]:
+    """Retrieve a stored memory entry for the current user.
+
+    Memory persists server-side across sessions, keyed by your Redmine
+    credentials. Use this instead of local .redmine / .google-sheets files
+    when running in dynamic auth mode or from Claude Desktop.
+
+    Common keys:
+      - '.redmine': project cache (trackers, members, statuses, priorities, etc.)
+      - '.google-sheets': project-to-spreadsheet mappings for QA
+    """
+    return await get_user_memory_impl(
+        key,
+        get_entry=memory_store.get_entry,
+    )
+
+
+@mcp.tool()
+async def set_user_memory(
+    key: Annotated[
+        str,
+        Field(
+            description=(
+                "Memory key to store. Use conventional names like '.redmine' or "
+                "'.google-sheets' for project cache and sheet mappings."
+            )
+        ),
+    ],
+    value: Annotated[
+        Dict[str, Any],
+        Field(
+            description=(
+                "JSON-serializable dict to store under this key. "
+                "Will overwrite any existing value for this key."
+            )
+        ),
+    ],
+) -> Dict[str, Any]:
+    """Store a memory entry for the current user.
+
+    Memory persists server-side across sessions. Use this to save
+    project context, spreadsheet mappings, or any user-scoped data
+    that needs to survive across Claude Desktop sessions.
+
+    The value completely replaces any previous value for this key.
+    """
+    return await set_user_memory_impl(
+        key,
+        value,
+        set_entry=memory_store.set_entry,
+    )
+
+
+@mcp.tool()
+async def delete_user_memory(
+    key: Annotated[
+        str,
+        Field(description="Memory key to delete."),
+    ],
+) -> Dict[str, Any]:
+    """Delete a memory entry for the current user.
+
+    Removes the specified key from server-side memory.
+    """
+    return await delete_user_memory_impl(
+        key,
+        delete_entry=memory_store.delete_entry,
+    )
+
+
+@mcp.tool()
+async def list_user_memory() -> Dict[str, Any]:
+    """List all stored memory keys for the current user.
+
+    Returns the list of keys and a count. Use get_user_memory to
+    retrieve the value of a specific key.
+    """
+    return await list_user_memory_impl(
+        list_keys=memory_store.list_keys,
+        get_user_hash=memory_store.get_user_hash,
+    )
 
 
 if __name__ == "__main__":
