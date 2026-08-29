@@ -416,9 +416,9 @@ def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
     assert insert["insertRange"]["range"]["startRowIndex"] == 2
     assert insert["insertRange"]["range"]["endRowIndex"] == 3
     assert insert["insertRange"]["range"]["startColumnIndex"] == 0
-    assert insert["insertRange"]["range"]["endColumnIndex"] == 10
+    assert insert["insertRange"]["range"]["endColumnIndex"] == 11
 
-    # repeatCell background + text format (full row A-J)
+    # repeatCell background + text format (full row A-K)
     fmt_cell = next(
         r
         for r in requests
@@ -428,7 +428,7 @@ def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
     assert fmt_cell["repeatCell"]["range"]["startRowIndex"] == 2
     assert fmt_cell["repeatCell"]["range"]["endRowIndex"] == 3
     assert fmt_cell["repeatCell"]["range"]["startColumnIndex"] == 0
-    assert fmt_cell["repeatCell"]["range"]["endColumnIndex"] == 10
+    assert fmt_cell["repeatCell"]["range"]["endColumnIndex"] == 11
     rgb = fmt_cell["repeatCell"]["cell"]["userEnteredFormat"]["backgroundColor"]
     # #4285F4 → 66/255=0.259, 133/255=0.522, 244/255=0.957
     assert 0.25 < rgb["red"] < 0.27
@@ -449,7 +449,7 @@ def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
     assert merge["mergeCells"]["range"]["startRowIndex"] == 2
     assert merge["mergeCells"]["range"]["endRowIndex"] == 3
     assert merge["mergeCells"]["range"]["startColumnIndex"] == 0
-    assert merge["mergeCells"]["range"]["endColumnIndex"] == 10
+    assert merge["mergeCells"]["range"]["endColumnIndex"] == 11
     assert merge["mergeCells"]["mergeType"] == "MERGE_ALL"
 
     # repeatCell value (column A only)

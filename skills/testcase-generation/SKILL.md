@@ -466,6 +466,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 | Steps | `steps` | Join numbered lines into single string |
 | Expected | `expected_result` | |
 | Tester | `tester` | From draft, or empty |
+| Evidence | `evidence` | Optional. URL or hyperlink string (paste link to screenshot, recording, etc.). Text-only — agent does not upload image files. |
 | US Title | *(not a column)* | Passed as `us_title` parameter to tool — a merged colored header row is auto-inserted before the TC rows |
 | *(auto)* | `test_case_id` | Generated: TC-001, TC-002... |
 | *(auto)* | `created_date` | Set to today (YYYY-MM-DD) |

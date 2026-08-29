@@ -19,6 +19,7 @@ TESTCASES_KEYS = [
     "created_date",
     "last_test_result",
     "last_test_date",
+    "evidence",
 ]
 
 BUGS_KEYS = [
@@ -138,6 +139,7 @@ HEADER_WRAP_COLUMNS = frozenset(
         "EXPECTED_RESULT",
         "DESCRIPTION",
         "REJECT_REASON",
+        "EVIDENCE",
     }
 )
 
