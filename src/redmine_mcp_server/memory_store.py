@@ -49,10 +49,17 @@ def _resolve_user_hash() -> Optional[str]:
         from .dynamic_auth_middleware import get_dynamic_config
 
         dyn_url, dyn_key = get_dynamic_config()
+        logger.warning(
+            "DEBUG memory_store._resolve_user_hash: url=%r key_present=%s",
+            dyn_url,
+            bool(dyn_key),
+        )
         if dyn_url and dyn_key:
             return compute_user_hash(dyn_url, dyn_key)
     except ImportError:
-        pass
+        logger.exception("DEBUG memory_store: import error")
+    except Exception:
+        logger.exception("DEBUG memory_store: unexpected error in _resolve_user_hash")
 
     return None
 
