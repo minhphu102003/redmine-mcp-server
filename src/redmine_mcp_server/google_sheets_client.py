@@ -368,6 +368,125 @@ class GoogleSheetsManager:
             .execute()
         )
 
+    def add_us_section_header(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        us_title: str,
+        row_index: int,
+        color: str,
+    ) -> None:
+        """Insert a US section header row (merged, colored) above test case rows.
+
+        Adds a single merged row with background color and bold white text
+        displaying "[US-N] US Title" to visually separate test cases belonging
+        to different user stories in the same sheet.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name (e.g. "TestCases").
+            us_title: Display text for the US header (e.g. "[US-1] Login Feature").
+            row_index: 0-based row index where the header row is inserted
+                       (shifts existing rows down by 1).
+            color: Hex color string (e.g. "#4285F4") for the header background.
+        """
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                if s["properties"]["title"] == sheet_name:
+                    sheet_id = s["properties"]["sheetId"]
+                    break
+        except Exception:
+            return
+
+        if sheet_id is None:
+            return
+
+        total_columns = len(TESTCASES_HEADERS)
+
+        rgb = _hex_to_rgb(color)
+        requests: List[Dict[str, Any]] = [
+            {
+                "insertRange": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index,
+                        "endRowIndex": row_index + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": total_columns,
+                    },
+                    "shiftDimension": "ROWS",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index,
+                        "endRowIndex": row_index + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": total_columns,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "backgroundColor": rgb,
+                            "textFormat": {
+                                "bold": True,
+                                "foregroundColor": {
+                                    "red": 1.0,
+                                    "green": 1.0,
+                                    "blue": 1.0,
+                                },
+                                "fontSize": 10,
+                            },
+                            "horizontalAlignment": "LEFT",
+                            "verticalAlignment": "MIDDLE",
+                        }
+                    },
+                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                }
+            },
+            {
+                "mergeCells": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index,
+                        "endRowIndex": row_index + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": total_columns,
+                    },
+                    "mergeType": "MERGE_ALL",
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index,
+                        "endRowIndex": row_index + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 1,
+                    },
+                    "cell": {"userEnteredValue": {"stringValue": us_title}},
+                    "fields": "userEnteredValue",
+                }
+            },
+        ]
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": requests}
+            ).execute()
+        except Exception:
+            pass
+
     def create_spreadsheet(
         self,
         title: str,

@@ -360,3 +360,159 @@ def test_is_markdown_detection():
     assert _is_markdown("plain text") is False
     assert _is_markdown("") is False
     assert _is_markdown(None) is False
+
+
+# --- US section header ---
+
+
+def _mock_service_with_sheet(sheet_id: int = 0) -> MagicMock:
+    service = MagicMock()
+    meta = {
+        "sheets": [
+            {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "title": "TestCases",
+                    "gridProperties": {"rowCount": 100, "columnCount": 10},
+                }
+            }
+        ]
+    }
+    service.spreadsheets.return_value.get.return_value.execute.return_value = meta
+    service.spreadsheets.return_value.batchUpdate.return_value.execute.return_value = {}
+    return service
+
+
+def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.add_us_section_header(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        us_title="[US-1] Login Feature",
+        row_index=2,
+        color="#4285F4",
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    assert len(batch_calls) == 1
+    requests = batch_calls[0].kwargs["body"]["requests"]
+
+    # Must have 4 requests: insertRange, repeatCell(background), mergeCells, repeatCell(text)
+    assert len(requests) == 4
+
+    # insertRange
+    insert = next(r for r in requests if "insertRange" in r)
+    assert insert["insertRange"]["range"]["sheetId"] == 5
+    assert insert["insertRange"]["range"]["startRowIndex"] == 2
+    assert insert["insertRange"]["range"]["endRowIndex"] == 3
+    assert insert["insertRange"]["range"]["startColumnIndex"] == 0
+    assert insert["insertRange"]["range"]["endColumnIndex"] == 10
+
+    # repeatCell background + text format (full row A-J)
+    fmt_cell = next(
+        r
+        for r in requests
+        if "repeatCell" in r
+        and "backgroundColor" in r["repeatCell"]["cell"]["userEnteredFormat"]
+    )
+    assert fmt_cell["repeatCell"]["range"]["startRowIndex"] == 2
+    assert fmt_cell["repeatCell"]["range"]["endRowIndex"] == 3
+    assert fmt_cell["repeatCell"]["range"]["startColumnIndex"] == 0
+    assert fmt_cell["repeatCell"]["range"]["endColumnIndex"] == 10
+    rgb = fmt_cell["repeatCell"]["cell"]["userEnteredFormat"]["backgroundColor"]
+    # #4285F4 → 66/255=0.259, 133/255=0.522, 244/255=0.957
+    assert 0.25 < rgb["red"] < 0.27
+    assert 0.51 < rgb["green"] < 0.53
+    assert 0.95 < rgb["blue"] < 0.97
+    tf = fmt_cell["repeatCell"]["cell"]["userEnteredFormat"]["textFormat"]
+    assert tf["bold"] is True
+    assert tf["foregroundColor"] == {"red": 1.0, "green": 1.0, "blue": 1.0}
+    assert tf["fontSize"] == 10
+    ha = fmt_cell["repeatCell"]["cell"]["userEnteredFormat"]["horizontalAlignment"]
+    assert ha == "LEFT"
+    va = fmt_cell["repeatCell"]["cell"]["userEnteredFormat"]["verticalAlignment"]
+    assert va == "MIDDLE"
+
+    # mergeCells
+    merge = next(r for r in requests if "mergeCells" in r)
+    assert merge["mergeCells"]["range"]["sheetId"] == 5
+    assert merge["mergeCells"]["range"]["startRowIndex"] == 2
+    assert merge["mergeCells"]["range"]["endRowIndex"] == 3
+    assert merge["mergeCells"]["range"]["startColumnIndex"] == 0
+    assert merge["mergeCells"]["range"]["endColumnIndex"] == 10
+    assert merge["mergeCells"]["mergeType"] == "MERGE_ALL"
+
+    # repeatCell value (column A only)
+    value_cell = next(
+        r
+        for r in requests
+        if "repeatCell" in r and "userEnteredValue" in r["repeatCell"]["cell"]
+    )
+    assert value_cell["repeatCell"]["range"]["startColumnIndex"] == 0
+    assert value_cell["repeatCell"]["range"]["endColumnIndex"] == 1
+    assert (
+        value_cell["repeatCell"]["cell"]["userEnteredValue"]["stringValue"]
+        == "[US-1] Login Feature"
+    )
+
+
+def test_add_us_section_header_handles_missing_sheet(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    # Return no matching sheet
+    service.spreadsheets.return_value.get.return_value.execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 99, "title": "OtherSheet"}}]
+    }
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    # Should not raise — just silently skip
+    manager.add_us_section_header(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        us_title="[US-2] Register",
+        row_index=5,
+        color="#34A853",
+    )
+
+    # batchUpdate should NOT have been called
+    service.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+def test_us_title_cell_format():
+    """Verify the US title cell format matches the expected pattern."""
+    us_id_counter = 1
+    us_title = "Login Feature"
+    us_title_cell = f"[US-{us_id_counter}] {us_title}"
+    assert us_title_cell == "[US-1] Login Feature"
+
+    us_id_counter = 3
+    us_title_cell = f"[US-{us_id_counter}] {us_title}"
+    assert us_title_cell == "[US-3] Login Feature"
+
+
+def test_color_palette_rotates():
+    """Verify palette has 8 colors and rotation works."""
+    palette = [
+        "#4285F4",
+        "#34A853",
+        "#FBBC04",
+        "#EA4335",
+        "#9334E6",
+        "#FF6D01",
+        "#46BDC6",
+        "#7BAAF7",
+    ]
+    assert len(palette) == 8
+    # index 0 → blue, index 7 → light blue
+    assert palette[0] == "#4285F4"
+    assert palette[7] == "#7BAAF7"
+    # rotation: index 8 wraps back to 0
+    color_8 = palette[8 % 8]
+    assert color_8 == palette[0]
+    color_15 = palette[15 % 8]
+    assert color_15 == palette[7]

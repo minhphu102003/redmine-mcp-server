@@ -159,7 +159,7 @@ The MCP server authenticates with this service account. Users create their own G
       - Returns `created` and `skipped` lists — log both per project.
       - The spreadsheet stays owned by the user (no re-share needed).
 
-   d. **Save mapping** in memory: append `{redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets}` to the in-memory `projects` array (don't write to disk yet — written in step 4 below).
+   d. **Save mapping** in memory: append `{redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets, us_color_index: 0, us_id_counter: 1}` to the in-memory `projects` array (don't write to disk yet — written in step 4 below).
 
 4. **Write `.google-sheets`**: call `set_user_memory(key=".google-sheets", value=<data>)` to store in server-side memory. Exact schema in section 5.
 
@@ -198,13 +198,13 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 
 1. **Read existing data**: call `get_user_memory(key=".google-sheets")` → get the existing data.
 2. **Verify each mapped spreadsheet still exists** by reading its metadata. If a spreadsheet was deleted or access was revoked → warn the user and remove the mapping.
-3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → for each new project:
-   - Show project name + ID
-   - Instruct user to create sheet and share with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
-   - User pastes spreadsheet URL
-   - Verify access via `get_sheet_metadata`
-   - Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])` to inject TestCases/Bugs sheets into the user's spreadsheet (no re-share needed)
-   - Add mapping to `.google-sheets`
+   3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → for each new project:
+    - Show project name + ID
+    - Instruct user to create sheet and share with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
+    - User pastes spreadsheet URL
+    - Verify access via `get_sheet_metadata`
+    - Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])` to inject TestCases/Bugs sheets into the user's spreadsheet (no re-share needed)
+    - Add mapping to `.google-sheets` with `us_color_index: 0, us_id_counter: 1`
 4. **Remove stale projects**: if a project in `.google-sheets` no longer exists in `.redmine` → remove the mapping.
 5. **Sync sheet structure**: for each mapped spreadsheet, call `get_sheet_metadata` to verify "TestCases" and "Bugs" sheets exist → if missing, call `create_test_sheet_structure(spreadsheet_id=<id>, ...)` (it auto-skips sheets that already exist, safe to re-run).
 6. Call `set_user_memory(key=".google-sheets", value=<updated_data>)` to store updated data with fresh `fetched_at`.
@@ -249,7 +249,40 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 
 ## 5. `.google-sheets` schema
 
-> **Testers only**: see [google-sheets-schema.md](./google-sheets-schema.md) for the full schema with field definitions. Service account: `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
+> **Testers only**: service account `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
+
+```json
+{
+  "projects": [
+    {
+      "redmine_project_id": 12,
+      "redmine_project_name": "Example Project",
+      "spreadsheet_id": "abc123XYZ",
+      "spreadsheet_url": "https://docs.google.com/spreadsheets/d/abc123XYZ",
+      "sheets": {
+        "testcases": "TestCases",
+        "bugs": "Bugs"
+      },
+      "us_color_index": 0,
+      "us_id_counter": 1,
+      "fetched_at": "2026-08-29T00:00:00Z"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `projects` | array | List of project-to-spreadsheet mappings |
+| `redmine_project_id` | int | Redmine project ID |
+| `redmine_project_name` | string | Redmine project name |
+| `spreadsheet_id` | string | Google Spreadsheet ID |
+| `spreadsheet_url` | string | Full spreadsheet URL |
+| `sheets.testcases` | string | TestCases sheet tab name |
+| `sheets.bugs` | string | Bugs sheet tab name |
+| `us_color_index` | int | Current palette index (0-7) for US section header colors. Auto-incremented by `create_test_cases_on_sheet` tool. |
+| `us_id_counter` | int | Next US ID number (e.g. 1 → US-1, 2 → US-2). Auto-incremented by `create_test_cases_on_sheet` tool. |
+| `fetched_at` | string | ISO 8601 UTC timestamp of last refresh |
 
 ---
 

@@ -2750,6 +2750,12 @@ async def create_test_cases_on_sheet(
             )
         ),
     ],
+    us_title: Annotated[
+        str,
+        Field(
+            description="User story title used for the US section header row, e.g. 'Login Feature'"
+        ),
+    ],
     clear_existing: Annotated[
         bool,
         Field(description="Clear existing data before writing (keep headers)"),
@@ -2761,7 +2767,10 @@ async def create_test_cases_on_sheet(
         sheet_name,
         test_cases,
         clear_existing,
+        us_title,
         get_sheets_service=google_sheets_manager.get_service,
+        get_user_memory=get_user_memory_impl,
+        set_user_memory=set_user_memory_impl,
         handle_error=_handle_google_sheets_error,
     )
 
