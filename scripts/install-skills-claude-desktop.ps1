@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $RepoOwner = "minhphu102003"
 $RepoName = "redmine-mcp-server"
 $Branch = "develop"
-$RawBase = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/$Branch"
-$ApiBase = "https://api.github.com/repos/$RepoOwner/$RepoName/contents"
+$RawBase = "https://raw.githubusercontent.com/${RepoOwner}/${RepoName}/${Branch}"
+$ApiBase = "https://api.github.com/repos/${RepoOwner}/${RepoName}/contents"
 $OutputDir = "claude-desktop-skills"
 
 # Skills list for Claude Desktop (QA-focused)
@@ -34,10 +34,12 @@ foreach ($SkillName in $SkillNames) {
     # Use GitHub Contents API to list all files in the skill directory
     $ApiUrl = "${ApiBase}/skills/${SkillName}?ref=${Branch}"
     try {
-        $Response = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing
+        $WebResponse = Invoke-WebRequest -Uri $ApiUrl -UseBasicParsing
+        $JsonContent = $WebResponse.Content
+        $Response = ConvertFrom-Json -InputObject $JsonContent
         foreach ($Item in $Response) {
             if ($Item.type -eq "file" -and $Item.name -match "\.md$") {
-                $DownloadUrl = "$RawBase/skills/$SkillName/$($Item.name)"
+                $DownloadUrl = "${RawBase}/skills/${SkillName}/$($Item.name)"
                 $DestPath = Join-Path $SkillDir $Item.name
                 try {
                     Invoke-WebRequest -Uri $DownloadUrl -OutFile $DestPath -UseBasicParsing
@@ -47,7 +49,7 @@ foreach ($SkillName in $SkillNames) {
             }
         }
     } catch {
-        Write-Host "  Warning: Could not list files for $SkillName" -ForegroundColor Yellow
+        Write-Host "  Warning: Could not list files for $SkillName - $_" -ForegroundColor Yellow
     }
 
     # Verify SKILL.md was downloaded (required)
