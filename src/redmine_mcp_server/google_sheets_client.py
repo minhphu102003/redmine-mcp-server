@@ -165,16 +165,22 @@ class GoogleSheetsManager:
         )
 
     def create_spreadsheet(
-        self, title: str, member_names: Optional[List[str]] = None
+        self,
+        title: str,
+        member_names: Optional[List[str]] = None,
+        spreadsheet_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+        """Create a new Google Spreadsheet OR add TestCases/Bugs sheets to existing one.
 
         Includes UPPERCASE headers, styled headers (blue bg, white bold text),
         frozen header row, auto-resized columns, and data validation dropdowns.
 
         Args:
-            title: The spreadsheet title.
+            title: The spreadsheet title (used only when creating a new spreadsheet).
             member_names: List of Redmine member names for TESTER/ASSIGNED_TO dropdowns.
+            spreadsheet_id: If provided, add TestCases and Bugs sheets to the existing
+                spreadsheet with this ID instead of creating a new one. Sheets that
+                already exist are skipped.
 
         Returns:
             Dict with spreadsheet_id, spreadsheet_url, sheets info.
@@ -183,6 +189,9 @@ class GoogleSheetsManager:
             Exception: On API failure.
         """
         service = self.get_service()
+
+        if spreadsheet_id:
+            return self._add_sheets_to_existing(spreadsheet_id, member_names or [])
 
         # Step 1: Create spreadsheet
         create_body = {
@@ -296,6 +305,179 @@ class GoogleSheetsManager:
             "spreadsheet_id": spreadsheet_id,
             "spreadsheet_url": spreadsheet_url,
             "sheets": {name: info["sheet_id"] for name, info in sheets_info.items()},
+        }
+
+    def _add_sheets_to_existing(
+        self, spreadsheet_id: str, member_names: List[str]
+    ) -> Dict[str, Any]:
+        """Add TestCases and Bugs sheets to an existing spreadsheet.
+
+        Sheets that already exist are skipped (no overwrite, no header re-write).
+        If a sheet is created, its headers are written, styled, and data
+        validation is applied.
+
+        Args:
+            spreadsheet_id: Existing Google Spreadsheet ID.
+            member_names: List of Redmine member names for TESTER/ASSIGNED_TO.
+
+        Returns:
+            Dict with spreadsheet_id, spreadsheet_url, sheets info, created list.
+
+        Raises:
+            Exception: On API failure.
+        """
+        service = self.get_service()
+
+        # 1. Get existing sheets
+        meta = (
+            service.spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                fields="spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,gridProperties/rowCount))",
+            )
+            .execute()
+        )
+        spreadsheet_url = meta.get("spreadsheetUrl", "")
+        existing: Dict[str, Dict[str, Any]] = {}
+        for sheet in meta.get("sheets", []):
+            props = sheet.get("properties", {})
+            existing[props["title"]] = {
+                "sheet_id": props["sheetId"],
+                "row_count": props.get("gridProperties", {}).get("rowCount", 1000),
+            }
+
+        created: List[str] = []
+        skipped: List[str] = []
+        sheets_to_format: Dict[str, Dict[str, Any]] = {}
+
+        # 2. Add sheets that don't exist
+        add_requests = []
+        for sheet_name in ["TestCases", "Bugs"]:
+            if sheet_name in existing:
+                skipped.append(sheet_name)
+                continue
+            add_requests.append({"addSheet": {"properties": {"title": sheet_name}}})
+            created.append(sheet_name)
+
+        if add_requests:
+            add_result = (
+                service.spreadsheets()
+                .batchUpdate(
+                    spreadsheetId=spreadsheet_id, body={"requests": add_requests}
+                )
+                .execute()
+            )
+            for reply in add_result.get("replies", []):
+                props = reply.get("addSheet", {}).get("properties", {})
+                name = props.get("title", "")
+                sheets_to_format[name] = {
+                    "sheet_id": props.get("sheetId", 0),
+                    "row_count": props.get("gridProperties", {}).get("rowCount", 1000),
+                }
+
+        # 3. Merge sheets_to_format with existing for validations
+        sheets_info = dict(existing)
+        sheets_info.update(sheets_to_format)
+
+        # 4. Write headers (only for newly created sheets)
+        test_cols = len(TESTCASES_HEADERS)
+        bug_cols = len(BUGS_HEADERS)
+        test_last_col = chr(ord("A") + test_cols - 1) if test_cols <= 26 else "Z"
+        bug_last_col = chr(ord("A") + bug_cols - 1) if bug_cols <= 26 else "Z"
+
+        headers_body_data = []
+        for sheet_name in created:
+            if sheet_name == "TestCases":
+                headers_body_data.append(
+                    {
+                        "range": f"TestCases!A1:{test_last_col}1",
+                        "values": [TESTCASES_HEADERS],
+                    }
+                )
+            elif sheet_name == "Bugs":
+                headers_body_data.append(
+                    {
+                        "range": f"Bugs!A1:{bug_last_col}1",
+                        "values": [BUGS_HEADERS],
+                    }
+                )
+
+        if headers_body_data:
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"valueInputOption": "USER_ENTERED", "data": headers_body_data},
+            ).execute()
+
+        # 5. Style headers + freeze row + auto-resize (only for new sheets)
+        header_format = {
+            "backgroundColor": _hex_to_rgb("#4472C4"),
+            "textFormat": {
+                "foregroundColor": _hex_to_rgb("#FFFFFF"),
+                "fontSize": 11,
+                "bold": True,
+            },
+            "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE",
+        }
+
+        format_requests = []
+        for sheet_name in created:
+            sheet_id = sheets_to_format[sheet_name]["sheet_id"]
+            num_cols = test_cols if sheet_name == "TestCases" else bug_cols
+
+            format_requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": num_cols,
+                        },
+                        "cell": {"userEnteredFormat": header_format},
+                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                    }
+                }
+            )
+            format_requests.append(
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id,
+                            "gridProperties": {"frozenRowCount": 1},
+                        },
+                        "fields": "gridProperties.frozenRowCount",
+                    }
+                }
+            )
+            format_requests.append(
+                {
+                    "autoResizeDimensions": {
+                        "dimensions": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 0,
+                            "endIndex": num_cols,
+                        }
+                    }
+                }
+            )
+
+        if format_requests:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": format_requests}
+            ).execute()
+
+        # 6. Set data validation dropdowns (always — safe to re-apply)
+        self._set_validations(spreadsheet_id, sheets_info, member_names)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "spreadsheet_url": spreadsheet_url,
+            "sheets": {name: info["sheet_id"] for name, info in sheets_info.items()},
+            "created": created,
+            "skipped": skipped,
         }
 
     def _set_validations(

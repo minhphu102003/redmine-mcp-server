@@ -2921,28 +2921,43 @@ async def set_sheet_data_validation(
 @mcp.tool()
 async def create_test_sheet_structure(
     title: str = Field(description="The spreadsheet title"),
+    spreadsheet_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Existing spreadsheet ID. If provided, adds TestCases and Bugs sheets "
+            "to that spreadsheet instead of creating a new one. Sheets that already "
+            "exist are skipped. Use this when the user has already created and shared "
+            "a spreadsheet with the service account."
+        ),
+    ),
     member_names: Optional[List[str]] = Field(
         default=None,
         description="List of Redmine member names for TESTER/ASSIGNED_TO dropdowns",
     ),
 ) -> Dict[str, Any]:
-    """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets,
+    OR add TestCases/Bugs sheets to an existing spreadsheet.
 
-    Includes UPPERCASE headers, styled headers (blue bg, white bold text),
-    frozen header row, auto-resized columns, and data validation dropdowns
-    for tester, status, priority, last_test_result, and assigned_to columns.
+    Two modes:
+    - **Without spreadsheet_id**: creates a brand-new spreadsheet owned by
+      the service account. The user must share the resulting URL with their
+      own Google account to access it.
+    - **With spreadsheet_id**: adds TestCases and Bugs sheets to a spreadsheet
+      the user has already created and shared with the service account. No
+      re-sharing needed.
 
-    Use this to set up a new test management spreadsheet for a project.
-
-    After creation, share the spreadsheet URL with the service account email
-    (found in README) before using other QA tools.
+    Both modes include UPPERCASE headers, styled headers (blue bg, white bold
+    text), frozen header row, auto-resized columns, and data validation
+    dropdowns for tester, status, priority, last_test_result, and assigned_to.
 
     Returns:
-        spreadsheet_id, spreadsheet_url, sheets info, created/skipped lists.
+        spreadsheet_id, spreadsheet_url, sheets info, and (for the existing-
+        spreadsheet mode) created/skipped lists.
     """
     return await create_test_sheet_structure_impl(
         title,
         member_names=member_names,
+        spreadsheet_id=spreadsheet_id,
         get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
     )

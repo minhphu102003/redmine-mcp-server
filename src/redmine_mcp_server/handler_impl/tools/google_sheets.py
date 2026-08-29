@@ -958,36 +958,58 @@ async def set_sheet_data_validation_impl(
 async def create_test_sheet_structure_impl(
     title: str,
     member_names: Optional[List[str]] = None,
+    spreadsheet_id: Optional[str] = None,
     *,
     get_sheets_service: Callable[[], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
-    """Create a new Google Spreadsheet with TestCases and Bugs sheets.
+    """Create a new Google Spreadsheet with TestCases and Bugs sheets,
+    OR add TestCases/Bugs sheets to an existing spreadsheet.
 
     Includes UPPERCASE headers, styled headers (blue bg, white bold text),
     frozen header row, auto-resized columns, and data validation dropdowns.
 
     Args:
-        title: The spreadsheet title.
+        title: The spreadsheet title (used only when creating a new spreadsheet).
         member_names: List of Redmine member names for TESTER/ASSIGNED_TO dropdowns.
+        spreadsheet_id: If provided, add TestCases and Bugs sheets to the existing
+            spreadsheet with this ID instead of creating a new one. Sheets that
+            already exist are skipped (no overwrite).
 
     Returns:
-        Dict with success, spreadsheet_id, spreadsheet_url, sheets info.
+        Dict with success, spreadsheet_id, spreadsheet_url, sheets info,
+        and (for existing spreadsheets) created/skipped lists.
     """
     try:
         from redmine_mcp_server.google_sheets_client import google_sheets_manager
 
-        result = google_sheets_manager.create_spreadsheet(title, member_names)
-        return {
+        result = google_sheets_manager.create_spreadsheet(
+            title,
+            member_names=member_names,
+            spreadsheet_id=spreadsheet_id,
+        )
+        response: Dict[str, Any] = {
             "success": True,
             "spreadsheet_id": result["spreadsheet_id"],
             "spreadsheet_url": result["spreadsheet_url"],
             "sheets": result["sheets"],
-            "message": (
+        }
+        if spreadsheet_id:
+            response["created"] = result.get("created", [])
+            response["skipped"] = result.get("skipped", [])
+            response["message"] = (
+                f"TestCases and Bugs sheets added to existing spreadsheet. "
+                f"Created: {result.get('created', [])}, "
+                f"Skipped (already exist): {result.get('skipped', [])}."
+            )
+        else:
+            response["message"] = (
                 f"Spreadsheet '{title}' created with sheets: TestCases, Bugs. "
                 f"UPPERCASE headers + data validation dropdowns applied. "
                 f"Share it with the service account email before using QA skills."
-            ),
-        }
+            )
+        return response
     except Exception as e:
+        if spreadsheet_id:
+            return handle_error(e, f"adding sheets to spreadsheet '{spreadsheet_id}'")
         return handle_error(e, f"creating spreadsheet '{title}'")

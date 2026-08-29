@@ -44,9 +44,11 @@ Generate test cases from a user story, let the user review and refine them in a 
       3. Click Share → paste: redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com → Editor → Send
       4. Paste the spreadsheet URL here
       ```
-   d. Extract spreadsheet_id from URL → verify access → verify sheet structure (TestCases/Bugs tabs).
-   e. Save mapping: call `set_user_memory(key=".google-sheets", value={redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets})`.
-   f. Proceed with this project.
+   d. Extract spreadsheet_id from URL → verify access via `get_sheet_metadata`.
+   e. Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])`.
+      The tool adds TestCases and Bugs sheets into the user's spreadsheet (no need to re-share).
+   f. Save mapping: call `set_user_memory(key=".google-sheets", value={redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets})`.
+   g. Proceed with this project.
 
 **Resolve user story source**: where is the story?
 - A file path (e.g. `docs/user-stories/login.md`)
