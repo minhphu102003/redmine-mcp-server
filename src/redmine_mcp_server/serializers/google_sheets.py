@@ -36,6 +36,7 @@ BUGS_KEYS = [
     "report_date",
     "reject_reason",
     "duplicate_of",
+    "evidence_url",
 ]
 
 # Display headers (UPPERCASE) - written to Google Sheets
@@ -140,6 +141,7 @@ HEADER_WRAP_COLUMNS = frozenset(
         "DESCRIPTION",
         "REJECT_REASON",
         "EVIDENCE",
+        "EVIDENCE_URL",
     }
 )
 
