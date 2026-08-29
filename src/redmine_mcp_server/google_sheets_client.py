@@ -87,9 +87,8 @@ def _build_column_format_requests(
                     "repeatCell": {
                         "range": {
                             "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": col_idx,
-                            "endIndex": col_idx + 1,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
                         },
                         "cell": {"userEnteredFormat": DATE_FORMAT},
                         "fields": "userEnteredFormat.numberFormat",
@@ -102,9 +101,8 @@ def _build_column_format_requests(
                     "repeatCell": {
                         "range": {
                             "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": col_idx,
-                            "endIndex": col_idx + 1,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
                         },
                         "cell": {"userEnteredFormat": WRAP_FORMAT},
                         "fields": "userEnteredFormat(wrapStrategy,verticalAlignment)",

@@ -2769,8 +2769,8 @@ async def create_test_cases_on_sheet(
         clear_existing,
         us_title,
         get_sheets_service=google_sheets_manager.get_service,
-        get_user_memory=get_user_memory_impl,
-        set_user_memory=set_user_memory_impl,
+        get_user_memory=get_user_memory,
+        set_user_memory=set_user_memory,
         handle_error=_handle_google_sheets_error,
     )
 

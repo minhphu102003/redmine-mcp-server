@@ -478,7 +478,7 @@ async def create_test_cases_on_sheet_impl(
         set_user_memory_result = await set_user_memory(MEMORY_KEY, memory_to_save)
         del set_user_memory_result
 
-        from ..google_sheets_client import google_sheets_manager
+        from ...google_sheets_client import google_sheets_manager
 
         sheet_meta = (
             service.spreadsheets()
@@ -528,7 +528,7 @@ async def create_test_cases_on_sheet_impl(
         else:
             us_header_row_index = 1 + existing_count
 
-        if sheet_id is not None and existing_count > 0:
+        if sheet_id is not None:
             google_sheets_manager.add_us_section_header(
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
