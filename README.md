@@ -105,6 +105,62 @@ The MCP server authenticates with the service account — you only need to share
 The server exposes MCP at `http://127.0.0.1:8000/mcp`. Register it in your agent. The `X-Redmine-*` headers are required only when `REDMINE_AUTH_MODE=dynamic` — in the default `legacy` mode the server uses the API key from `.env.docker` and ignores them:
 
 <details>
+<summary><b>Claude Desktop</b> — `claude_desktop_config.json`</summary>
+
+**Windows:**
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:8000/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "X-Redmine-URL:https://redmine.yourcompany.com",
+        "--header",
+        "X-Redmine-API-Key:your_api_key"
+      ]
+    }
+  }
+}
+```
+
+**macOS:**
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:8000/mcp",
+        "--transport",
+        "http-only",
+        "--header",
+        "X-Redmine-URL:https://redmine.yourcompany.com",
+        "--header",
+        "X-Redmine-API-Key:your_api_key"
+      ]
+    }
+  }
+}
+```
+
+Config file location:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+Restart Claude Desktop after editing.
+</details>
+
+<details>
 <summary><b>opencode</b> — project `opencode.json`</summary>
 
 ```json
@@ -216,6 +272,30 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 ```powershell
 irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
 ```
+
+### For Claude Desktop users
+
+Claude Desktop imports skills as ZIP files. Run this script to create ZIPs:
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1
+.\install-skills-claude-desktop.ps1
+```
+
+This creates ZIP files in `dist/claude-desktop-skills/`. Then:
+
+1. Open Claude Desktop → **Settings** → **Customize** → **Skills**
+2. Click **Add Skill** → **Upload ZIP file**
+3. Select a ZIP and repeat for each skill you need
+
+| Skill | Description |
+|-------|-------------|
+| `redmine-init` | Maps repo ↔ Redmine project |
+| `testcase-generation` | Generates test cases to Google Sheets |
+| `bug-reporting` | Logs bugs to Google Sheets |
+| `bug-to-redmine` | Pushes bugs to Redmine issues |
+| `status-sync` | Syncs Redmine statuses to sheets |
+| `reopen-bug` | Reopens fixed bugs |
 
 **GitHub OAuth is built in** — the workflow authenticates to GitHub through the `gh` CLI (device flow, no tokens to paste):
 
