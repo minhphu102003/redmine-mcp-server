@@ -478,7 +478,7 @@ async def create_test_cases_on_sheet_impl(
         set_user_memory_result = await set_user_memory(MEMORY_KEY, memory_to_save)
         del set_user_memory_result
 
-        from ..google_sheets_client import google_sheets_manager
+        from ...google_sheets_client import google_sheets_manager
 
         sheet_meta = (
             service.spreadsheets()
