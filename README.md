@@ -275,10 +275,12 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 ### For Claude Desktop users
 
-Claude Desktop imports skills as ZIP files. Run this script to create ZIPs:
+Claude Desktop imports skills as ZIP files. Clone the repo and run the script:
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+git clone https://github.com/minhphu102003/redmine-mcp-server.git
+cd redmine-mcp-server
+.\scripts\install-skills-claude-desktop.ps1
 ```
 
 This creates ZIP files in `dist/claude-desktop-skills/`. Then:
