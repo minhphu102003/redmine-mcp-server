@@ -51,7 +51,7 @@ Sinh quá nhiều TC liên tục trong 1 lượt làm giảm độ chính xác v
    d. Extract spreadsheet_id from URL → verify access via `get_sheet_metadata`.
    e. Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])`.
       The tool adds TestCases and Bugs sheets into the user's spreadsheet (no need to re-share).
-   f. Save mapping: call `set_user_memory(key=".google-sheets", value={redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets})`.
+   f. Save mapping: call `set_user_memory(key=".google-sheets", value={redmine_project_id, redmine_project_name, spreadsheet_id, spreadsheet_url, sheets, us_color_index: 0, us_id_counter: 1})`.
    g. Proceed with this project.
 
 **Resolve user story source**: where is the story?
@@ -313,6 +313,7 @@ Each outline must be self-contained — AI can read a single outline and re-gene
 
 ```markdown
 # Test Cases — <Feature/Module Name>
+US Title: <tên US đầy đủ>          ← thêm vào đây
 Source: <user story source>
 Generated: <YYYY-MM-DD>
 
@@ -335,6 +336,7 @@ Generated: <YYYY-MM-DD>
 
 ## TC-1: <title>
 - **Source**: AC1 + EP *(traceability — not pushed to sheet)*
+- **US Title**: <us_title>          ← thêm vào đây
 - **Module**: <module>
 - **Tester**: <tester name or empty>
 - **Precondition**: <precondition>
@@ -350,18 +352,21 @@ Generated: <YYYY-MM-DD>
 
 ## TC-11: <title> (outline — awaiting detail)
 - **Source**: AC4 + EP
+- **US Title**: <us_title>          ← thêm vào outline
 - **Do**: Submit login form with empty email
 - **With**: email='', password='abc123'
 - **Expect**: Show error "Please enter email" below email field, submit button disabled
 
 ## TC-12: <title> (outline)
 - **Source**: AC4 + BVA
+- **US Title**: <us_title>          ← thêm vào outline
 - **Do**: Submit login form with password shorter than 8 chars
 - **With**: email='user@example.com', password='abc'
 - **Expect**: Show error "Password must be at least 8 characters", no API call made
 
 ## TC-13: <title> (outline)
 - **Source**: AC5 + State Transition
+- **US Title**: <us_title>          ← thêm vào outline
 - **Do**: Try logging in 5 times in a row with wrong password
 - **With**: email='user@example.com', password='wrong' (×5 within 5 minutes)
 - **Expect**: Account locked for 15 minutes, show error "Account temporarily locked"
@@ -448,9 +453,10 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
    - **Global dedup check**: compare ALL test cases in the file against each other (not just within the last batch) — merge any pair that tests the same field/condition with the same expected outcome, per the dedup rules in Section 5. This catches duplicates that can appear when TCs were generated in separate batches across turns.
    - If any outline (`(outline)`) still remains undetailed at this point, stop and remind the user — do not push partial/outline-only rows to the sheet.
 2. Parse all test cases from the draft.
-3. Read the existing TestCases sheet to find the highest TC-XXX number (for ID generation).
-4. Generate IDs: continue from the highest existing TC-XXX. If the sheet is empty, start at TC-001.
-5. **Field mapping (draft → sheet)**:
+3. **Extract `us_title`**: read the `US Title:` field from the draft file header (e.g. "Login Feature"). This is passed to the tool to generate the US section header row.
+4. Read the existing TestCases sheet to find the highest TC-XXX number (for ID generation).
+5. Generate IDs: continue from the highest existing TC-XXX. If the sheet is empty, start at TC-001.
+6. **Field mapping (draft → sheet)**:
 
 | Draft field | Sheet column | Notes |
 |-------------|-------------|-------|
@@ -460,6 +466,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 | Steps | `steps` | Join numbered lines into single string |
 | Expected | `expected_result` | |
 | Tester | `tester` | From draft, or empty |
+| US Title | *(not a column)* | Passed as `us_title` parameter to tool — a merged colored header row is auto-inserted before the TC rows |
 | *(auto)* | `test_case_id` | Generated: TC-001, TC-002... |
 | *(auto)* | `created_date` | Set to today (YYYY-MM-DD) |
 | *(auto)* | `last_test_result` | Set to "Not Tested" |
@@ -482,6 +489,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 3. **Write to sheet**:
    - If clearing: write headers + all test case rows starting from row 1.
    - If appending: append rows after the last existing row.
+   - **US section header (automatic)**: before appending, the tool automatically inserts a merged colored row with the US title (e.g. `[US-1] Login Feature`) at the correct position. Color is chosen from a rotating 8-color palette and the US ID counter is auto-incremented. AI only needs to pass `us_title` — no manual color or ID management needed.
 
 4. **Verify**: read back the sheet to confirm the data was written correctly.
 

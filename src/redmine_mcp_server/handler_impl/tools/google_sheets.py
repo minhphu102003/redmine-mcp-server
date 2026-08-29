@@ -307,8 +307,11 @@ async def create_test_cases_on_sheet_impl(
     sheet_name: str,
     test_cases: List[Dict[str, str]],
     clear_existing: bool,
+    us_title: str,
     *,
     get_sheets_service: Callable[[], Any],
+    get_user_memory: Callable[[str], Any],
+    set_user_memory: Callable[[str, Dict[str, Any]], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
     """Parse test cases and push to Google Sheets. Create Bugs sheet if needed."""
@@ -425,6 +428,114 @@ async def create_test_cases_on_sheet_impl(
                 valueInputOption="USER_ENTERED",
                 body={"values": [TESTCASES_HEADERS]},
             ).execute()
+
+        # Auto US section header — read color index + counter from memory
+        US_COLOR_PALETTE = [
+            "#4285F4",
+            "#34A853",
+            "#FBBC04",
+            "#EA4335",
+            "#9334E6",
+            "#FF6D01",
+            "#46BDC6",
+            "#7BAAF7",
+        ]
+        MEMORY_KEY = ".google-sheets"
+
+        memory = await get_user_memory(MEMORY_KEY)
+        memory_value: Dict[str, Any] = {}
+        if isinstance(memory, dict) and "value" in memory:
+            memory_value = memory["value"] if isinstance(memory["value"], dict) else {}
+        projects = (
+            memory_value.get("projects", []) if isinstance(memory_value, dict) else []
+        )
+
+        project_entry: Optional[Dict[str, Any]] = None
+        for p in projects:
+            if p.get("spreadsheet_id") == spreadsheet_id:
+                project_entry = p
+                break
+
+        if project_entry is None:
+            project_entry = {
+                "spreadsheet_id": spreadsheet_id,
+                "us_color_index": 0,
+                "us_id_counter": 1,
+            }
+            projects.append(project_entry)
+            memory_value = {"projects": projects}
+
+        us_color_index = project_entry.get("us_color_index", 0)
+        us_id_counter = project_entry.get("us_id_counter", 1)
+
+        color = US_COLOR_PALETTE[us_color_index % len(US_COLOR_PALETTE)]
+        us_id_str = f"US-{us_id_counter}"
+        us_title_cell = f"[{us_id_str}] {us_title}"
+
+        project_entry["us_color_index"] = us_color_index + 1
+        project_entry["us_id_counter"] = us_id_counter + 1
+        memory_to_save = {"projects": projects}
+        set_user_memory_result = await set_user_memory(MEMORY_KEY, memory_to_save)
+        del set_user_memory_result
+
+        from ..google_sheets_client import google_sheets_manager
+
+        sheet_meta = (
+            service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+            .execute()
+        )
+        sheet_id: Optional[int] = None
+        for s in sheet_meta.get("sheets", []):
+            if s["properties"]["title"] == sheet_name:
+                sheet_id = s["properties"]["sheetId"]
+                break
+
+        total_rows_in_sheet = 1
+        if sheet_id is not None:
+            try:
+                dim_meta = (
+                    service.spreadsheets()
+                    .get(
+                        spreadsheetId=spreadsheet_id,
+                        fields=f"sheets.properties.sheetId,sheets.properties.gridProperties.rowCount",
+                    )
+                    .execute()
+                )
+                for s in dim_meta.get("sheets", []):
+                    if s["properties"].get("sheetId") == sheet_id:
+                        total_rows_in_sheet = s["properties"].get("rowCount", 1)
+                        break
+            except Exception:
+                pass
+
+        existing_count = 0
+        try:
+            count_result = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A:A")
+                .execute()
+            )
+            existing_count = len(count_result.get("values", [])) - 1
+            if existing_count < 0:
+                existing_count = 0
+        except Exception:
+            pass
+
+        if clear_existing:
+            us_header_row_index = 1
+        else:
+            us_header_row_index = 1 + existing_count
+
+        if sheet_id is not None and existing_count > 0:
+            google_sheets_manager.add_us_section_header(
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                us_title=us_title_cell,
+                row_index=us_header_row_index,
+                color=color,
+            )
 
         # Append test case rows
         body = {"values": rows}
