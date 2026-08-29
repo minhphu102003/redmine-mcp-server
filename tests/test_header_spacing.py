@@ -255,8 +255,12 @@ def test_date_columns_get_ddmmyyyy_format():
             "type": "DATE",
             "pattern": "dd/mm/yyyy",
         }
-        # Must target COLUMNS dimension
-        assert r["repeatCell"]["range"]["dimension"] == "COLUMNS"
+        # Must use GridRange (startColumnIndex/endColumnIndex), not DimensionRange
+        assert "startColumnIndex" in r["repeatCell"]["range"]
+        assert "endColumnIndex" in r["repeatCell"]["range"]
+        assert "dimension" not in r["repeatCell"]["range"]
+        assert "startIndex" not in r["repeatCell"]["range"]
+        assert "endIndex" not in r["repeatCell"]["range"]
 
 
 def test_wrap_columns_get_wrap_strategy():
@@ -268,8 +272,10 @@ def test_wrap_columns_get_wrap_strategy():
         if r["repeatCell"]["cell"]["userEnteredFormat"].get("wrapStrategy") == "WRAP"
     ]
     assert len(wrap_reqs) == 1  # only STEPS
-    assert wrap_reqs[0]["repeatCell"]["range"]["startIndex"] == 1  # col E = index 1
-    assert wrap_reqs[0]["repeatCell"]["range"]["dimension"] == "COLUMNS"
+    # STEPS is at column index 1 (0=B, 1=E) — verify GridRange fields
+    assert wrap_reqs[0]["repeatCell"]["range"]["startColumnIndex"] == 1
+    assert wrap_reqs[0]["repeatCell"]["range"]["endColumnIndex"] == 2
+    assert "dimension" not in wrap_reqs[0]["repeatCell"]["range"]
     assert (
         wrap_reqs[0]["repeatCell"]["cell"]["userEnteredFormat"]["verticalAlignment"]
         == "TOP"
