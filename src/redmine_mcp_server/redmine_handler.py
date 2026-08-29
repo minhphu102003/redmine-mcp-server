@@ -3007,10 +3007,14 @@ async def get_user_memory(
       - '.redmine': project cache (trackers, members, statuses, priorities, etc.)
       - '.google-sheets': project-to-spreadsheet mappings for QA
     """
-    return await get_user_memory_impl(
-        key,
-        get_entry=memory_store.get_entry,
-    )
+    try:
+        return await get_user_memory_impl(
+            key,
+            get_entry=memory_store.get_entry,
+        )
+    except Exception as e:
+        logger.exception("get_user_memory unexpected error")
+        return {"error": f"Failed to get memory: {e}"}
 
 
 @mcp.tool()
@@ -3042,11 +3046,28 @@ async def set_user_memory(
 
     The value completely replaces any previous value for this key.
     """
-    return await set_user_memory_impl(
-        key,
-        value,
-        set_entry=memory_store.set_entry,
-    )
+    try:
+        return await set_user_memory_impl(
+            key,
+            value,
+            set_entry=memory_store.set_entry,
+        )
+    except RuntimeError as e:
+        # Identity not resolved (legacy mode, or ContextVar not propagated).
+        # Return a clear error instead of letting the exception kill the
+        # session silently.
+        logger.error("set_user_memory failed: %s", e)
+        return {
+            "error": str(e),
+            "hint": (
+                "Memory tools require dynamic auth mode "
+                "(REDMINE_AUTH_MODE=dynamic) with X-Redmine-URL and "
+                "X-Redmine-API-Key headers on every request."
+            ),
+        }
+    except Exception as e:
+        logger.exception("set_user_memory unexpected error")
+        return {"error": f"Failed to set memory: {e}"}
 
 
 @mcp.tool()
@@ -3060,10 +3081,17 @@ async def delete_user_memory(
 
     Removes the specified key from server-side memory.
     """
-    return await delete_user_memory_impl(
-        key,
-        delete_entry=memory_store.delete_entry,
-    )
+    try:
+        return await delete_user_memory_impl(
+            key,
+            delete_entry=memory_store.delete_entry,
+        )
+    except RuntimeError as e:
+        logger.error("delete_user_memory failed: %s", e)
+        return {"error": str(e)}
+    except Exception as e:
+        logger.exception("delete_user_memory unexpected error")
+        return {"error": f"Failed to delete memory: {e}"}
 
 
 @mcp.tool()
@@ -3073,10 +3101,14 @@ async def list_user_memory() -> Dict[str, Any]:
     Returns the list of keys and a count. Use get_user_memory to
     retrieve the value of a specific key.
     """
-    return await list_user_memory_impl(
-        list_keys=memory_store.list_keys,
-        get_user_hash=memory_store.get_user_hash,
-    )
+    try:
+        return await list_user_memory_impl(
+            list_keys=memory_store.list_keys,
+            get_user_hash=memory_store.get_user_hash,
+        )
+    except Exception as e:
+        logger.exception("list_user_memory unexpected error")
+        return {"error": f"Failed to list memory: {e}"}
 
 
 if __name__ == "__main__":

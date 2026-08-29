@@ -269,3 +269,9 @@ class TestMemoryTools:
         assert ".redmine" in result["keys"]
         assert ".google-sheets" in result["keys"]
         assert result["count"] == 2
+
+
+# Tests for the MCP tool wrappers' error-handling live in
+# tests/test_memory_tool_wrappers.py — that file is a standalone
+# test because redmine_handler.py imports `redminelib` which is not
+# available in this test environment.
