@@ -32,7 +32,7 @@ foreach ($SkillName in $SkillNames) {
     New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
 
     # Use GitHub Contents API to list all files in the skill directory
-    $ApiUrl = "$ApiBase/skills/$SkillName?ref=$Branch"
+    $ApiUrl = "${ApiBase}/skills/${SkillName}?ref=${Branch}"
     try {
         $Response = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing
         foreach ($Item in $Response) {
