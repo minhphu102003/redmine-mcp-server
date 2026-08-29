@@ -34,12 +34,12 @@ Reopen a bug by updating its status on both Redmine and the Google Sheet. The sk
 
 ## 2. Step 1 — Clarify the bug
 
-**Memory check first**: before asking the user for a spreadsheet ID, check if `.google-sheets` exists at the git worktree root and has a mapping for the current project.
+**Memory check first**: before asking the user for a spreadsheet ID, check if `~/.redmine-mcp/.google-sheets` exists and has a mapping for the current project.
 
 1. If `.google-sheets` exists and has a mapping → use its `spreadsheet_id` and `sheets.bugs`. Skip to "Verify access".
 2. If no mapping → **setup new project sheet**:
 
-   a. Read `.redmine` → list all projects (full-list rule).
+   a. Read `~/.redmine-mcp/.redmine` → list all projects (full-list rule).
    b. Ask user: "Bạn đang reopen bug cho project nào?" with project list.
    c. User picks a project → instruct:
       ```
@@ -49,7 +49,7 @@ Reopen a bug by updating its status on both Redmine and the Google Sheet. The sk
       4. Paste the spreadsheet URL here
       ```
    d. Extract spreadsheet_id → verify access → verify sheet structure.
-   e. Save mapping to `.google-sheets`.
+   e. Save mapping to `~/.redmine-mcp/.google-sheets`.
    f. Proceed with this project.
 
 **Verify access**: call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
@@ -58,7 +58,7 @@ Ask the user (structured ask tool, plain text as fallback):
 
 1. **Bug ID**: which bug to reopen? (e.g. BUG-001)
 2. **Reopen reason**: what still fails? (mandatory — describe the failing behavior)
-3. **Sheet name**: default = "Bugs" (or from `.google-sheets` mapping).
+3. **Sheet name**: default = "Bugs" (or from `~/.redmine-mcp/.google-sheets` mapping).
 
 ---
 

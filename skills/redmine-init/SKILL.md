@@ -1,15 +1,20 @@
 ---
 name: redmine-init
-description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file at the git worktree root, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. For testers: also initializes Google Sheets memory (`.google-sheets`) mapping projects to test management spreadsheets. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
+description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. For testers: files are stored in `~/.redmine-mcp/` (persistent across sessions); for devs: files are stored at the git worktree root. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
 ---
 
 # Redmine Init
 
-Creates/refreshes a `.redmine` JSON cache at the git worktree root mapping the repo to a Redmine project with static ID lists. For testers, also creates/refreshes `.google-sheets` memory. Tool calls below are described by **capability**, not by name — use whatever tool the current agent provides.
+Creates/refreshes a `.redmine` JSON cache mapping the repo to a Redmine project with static ID lists. For testers, also creates/refreshes `.google-sheets` memory. Tool calls below are described by **capability**, not by name — use whatever tool the current agent provides.
 
 ---
 
 ## 1. Core principles
+
+- **Path resolution (CRITICAL)**:
+  - **Tester** → files stored in `~/.redmine-mcp/` (persistent across sessions, no git required)
+  - **Dev/Leader** → files stored at git worktree root (`git rev-parse --show-toplevel`)
+  - If not a git repo AND role ≠ tester → ask the user where to place the file.
 
 - The `.redmine` file is a **snapshot** — it is a trusted source for *static* ID lists (project, trackers, statuses, priorities, members, versions, categories, custom fields) while fresh. It never stores per-issue state (e.g. which priority/status an issue currently has) — that changes hourly and is always fetched live.
 - The file is **NOT** a source of truth for *dynamic* state — allowed status transitions, parent-issue validity, or members who joined after the snapshot. Those must still be verified live.
@@ -46,11 +51,14 @@ Ask the user (structured ask tool, plain text as fallback):
 | GitHub↔Redmine mapping | ✅ Asked | ❌ Skipped | ✅ Asked |
 | Member working rules | ❌ Skipped | ❌ Skipped | ✅ Asked |
 | `.google-sheets` | ❌ Not created | ✅ Created | ❌ Not created |
+| **Storage path** | Git worktree root | `~/.redmine-mcp/` | Git worktree root |
 
 ### 2a. Dev flow — Init `.redmine`
 
-1. **Locate the repo root**: run `git rev-parse --show-toplevel`. The `.redmine` file goes at that root (not the current working directory when they differ). If the directory is not a git repository → ask the user where to place the file.
-2. **Check for an existing file**: if `.redmine` already exists at the root → follow the refresh flow (section 3) instead.
+1. **Locate the storage path**:
+   - **Tester role**: use `~/.redmine-mcp/` (create directory if not exists). This path is persistent across sessions.
+   - **Dev/Leader role**: run `git rev-parse --show-toplevel` → use that root. If not a git repo → ask the user where to place the file.
+2. **Check for an existing file**: if `.redmine` already exists at the storage path → follow the refresh flow (section 3) instead.
 3. **List projects**: call the list-projects capability (e.g. `redmine_list_redmine_projects`) → returns `id`, `name`, `identifier`, `description`, `created_on`.
 4. **Ask the user to choose — full list always visible (full-list rule)**: NEVER ask with only a couple of options, and NEVER guess. Before calling any ask tool, render the **complete** project list to the user in the chat message as a markdown table — every single row, no truncation, no capping:
    ```markdown
@@ -76,7 +84,7 @@ Ask the user (structured ask tool, plain text as fallback):
    6. Build the `user_mappings` array: each entry `{"github": "<login>", "git_email": "<email>", "redmine_user_id": <id>, "redmine_name": "<name>"}`. Strip wrapper tags from all names.
 7. **Collect member working leaders only**: **SKIP this step if role ≠ Leader.** Only team leaders/tech leads need to provide working rules for team members. For each member mapped in step 6, ask the user for that person's working rules — "Người này làm role gì và có rule/đặc thù riêng khi làm việc không? (gõ 'bỏ qua' để skip)". Prompt with the researched catalog below as a reminder of what rule areas exist (role/stack, required tests, code-review expectations, AI-assistant usage policy, reporting cadence, definition of done). The user answers, skips, or says "bỏ qua" per member — **never invent a rule**; store only what the user explicitly said, as short verbatim bullets (Vietnamese OK). Non-leaders skip this entirely — no rules are collected.
 8. **Strip wrapper tags**: remove every `<insecure-content-...>` and `</insecure-content-...>` marker from names.
-9. **Write `.redmine`**: a single JSON file at the repo root, exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
+9. **Write `.redmine`**: a single JSON file at the storage path (tester: `~/.redmine-mcp/.redmine`, dev: git root), exact schema in section 4, `fetched_at` = current UTC timestamp (ISO 8601, e.g. `2026-08-06T00:00:00Z`).
 10. **Verify**: read the file back; confirm it parses as valid JSON, contains no wrapper tags, and `fetched_at` is set.
 11. **Report**: project id/name/identifier, counts of trackers/members/statuses/priorities, the `user_mappings` count (dev/leader only), the `member_rules` count (leaders only), the file path, and the reminder: re-run `redmine init` later to refresh; the file is safe to commit (no secrets).
 12. **If role = Tester or Both → continue to section 2b (Google Sheets memory setup)**.
@@ -88,7 +96,7 @@ After `.redmine` is created, set up Google Sheets memory for test management.
 **Service Account**: `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
 The MCP server authenticates with this service account. Users create their own Google Sheet and share it with this email (Editor permission).
 
-1. **Check existing `.google-sheets`**: if the file exists at the git worktree root → follow the refresh flow (section 3b) instead.
+1. **Check existing `.google-sheets`**: if the file exists at `~/.redmine-mcp/.google-sheets` → follow the refresh flow (section 3b) instead.
 2. **Ask per project**: iterate over ALL projects from `.redmine` (full-list rule). For each project:
 
    **"Project '<project_name>' (ID: <id>) — setup Google Sheet:"**
@@ -134,7 +142,7 @@ The MCP server authenticates with this service account. Users create their own G
 
 ## 3. Refresh flow (`.redmine` already exists)
 
-1. Read the existing `.redmine`.
+1. Read the existing `.redmine` from the storage path (tester: `~/.redmine-mcp/.redmine`, dev: git root).
 2. **Reuse the stored `project.id`** — do NOT re-ask which project. Just re-fetch project context using the stored ID.
 3. Re-fetch project context + priorities (step 5 of the init flow) and overwrite the file with a fresh `fetched_at`, keeping the same schema.
 4. **Refresh `user_mappings` (dev/leader only, skip for testers)**: keep existing mappings whose `redmine_user_id` is still in the new `members` list; drop entries for members that no longer exist; do NOT re-ask for existing mappings.
@@ -146,7 +154,7 @@ The MCP server authenticates with this service account. Users create their own G
 
 Also triggered when user says: "thêm project mới vào google sheets", "add project to sheet", "map project với sheet".
 
-1. Read the existing `.google-sheets`.
+1. Read the existing `.google-sheets` from `~/.redmine-mcp/.google-sheets`.
 2. **Verify each mapped spreadsheet still exists** by reading its metadata. If a spreadsheet was deleted or access was revoked → warn the user and remove the mapping.
 3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → for each new project:
    - Show project name + ID
@@ -213,6 +221,6 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 
 ## 7. Gotchas checklist
 
-- [ ] Write at the **git worktree root** (`git rev-parse --show-toplevel`), not the current working directory when they differ. Not a git repo → ask the user where to place `.redmine`.
+- [ ] **Path resolution**: Tester → `~/.redmine-mcp/`, Dev/Leader → git worktree root. Not a git repo and not tester → ask the user.
 - [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Only for dev/leader (testers skip this step entirely).
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / opencode) for the skill to load.

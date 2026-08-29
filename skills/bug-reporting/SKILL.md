@@ -14,6 +14,7 @@ Log a bug to the Google Sheet "Bugs" from a description. The skill auto-generate
 ## 1. Core rules
 
 1. **Memory check first**: read `.redmine` and `.google-sheets` before asking anything.
+   - **Path**: `~/.redmine-mcp/.redmine` and `~/.redmine-mcp/.google-sheets` (tester path)
 2. **Auto-fill reporter**: `reporter` is ALWAYS auto-filled from `.redmine` → `user_mappings[0].redmine_name`. This skill is for testers only; init has already identified the current user. **Never ask.**
 3. **Ask-before-create**: confirm bug details and linked test case before writing.
 4. **Auto-generated IDs**: bug_id follows the pattern BUG-001, BUG-002... based on existing rows.
@@ -29,12 +30,12 @@ Log a bug to the Google Sheet "Bugs" from a description. The skill auto-generate
 
 **Memory check first** (both files must exist after init):
 
-1. Read `.redmine` → `user_mappings[0].redmine_name` → auto-fill `reporter`. If missing → init was not run, tell user to run `redmine init` first.
-2. Read `.google-sheets` → find mapping for current project (match `redmine_project_id` against `.redmine` `project.id`).
+1. Read `~/.redmine-mcp/.redmine` → `user_mappings[0].redmine_name` → auto-fill `reporter`. If missing → init was not run, tell user to run `redmine init` first.
+2. Read `~/.redmine-mcp/.google-sheets` → find mapping for current project (match `redmine_project_id` against `.redmine` `project.id`).
 3. If mapping exists → use its `spreadsheet_id` + `sheets.bugs`.
 4. If no mapping → **setup new project sheet**:
 
-   a. Read `.redmine` → `projects` array (full-list rule).
+   a. Read `~/.redmine-mcp/.redmine` → `projects` array (full-list rule).
    b. Ask user: "Bạn đang report bug cho project nào?" with project list.
    c. User picks a project → instruct:
       ```
@@ -44,7 +45,7 @@ Log a bug to the Google Sheet "Bugs" from a description. The skill auto-generate
       4. Paste the spreadsheet URL here
       ```
    d. Extract spreadsheet_id → verify access → verify sheet structure.
-   e. Save mapping to `.google-sheets`.
+   e. Save mapping to `~/.redmine-mcp/.google-sheets`.
    f. Proceed with this project.
 
 **Verify access**: before writing, call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
@@ -121,8 +122,8 @@ If the user pastes a raw description, help structure it into the format above.
 
 ## 6. Gotchas checklist
 
-- [ ] **Read `.redmine` first** — reporter is always auto-filled, never ask.
-- [ ] **Read `.google-sheets` first** — auto-fill spreadsheet_id and sheet name, never ask if mapping exists.
+- [ ] **Read `.redmine` first** — reporter is always auto-filled, never ask. Path: `~/.redmine-mcp/.redmine`
+- [ ] **Read `.google-sheets` first** — auto-fill spreadsheet_id and sheet name, never ask if mapping exists. Path: `~/.redmine-mcp/.google-sheets`
 - [ ] **assigned_to always empty** — user selects via UI dropdown later, never write a value.
 - [ ] **Priority exact values** — MUST be `High`, `Medium`, or `Low` (no typos, no Vietnamese).
 - [ ] **Status always `New`** — must be exact match to dropdown value.

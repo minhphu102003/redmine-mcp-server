@@ -198,16 +198,62 @@ def register_oauth_routes(target_app):
     target_app.add_route("/revoke", revoke_token, methods=["POST"])
 
 
-# Export the Starlette app for testing and external use
-# Use streamable-http transport (works for opencode)
-app = mcp.http_app(stateless_http=True)
+# --- Dual-transport: SSE (Claude Desktop) + Streamable HTTP (opencode) ---
+from fastmcp.server.http import create_sse_app, create_streamable_http_app  # noqa: E402
+from starlette.applications import Starlette  # noqa: E402
+from starlette.routing import Mount, Route  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+async def health_check(request):
+    """Health check endpoint."""
+    return JSONResponse({"status": "ok", "service": "redmine_mcp_tools", "auth_mode": REDMINE_AUTH_MODE})
+
+
+# SSE app for Claude Desktop
+sse_app = create_sse_app(
+    server=mcp,
+    message_path="/messages/",
+    sse_path="/",
+    auth=None,
+)
+
+# Streamable HTTP app for opencode
+http_app = create_streamable_http_app(
+    server=mcp,
+    streamable_http_path="/",
+    auth=None,
+    stateless_http=True,
+)
+
+
+# Combined lifespan - use http_app's lifespan which includes session manager
+@asynccontextmanager
+async def lifespan(app):
+    async with http_app.router.lifespan_context(app):
+        yield
+
+
+# Compose both transports on one app
+app = Starlette(
+    routes=[
+        Route("/health", health_check, methods=["GET"]),
+        Mount("/sse", app=sse_app),
+        Mount("/mcp", app=http_app),
+    ],
+    lifespan=lifespan,
+)
 
 # Register OAuth2 middleware and endpoints only when auth mode is oauth
 if REDMINE_AUTH_MODE == "oauth":
     app.add_middleware(RedmineOAuthMiddleware)
     register_oauth_routes(app)
 elif REDMINE_AUTH_MODE == "dynamic":
+    # Apply dynamic auth middleware - extracts X-Redmine-URL and X-Redmine-API-Key headers
+    # Multi-tenant: each client provides their own credentials via headers
     app.add_middleware(RedmineDynamicAuthMiddleware)
+    logger.info("Dynamic auth mode: extracting credentials from request headers")
 
 # Log version at module load time so it appears regardless of how the server is started
 logger.info("Redmine MCP Server v%s", get_version())
