@@ -13,7 +13,7 @@ Read bug rows from the Google Sheet "Bugs" and create Redmine issues for each. T
 
 ## 1. Core rules
 
-1. **Memory check first**: read `~/.redmine-mcp/.google-sheets` → auto-detect project from spreadsheet mapping. Read `~/.redmine-mcp/.redmine` → get trackers/members/priorities.
+1. **Memory check first**: call `get_user_memory(key=".google-sheets")` → auto-detect project from spreadsheet mapping. Call `get_user_memory(key=".redmine")` → get trackers/members/priorities.
 2. **Auto-fill project**: if `.google-sheets` has only one project → use its `redmine_project_id` without asking. Multiple projects → ask which one.
 3. **Ask-before-create**: confirm tracker, assignee, and bug range before creating issues.
 4. **Only process "New" bugs**: bugs with status other than "New" or with an existing redmine_issue_id are skipped.
@@ -32,13 +32,13 @@ Read bug rows from the Google Sheet "Bugs" and create Redmine issues for each. T
 
 ## 2. Step 1 — Clarify the parameters
 
-**Memory check first**: read both files before asking anything.
+**Memory check first**: call both memory tools before asking anything.
 
-1. Read `~/.redmine-mcp/.google-sheets` → find the project mapping. If the tester has only one project → use its `redmine_project_id` automatically. If multiple → ask which project.
-2. Read `~/.redmine-mcp/.redmine` → get trackers, members, priorities, statuses for the confirmed project.
+1. Call `get_user_memory(key=".google-sheets")` → find the project mapping. If the tester has only one project → use its `redmine_project_id` automatically. If multiple → ask which project.
+2. Call `get_user_memory(key=".redmine")` → get trackers, members, priorities, statuses for the confirmed project.
 3. If no mapping for the chosen project → **setup new project sheet**:
 
-   a. Read `~/.redmine-mcp/.redmine` → `projects` array (full-list rule).
+   a. Call `get_user_memory(key=".redmine")` → `projects` array (full-list rule).
    b. Ask user: "Bạn muốn tạo Redmine issues cho project nào?" with project list.
    c. User picks a project → instruct:
       ```
@@ -48,7 +48,7 @@ Read bug rows from the Google Sheet "Bugs" and create Redmine issues for each. T
       4. Paste the spreadsheet URL here
       ```
    d. Extract spreadsheet_id → verify access → verify sheet structure.
-   e. Save mapping to `~/.redmine-mcp/.google-sheets`.
+   e. Save mapping: call `set_user_memory(key=".google-sheets", value=<updated_data>)`.
    f. Proceed.
 
 **Verify access**: call `get_sheet_metadata` with the spreadsheet_id to confirm access. If access denied → remind user to share the sheet with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com` (Editor permission).
@@ -155,8 +155,8 @@ Rules:
 Present a summary with clickable links so the user can view issues on Redmine and the sheet on Google Sheets.
 
 **Links to include:**
-- Redmine issue URL: `<REDMINE_BASE_URL>/issues/<issue_id>` (base URL from MCP server config or `~/.redmine-mcp/.redmine`)
-- Google Sheet URL: from `~/.redmine-mcp/.google-sheets` → `spreadsheet_url`
+- Redmine issue URL: `<REDMINE_BASE_URL>/issues/<issue_id>` (base URL from MCP server config or `get_user_memory(key=".redmine")`)
+- Google Sheet URL: from `get_user_memory(key=".google-sheets")` → `spreadsheet_url`
 
 ```
 Kết quả tạo Redmine issues:
@@ -181,8 +181,8 @@ Sheet: [Open Google Sheet](https://docs.google.com/spreadsheets/d/<spreadsheet_i
 
 ## 7. Gotchas checklist
 
-- [ ] **Read `~/.redmine-mcp/.google-sheets` first** — auto-detect project from spreadsheet mapping, don't ask if only one project.
-- [ ] **Read `~/.redmine-mcp/.redmine` first** — get trackers/members/priorities for the confirmed project.
+- [ ] **Read `.google-sheets` first** — auto-detect project from spreadsheet mapping, don't ask if only one project. Use `get_user_memory(key=".google-sheets")`.
+- [ ] **Read `.redmine` first** — get trackers/members/priorities for the confirmed project. Use `get_user_memory(key=".redmine")`.
 - [ ] Only process bugs with status "New" and empty redmine_issue_id.
 - [ ] Always look up priority_id and assignee_id from live Redmine data — never assume IDs.
 - [ ] **Subject format**: `[<module>] [BUG] <bug title>` — module auto-lookup from linked test case, ask if no test case linked.
