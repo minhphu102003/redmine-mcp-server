@@ -3007,11 +3007,14 @@ async def get_user_memory(
       - '.redmine': project cache (trackers, members, statuses, priorities, etc.)
       - '.google-sheets': project-to-spreadsheet mappings for QA
     """
+    logger.warning("DEBUG get_user_memory: ENTRY key=%r", key)
     try:
-        return await get_user_memory_impl(
+        result = await get_user_memory_impl(
             key,
             get_entry=memory_store.get_entry,
         )
+        logger.warning("DEBUG get_user_memory: success keys=%s", list(result.keys()))
+        return result
     except Exception as e:
         logger.exception("get_user_memory unexpected error")
         return {"error": f"Failed to get memory: {e}"}
@@ -3046,12 +3049,19 @@ async def set_user_memory(
 
     The value completely replaces any previous value for this key.
     """
+    logger.warning(
+        "DEBUG set_user_memory: ENTRY key=%r value_keys=%s",
+        key,
+        list(value.keys()) if isinstance(value, dict) else type(value).__name__,
+    )
     try:
-        return await set_user_memory_impl(
+        result = await set_user_memory_impl(
             key,
             value,
             set_entry=memory_store.set_entry,
         )
+        logger.warning("DEBUG set_user_memory: success result=%r", result)
+        return result
     except RuntimeError as e:
         # Identity not resolved (legacy mode, or ContextVar not propagated).
         # Return a clear error instead of letting the exception kill the
@@ -3081,6 +3091,7 @@ async def delete_user_memory(
 
     Removes the specified key from server-side memory.
     """
+    logger.warning("DEBUG delete_user_memory: ENTRY key=%r", key)
     try:
         return await delete_user_memory_impl(
             key,
@@ -3101,6 +3112,7 @@ async def list_user_memory() -> Dict[str, Any]:
     Returns the list of keys and a count. Use get_user_memory to
     retrieve the value of a specific key.
     """
+    logger.warning("DEBUG list_user_memory: ENTRY")
     try:
         return await list_user_memory_impl(
             list_keys=memory_store.list_keys,

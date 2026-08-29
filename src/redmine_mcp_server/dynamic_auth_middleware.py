@@ -89,9 +89,21 @@ class RedmineDynamicAuthMiddleware(BaseHTTPMiddleware):
         # Set context variables
         url_token = current_redmine_url.set(redmine_url)
         key_token = current_redmine_key.set(api_key)
+        logger.warning(
+            "DEBUG middleware: set contextvar url=%r key_set=%s path=%s",
+            redmine_url,
+            bool(api_key),
+            request.url.path,
+        )
 
         try:
-            return await call_next(request)
+            response = await call_next(request)
+            logger.warning(
+                "DEBUG middleware: call_next returned status=%s for path=%s",
+                response.status_code,
+                request.url.path,
+            )
+            return response
         finally:
             # Reset context variables after request is processed
             current_redmine_url.reset(url_token)
