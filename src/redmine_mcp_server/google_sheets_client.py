@@ -11,9 +11,12 @@ from .serializers.google_sheets import (
     BUGS_COLORS,
     BUGS_HEADERS,
     BUGS_VALIDATIONS,
+    HEADER_DATE_COLUMNS,
+    HEADER_WRAP_COLUMNS,
     TESTCASES_COLORS,
     TESTCASES_HEADERS,
     TESTCASES_VALIDATIONS,
+    calculate_header_width,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +32,207 @@ def _hex_to_rgb(hex_color: str) -> Dict[str, float]:
         "green": int(h[2:4], 16) / 255.0,
         "blue": int(h[4:6], 16) / 255.0,
     }
+
+
+HEADER_FIELDS = (
+    "userEnteredFormat("
+    "backgroundColor,textFormat,horizontalAlignment,verticalAlignment,padding"
+    ")"
+)
+
+
+def _build_width_requests(sheet_id: int, headers: List[str]) -> List[Dict[str, Any]]:
+    """Build updateDimensionProperties requests sized to each header text +
+    consistent left/right padding, so columns are never narrower than the
+    header content and never collapse together.
+    """
+    requests: List[Dict[str, Any]] = []
+    for col_idx, header in enumerate(headers):
+        width = calculate_header_width(header)
+        requests.append(
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": col_idx,
+                        "endIndex": col_idx + 1,
+                    },
+                    "properties": {"pixelSize": width},
+                    "fields": "pixelSize",
+                }
+            }
+        )
+    return requests
+
+
+DATE_FORMAT = {"numberFormat": {"type": "DATE", "pattern": "dd/mm/yyyy"}}
+WRAP_FORMAT = {"wrapStrategy": "WRAP", "verticalAlignment": "TOP"}
+
+
+def _build_column_format_requests(
+    sheet_id: int, headers: List[str]
+) -> List[Dict[str, Any]]:
+    """Build repeatCell requests for:
+    - date columns → dd/mm/yyyy number format
+    - text-wrap columns → WRAP + TOP vertical alignment
+    Applies to all rows in the column (no startRowIndex restriction so the
+    format covers the entire column without overriding the header style).
+    """
+    requests: List[Dict[str, Any]] = []
+    for col_idx, header in enumerate(headers):
+        if header in HEADER_DATE_COLUMNS:
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col_idx,
+                            "endIndex": col_idx + 1,
+                        },
+                        "cell": {"userEnteredFormat": DATE_FORMAT},
+                        "fields": "userEnteredFormat.numberFormat",
+                    }
+                }
+            )
+        elif header in HEADER_WRAP_COLUMNS:
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col_idx,
+                            "endIndex": col_idx + 1,
+                        },
+                        "cell": {"userEnteredFormat": WRAP_FORMAT},
+                        "fields": "userEnteredFormat(wrapStrategy,verticalAlignment)",
+                    }
+                }
+            )
+    return requests
+
+
+def _build_row_height_requests(
+    sheet_id: int, row_count: int = 1000
+) -> List[Dict[str, Any]]:
+    """Auto-resize row height for data rows (skip header row)."""
+    return [
+        {
+            "autoResizeDimensions": {
+                "dimensions": {
+                    "sheetId": sheet_id,
+                    "dimension": "ROWS",
+                    "startIndex": 1,
+                    "endIndex": row_count,
+                }
+            }
+        }
+    ]
+
+
+# Columns that may contain markdown-formatted text (bold/italic/code/hyperlink)
+MARKDOWN_COLUMNS: Dict[str, int] = {
+    # TestCases sheet (col index → header name)
+    "precondition": 3,
+    "steps": 4,
+    "expected_result": 5,
+    # Bugs sheet
+    "description": 3,
+    "reject_reason": 11,
+}
+
+
+def _is_markdown(text: str) -> bool:
+    """Return True if text contains markdown tokens."""
+    return bool(__import__("re").search(r"\*\*|\*|`|\[.+\]\(", text or ""))
+
+
+def apply_markdown_format(
+    service: Any,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_row: int,
+    row_count: int,
+    col_index: int,
+    text_column: int,
+) -> None:
+    """After rows are written, scan for markdown in col col_index and
+    apply rich-text formatting via repeatCell for matching cells only.
+    """
+    try:
+        end_row = start_row + row_count
+        read_range = f"{sheet_name}!{chr(65 + col_index)}{start_row}:{chr(65 + col_index)}{end_row}"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=read_range)
+            .execute()
+        )
+        values = result.get("values", [])
+    except Exception:
+        return
+
+    from .serializers.google_sheets import parse_markdown_to_rich_text
+
+    requests: List[Dict[str, Any]] = []
+    for row_offset, row in enumerate(values):
+        if not row or col_index >= len(row):
+            continue
+        cell_text = row[col_index]
+        if not _is_markdown(cell_text):
+            continue
+        rich_runs = parse_markdown_to_rich_text(cell_text)
+        actual_row = start_row + row_offset
+        requests.append(
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": None,  # filled below per sheet
+                        "startRowIndex": actual_row - 1,
+                        "endRowIndex": actual_row,
+                        "startColumnIndex": col_index,
+                        "endColumnIndex": col_index + 1,
+                    },
+                    "cell": {
+                        "textFormatRuns": rich_runs,
+                    },
+                    "fields": "textFormatRuns",
+                }
+            }
+        )
+
+    if not requests:
+        return
+
+    # Get sheetId from sheet name
+    try:
+        meta = (
+            service.spreadsheets()
+            .get(
+                spreadsheetId=spreadsheet_id,
+                fields="sheets.properties",
+            )
+            .execute()
+        )
+        sheet_id_map = {
+            s["properties"]["title"]: s["properties"]["sheetId"]
+            for s in meta.get("sheets", [])
+        }
+        target_sheet_id = sheet_id_map.get(sheet_name)
+    except Exception:
+        return
+
+    for req in requests:
+        req["repeatCell"]["range"]["sheetId"] = target_sheet_id
+
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests}
+        ).execute()
+    except Exception as e:
+        logger.warning("apply_markdown_format failed: %s", e)
 
 
 class GoogleSheetsManager:
@@ -173,7 +377,8 @@ class GoogleSheetsManager:
         """Create a new Google Spreadsheet OR add TestCases/Bugs sheets to existing one.
 
         Includes UPPERCASE headers, styled headers (blue bg, white bold text),
-        frozen header row, auto-resized columns, and data validation dropdowns.
+        frozen header row, column widths sized to each header text + consistent
+        12px L/R padding, and data validation dropdowns.
 
         Args:
             title: The spreadsheet title (used only when creating a new spreadsheet).
@@ -238,7 +443,7 @@ class GoogleSheetsManager:
             spreadsheetId=spreadsheet_id, body=headers_body
         ).execute()
 
-        # Step 3: Style headers + freeze row + auto-resize
+        # Step 3: Style headers + freeze row + size columns to header text
         header_format = {
             "backgroundColor": _hex_to_rgb("#4472C4"),
             "textFormat": {
@@ -248,6 +453,12 @@ class GoogleSheetsManager:
             },
             "horizontalAlignment": "CENTER",
             "verticalAlignment": "MIDDLE",
+            "padding": {
+                "top": 6,
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+            },
         }
 
         requests = []
@@ -266,7 +477,7 @@ class GoogleSheetsManager:
                             "endColumnIndex": num_cols,
                         },
                         "cell": {"userEnteredFormat": header_format},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                        "fields": HEADER_FIELDS,
                     }
                 }
             )
@@ -281,17 +492,15 @@ class GoogleSheetsManager:
                     }
                 }
             )
-            requests.append(
-                {
-                    "autoResizeDimensions": {
-                        "dimensions": {
-                            "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": 0,
-                            "endIndex": num_cols,
-                        }
-                    }
-                }
+            sheet_headers = (
+                TESTCASES_HEADERS if sheet_name == "TestCases" else BUGS_HEADERS
+            )
+            requests.extend(_build_width_requests(sheet_id, sheet_headers))
+            requests.extend(_build_column_format_requests(sheet_id, sheet_headers))
+            requests.extend(
+                _build_row_height_requests(
+                    sheet_id, sheets_info[sheet_name].get("row_count", 1000)
+                )
             )
 
         service.spreadsheets().batchUpdate(
@@ -408,7 +617,7 @@ class GoogleSheetsManager:
                 body={"valueInputOption": "USER_ENTERED", "data": headers_body_data},
             ).execute()
 
-        # 5. Style headers + freeze row + auto-resize (only for new sheets)
+        # 5. Style headers + freeze row + size columns to header text
         header_format = {
             "backgroundColor": _hex_to_rgb("#4472C4"),
             "textFormat": {
@@ -418,6 +627,12 @@ class GoogleSheetsManager:
             },
             "horizontalAlignment": "CENTER",
             "verticalAlignment": "MIDDLE",
+            "padding": {
+                "top": 6,
+                "bottom": 6,
+                "left": 12,
+                "right": 12,
+            },
         }
 
         format_requests = []
@@ -436,7 +651,7 @@ class GoogleSheetsManager:
                             "endColumnIndex": num_cols,
                         },
                         "cell": {"userEnteredFormat": header_format},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                        "fields": HEADER_FIELDS,
                     }
                 }
             )
@@ -451,17 +666,17 @@ class GoogleSheetsManager:
                     }
                 }
             )
-            format_requests.append(
-                {
-                    "autoResizeDimensions": {
-                        "dimensions": {
-                            "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": 0,
-                            "endIndex": num_cols,
-                        }
-                    }
-                }
+            sheet_headers = (
+                TESTCASES_HEADERS if sheet_name == "TestCases" else BUGS_HEADERS
+            )
+            format_requests.extend(_build_width_requests(sheet_id, sheet_headers))
+            format_requests.extend(
+                _build_column_format_requests(sheet_id, sheet_headers)
+            )
+            format_requests.extend(
+                _build_row_height_requests(
+                    sheet_id, sheets_to_format[sheet_name].get("row_count", 1000)
+                )
             )
 
         if format_requests:
