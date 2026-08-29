@@ -106,6 +106,146 @@ BUGS_COLORS = {
     5: STATUS_COLORS,  # STATUS
 }
 
+# Header cell padding and width estimation (used by google_sheets_client)
+HEADER_PADDING_PX = 24  # 12px left + 12px right
+HEADER_CHAR_PX = 8  # average pixel width per character at 11px bold font
+
+
+def calculate_header_width(header_text: str) -> int:
+    """Calculate column pixel width to fit header text + padding on both sides.
+
+    Width = len(header_text) * HEADER_CHAR_PX + HEADER_PADDING_PX (12+12).
+    Ensures every column has consistent left/right padding, so headers never
+    touch cell borders regardless of text length.
+    """
+    return len(header_text) * HEADER_CHAR_PX + HEADER_PADDING_PX
+
+
+# --- Column-level format configuration ---
+
+HEADER_DATE_COLUMNS = frozenset(
+    {
+        "CREATED_DATE",
+        "LAST_TEST_DATE",
+        "REPORT_DATE",
+    }
+)
+
+HEADER_WRAP_COLUMNS = frozenset(
+    {
+        "STEPS",
+        "PRECONDITION",
+        "EXPECTED_RESULT",
+        "DESCRIPTION",
+        "REJECT_REASON",
+    }
+)
+
+
+# --- Markdown-to-rich-text conversion ---
+
+import re
+from typing import List
+
+
+def parse_markdown_to_rich_text(text: str) -> List[Dict[str, Any]]:
+    """Parse markdown and return a list of textFormatRuns for Google Sheets rich text.
+
+    Supported conversions:
+      ***bold italic*** → bold + italic
+      **bold**          → bold
+      *italic*          → italic
+      `code`            → monospace (Roboto Mono)
+      [label](url)      → hyperlink
+
+    Non-markdown text is returned as a single plain-text run.
+    Bullet/numbered lists and headings are kept as plain text (unsupported by Sheets).
+    """
+    if not text:
+        return [{"text": ""}]
+
+    runs: List[Dict[str, Any]] = []
+    i = 0
+    n = len(text)
+
+    while i < n:
+        # Try ***bold italic***
+        if i + 5 < n and text[i] == "*" and text[i + 1] == "*" and text[i + 2] == "*":
+            end = text.find("***", i + 3)
+            if end != -1:
+                runs.append(
+                    {
+                        "text": text[i + 3 : end],
+                        "textFormat": {"bold": True, "italic": True},
+                    }
+                )
+                i = end + 3
+                continue
+        # Try **bold**
+        if i + 3 < n and text[i] == "*" and text[i + 1] == "*":
+            end = text.find("**", i + 2)
+            if end != -1:
+                runs.append({"text": text[i + 2 : end], "textFormat": {"bold": True}})
+                i = end + 2
+                continue
+        # Try *italic*
+        if i + 1 < n and text[i] == "*" and text[i + 1] != "*":
+            end = text.find("*", i + 1)
+            if end != -1:
+                runs.append({"text": text[i + 1 : end], "textFormat": {"italic": True}})
+                i = end + 1
+                continue
+        # Try `code`
+        if text[i] == "`":
+            end = text.find("`", i + 1)
+            if end != -1:
+                runs.append(
+                    {
+                        "text": text[i + 1 : end],
+                        "textFormat": {"fontFamily": "Roboto Mono"},
+                    }
+                )
+                i = end + 1
+                continue
+        # Try [label](url)
+        if text[i] == "[":
+            bracket_close = text.find("]", i + 1)
+            if (
+                bracket_close != -1
+                and bracket_close + 1 < n
+                and text[bracket_close + 1] == "("
+            ):
+                paren_close = text.find(")", bracket_close + 2)
+                if paren_close != -1:
+                    label = text[i + 1 : bracket_close]
+                    url = text[bracket_close + 2 : paren_close]
+                    runs.append({"text": label, "textFormat": {}, "hyperlink": url})
+                    i = paren_close + 1
+                    continue
+        # Plain character
+        runs.append({"text": text[i]})
+        i += 1
+
+    # Merge consecutive plain-text runs
+    merged: List[Dict[str, Any]] = []
+    for run in runs:
+        if (
+            merged
+            and "textFormat" not in run
+            and "hyperlink" not in run
+            and "textFormat" not in merged[-1]
+            and "hyperlink" not in merged[-1]
+        ):
+            merged[-1]["text"] += run["text"]
+        else:
+            merged.append(run)
+
+    if not merged:
+        merged.append({"text": text})
+
+    return merged
+
+
 # --- Status Transitions ---
 
 VALID_STATUS_TRANSITIONS: Dict[str, List[str]] = {

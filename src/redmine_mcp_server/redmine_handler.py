@@ -2947,8 +2947,9 @@ async def create_test_sheet_structure(
       re-sharing needed.
 
     Both modes include UPPERCASE headers, styled headers (blue bg, white bold
-    text), frozen header row, auto-resized columns, and data validation
-    dropdowns for tester, status, priority, last_test_result, and assigned_to.
+    text), frozen header row, column widths sized to each header text +
+    consistent 12px L/R padding, and data validation dropdowns for tester,
+    status, priority, last_test_result, and assigned_to.
 
     Returns:
         spreadsheet_id, spreadsheet_url, sheets info, and (for the existing-
