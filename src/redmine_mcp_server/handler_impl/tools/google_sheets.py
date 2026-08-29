@@ -528,7 +528,7 @@ async def create_test_cases_on_sheet_impl(
         else:
             us_header_row_index = 1 + existing_count
 
-        if sheet_id is not None and existing_count > 0:
+        if sheet_id is not None:
             google_sheets_manager.add_us_section_header(
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
