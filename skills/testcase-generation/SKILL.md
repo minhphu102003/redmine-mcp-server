@@ -18,7 +18,7 @@ Generate test cases from a user story, let the user review and refine them in a 
 3. **Iterative refinement**: the user can edit the draft file freely — add/remove/reorder test cases, change fields. The agent re-reads the file when the user says it's ready.
 4. **Auto-generated IDs**: test_case_id follows the pattern TC-001, TC-002, TC-003... based on existing rows in the sheet (assigned at push time, not in the draft).
 5. **Required fields**: every test case must have: title, module, precondition, steps, expected_result. Missing fields → ask the user or mark `[?]`.
-6. **Bugs sheet auto-creation**: when pushing, always check if "Bugs" sheet exists. If not, create it with all 13 headers.
+6. **Bugs sheet auto-creation**: when pushing, always check if "Bugs" sheet exists. If not, create it with all 14 headers.
 7. **Test case content is English** unless the user asks otherwise.
 8. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
 9. **ASK, DON'T ASSUME (CRITICAL)**: never invent business rules, edge cases, validation rules, workflows, UI details, or test data. If the US file is missing info → ask the user. See `USER_STORY_TEMPLATE.md` for the full template and validation rules.
@@ -466,6 +466,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 | Steps | `steps` | Join numbered lines into single string |
 | Expected | `expected_result` | |
 | Tester | `tester` | From draft, or empty |
+| Evidence | `evidence` | Optional. URL or hyperlink string (paste link to screenshot, recording, etc.). Text-only — agent does not upload image files. |
 | US Title | *(not a column)* | Passed as `us_title` parameter to tool — a merged colored header row is auto-inserted before the TC rows |
 | *(auto)* | `test_case_id` | Generated: TC-001, TC-002... |
 | *(auto)* | `created_date` | Set to today (YYYY-MM-DD) |
@@ -479,9 +480,9 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 
 ## 9. Step 6 — Push to Google Sheets
 
-1. **Check "Bugs" sheet**: if it doesn't exist, create it with 13 headers:
+1. **Check "Bugs" sheet**: if it doesn't exist, create it with 14 headers:
    ```
-   bug_id | test_case_id | title | description | priority | status | assigned_to | redmine_issue_id | redmine_status | reporter | report_date | reject_reason | duplicate_of
+   bug_id | test_case_id | title | description | priority | status | assigned_to | redmine_issue_id | redmine_status | reporter | report_date | reject_reason | duplicate_of | evidence_url
    ```
 
 2. **Ask about existing data**: if the TestCases sheet already has rows, ask whether to clear existing rows (keep headers) or append new rows.

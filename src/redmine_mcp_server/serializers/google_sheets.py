@@ -19,6 +19,7 @@ TESTCASES_KEYS = [
     "created_date",
     "last_test_result",
     "last_test_date",
+    "evidence",
 ]
 
 BUGS_KEYS = [
@@ -35,6 +36,7 @@ BUGS_KEYS = [
     "report_date",
     "reject_reason",
     "duplicate_of",
+    "evidence_url",
 ]
 
 # Display headers (UPPERCASE) - written to Google Sheets
@@ -138,6 +140,8 @@ HEADER_WRAP_COLUMNS = frozenset(
         "EXPECTED_RESULT",
         "DESCRIPTION",
         "REJECT_REASON",
+        "EVIDENCE",
+        "EVIDENCE_URL",
     }
 )
 

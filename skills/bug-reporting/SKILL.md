@@ -19,10 +19,11 @@ Log a bug to the Google Sheet "Bugs" from a description. The skill auto-generate
 3. **Ask-before-create**: confirm bug details and linked test case before writing.
 4. **Auto-generated IDs**: bug_id follows the pattern BUG-001, BUG-002... based on existing rows.
 5. **Initial status**: always "New" — the bug has not been sent to Redmine yet.
-6. **Required fields**: title, description, priority. Missing → ask the user.
+6. **Required fields**: title, description, priority, evidence_url. Missing → ask the user.
 7. **Test case link**: if the bug comes from a test failure, link the test_case_id. Otherwise leave empty.
 8. **Description format**: structured as steps to reproduce + actual result + expected result.
-9. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
+9. **Evidence (required)**: every bug MUST be accompanied by at least one URL pointing to a screenshot, screen recording, or log file. Accepted formats: Google Drive link, Imgur link, direct image/video URL (`http://` or `https://`). If the user has not provided evidence, the agent must ask before creating the row. Multiple links are joined into a single cell with newlines.
+10. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
 
 ---
 
@@ -55,6 +56,7 @@ Ask the user (structured ask tool, plain text as fallback):
 1. **Bug description**: paste the bug, point to a file, or reference a test case ID that failed.
 2. **Linked test case** (optional): if this bug was found during testing, provide the test_case_id (e.g. TC-005).
 3. **Priority**: High / Medium / Low (default: Medium).
+4. **Evidence URL (required)**: at least one link to a screenshot, recording, or log (Google Drive / Imgur / direct image URL). If the user says they have no evidence, **do not proceed** — remind them that evidence is required so devs can reproduce the bug.
 
 ---
 
@@ -75,6 +77,7 @@ From the user's input, extract:
    ```
 3. **priority**: from the user's answer (High/Medium/Low).
 4. **reporter**: auto-fill from `.redmine` → `user_mappings[0].redmine_name` (always available after init).
+5. **evidence_url**: at least one URL pointing to a screenshot, recording, or log. Multiple links joined with `\n`. If the user has not provided one and did not explicitly say "no evidence", prompt again — evidence is required.
 
 If the user pastes a raw description, help structure it into the format above.
 
@@ -84,7 +87,7 @@ If the user pastes a raw description, help structure it into the format above.
 
 1. **Read the Bugs sheet** to find the highest BUG-XXX number.
 2. **Generate new ID**: if the highest is BUG-005, the new one is BUG-006. If the sheet is empty, start at BUG-001.
-3. **Validate required fields**: title, description, priority must all be present. Missing → ask the user.
+3. **Validate required fields**: title, description, priority, evidence_url must all be present. Missing → ask the user. evidence_url must be a valid `http://` or `https://` URL (or multiple, newline-joined).
 4. **Set metadata**: report_date = today (YYYY-MM-DD), status = "New", reporter = auto-filled, assigned_to = empty, all Redmine-related fields empty.
 
 ---
@@ -108,6 +111,7 @@ If the user pastes a raw description, help structure it into the format above.
 | report_date | K | Today (YYYY-MM-DD) | No |
 | reject_reason | L | Empty (set by `status-sync` skill) | No |
 | duplicate_of | M | Empty (set by `status-sync` skill) | No |
+| **evidence_url** | N | **Required.** URL(s) to screenshot/recording/log. Multiple links joined with `\n`. | No |
 
 **Dropdown notes**: Columns E/F/G have data validation (dropdown) on the sheet. Agent writes values via API — must use **exact values** from the dropdown list. Invalid values will show as invalid on the sheet UI but data is still written.
 
