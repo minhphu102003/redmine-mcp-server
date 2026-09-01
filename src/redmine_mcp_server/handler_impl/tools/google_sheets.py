@@ -315,6 +315,15 @@ async def create_test_cases_on_sheet_impl(
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
     """Parse test cases and push to Google Sheets. Create Bugs sheet if needed."""
+    logger.info(
+        "create_test_cases_on_sheet_impl ENTRY spreadsheet_id=%s sheet_name=%s "
+        "tc_count=%d clear_existing=%s us_title=%r",
+        spreadsheet_id,
+        sheet_name,
+        len(test_cases),
+        clear_existing,
+        us_title,
+    )
     try:
         from ...serializers.google_sheets import (
             TESTCASES_HEADERS,
@@ -551,12 +560,15 @@ async def create_test_cases_on_sheet_impl(
             )
             .execute()
         )
+        logger.info("create_test_cases_on_sheet: append result = %s", append_result)
 
         # Post-process: apply rich text to markdown columns (precondition D, steps E, expected_result F)
         if rows:
-            first_new_row = (
-                len(existing_ids) + 2
-            )  # row index (1-based) of first appended row
+            # TC rows are appended after the US section header row inserted above.
+            # us_header_row_index is 0-based; the US title row occupies
+            # us_header_row_index (0-based) = us_header_row_index + 1 (1-based),
+            # so the first TC row is at us_header_row_index + 2 (1-based).
+            first_new_row = us_header_row_index + 2
             _apply_markdown_rich_text(
                 service=service,
                 spreadsheet_id=spreadsheet_id,
@@ -569,6 +581,34 @@ async def create_test_cases_on_sheet_impl(
                     5,
                 },  # D: precondition, E: steps, F: expected_result
             )
+
+            # Reset default style on TC rows to prevent inheritance from the
+            # colored US section header above. Must run AFTER the rich text
+            # step so the textFormatRuns partial overrides (bold/italic/code)
+            # remain on top of the default textFormat.
+            #
+            # Use reset_all_tc_blocks_formatting so that ALL TC rows in the
+            # sheet are reset — not just the newly appended ones. This is
+            # important when clear_existing=False, because old TC rows from
+            # previous pushes may still carry inherited background colors
+            # from earlier US title rows above them.
+            if sheet_id is not None:
+                logger.info(
+                    "create_test_cases_on_sheet: resetting ALL TC blocks "
+                    "sheet_id=%s num_columns=%d",
+                    sheet_id,
+                    len(TESTCASES_HEADERS),
+                )
+                google_sheets_manager.reset_all_tc_blocks_formatting(
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=sheet_name,
+                    num_columns=len(TESTCASES_HEADERS),
+                )
+            else:
+                logger.warning(
+                    "create_test_cases_on_sheet: sheet_id is None, "
+                    "skipping reset_all_tc_blocks_formatting"
+                )
 
         # Create Bugs sheet if it doesn't exist
         bugs_sheet_name = "Bugs"
