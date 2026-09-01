@@ -1528,92 +1528,6 @@ class TestRedmineHandler:
         assert "Ambiguous custom field name" in result["error"]
         mock_redmine.issue.update.assert_not_called()
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    async def test_get_redmine_attachment_download_url_success(
-        self, mock_cleanup, mock_redmine
-    ):
-        """Test successful URL generation with secure implementation."""
-        # Mock setup
-        mock_attachment = MagicMock()
-        mock_attachment.filename = "test.pdf"
-        mock_attachment.content_type = "application/pdf"
-        mock_attachment.download = MagicMock(return_value="/tmp/test_download")
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
-            mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch("builtins.open", mock_open()):
-                with patch("pathlib.Path.mkdir"):
-                    with patch("pathlib.Path.stat") as mock_stat:
-                        mock_stat.return_value.st_size = 1024
-                        with patch("os.rename"):
-                            with patch("json.dump"):
-                                from redmine_mcp_server.redmine_handler import (
-                                    get_redmine_attachment_download_url,
-                                )
-
-                                result = await get_redmine_attachment_download_url(123)
-
-        # Assertions
-        assert "error" not in result
-        assert "download_url" in result
-        assert "filename" in result
-        assert "attachment_id" in result
-        assert result["attachment_id"] == 123
-        assert "test.pdf" in result["filename"]
-        assert "test-uuid-123" in result["download_url"]
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_get_redmine_attachment_download_url_not_found(self, mock_redmine):
-        """Test handling of non-existent attachment ID."""
-        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
-
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        result = await get_redmine_attachment_download_url(999)
-
-        assert "error" in result
-        assert "not found" in result["error"].lower()
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    async def test_get_redmine_attachment_download_url_sanitizes_filename(
-        self, mock_cleanup, mock_redmine
-    ):
-        """Untrusted attachment filenames must not escape UUID directory."""
-        mock_attachment = MagicMock()
-        mock_attachment.filename = "../secrets.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download = MagicMock(return_value="/tmp/test_download")
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
-            mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch("builtins.open", mock_open()):
-                with patch("pathlib.Path.mkdir"):
-                    with patch("pathlib.Path.stat") as mock_stat:
-                        mock_stat.return_value.st_size = 1024
-                        with patch("os.rename"):
-                            with patch("json.dump"):
-                                from redmine_mcp_server.redmine_handler import (
-                                    get_redmine_attachment_download_url,
-                                )
-
-                                result = await get_redmine_attachment_download_url(123)
-
-        assert "error" not in result
-        assert result["filename"] == "secrets.txt"
-
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_search_redmine_issues_success(
@@ -1840,138 +1754,8 @@ class TestRedmineHandler:
         assert "summarizing project 1" in result["error"]
         assert "API Error" in result["error"]
 
-    @pytest.mark.asyncio
-    @patch.dict("os.environ", {"ATTACHMENTS_DIR": "./test_attachments"})
-    async def test_cleanup_attachment_files_success(self, tmp_path):
-        """Test successful attachment cleanup."""
-        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
-
-        result = await cleanup_attachment_files()
-
-        assert "cleanup" in result
-        assert "current_storage" in result
-        assert isinstance(result["cleanup"], dict)
-        assert isinstance(result["current_storage"], dict)
-
-        # Check expected keys in cleanup stats
-        assert "cleaned_files" in result["cleanup"]
-        assert "cleaned_bytes" in result["cleanup"]
-        assert "cleaned_mb" in result["cleanup"]
-
-        # Check expected keys in storage stats
-        assert "total_files" in result["current_storage"]
-        assert "total_bytes" in result["current_storage"]
-        assert "total_mb" in result["current_storage"]
-
-    @pytest.mark.asyncio
-    async def test_cleanup_attachment_files_exception(self):
-        """Test exception handling in cleanup_attachment_files."""
-        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
-        from redmine_mcp_server.attachment_manager import AttachmentFileManager
-
-        with patch.object(
-            AttachmentFileManager,
-            "cleanup_expired_files",
-            side_effect=Exception("Cleanup error"),
-        ):
-            result = await cleanup_attachment_files()
-
-        assert "error" in result
-        assert "An error occurred during cleanup" in result["error"]
-
 
 @pytest.mark.unit
-class TestAttachmentErrorRecovery:
-    """Tests for attachment download error recovery paths."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
-        new_callable=AsyncMock,
-    )
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_attachment_file_move_failure(
-        self, mock_redmine, mock_cleanup, tmp_path
-    ):
-        """Test OSError recovery during file move."""
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        # Mock attachment with download method
-        mock_attachment = MagicMock()
-        mock_attachment.id = 123
-        mock_attachment.filename = "test.txt"
-        mock_attachment.filesize = 100
-        mock_attachment.content_type = "text/plain"
-
-        # Mock download to create a temp file
-        temp_file = tmp_path / "test.txt"
-        temp_file.write_bytes(b"test content")
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Patch os.rename to fail
-        with patch("os.rename", side_effect=OSError("Permission denied")):
-            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
-                result = await get_redmine_attachment_download_url(123)
-
-        # Should return error dict
-        assert "error" in result
-        assert "Failed to store attachment" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch(
-        "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
-        new_callable=AsyncMock,
-    )
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_attachment_metadata_write_failure(
-        self, mock_redmine, mock_cleanup, tmp_path
-    ):
-        """Test IOError recovery during metadata write."""
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        # Create attachments directory
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        # Mock attachment
-        mock_attachment = MagicMock()
-        mock_attachment.id = 456
-        mock_attachment.filename = "doc.pdf"
-        mock_attachment.filesize = 1000
-        mock_attachment.content_type = "application/pdf"
-
-        # Mock download to create a temp file
-        temp_file = attachments_dir / "doc.pdf"
-        temp_file.write_bytes(b"pdf content")
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Wrap os.rename to fail specifically on metadata file moves
-        original_rename = os.rename
-
-        def selective_rename(src, dst):
-            """Allow normal file moves, but fail on metadata JSON files."""
-            dst_str = os.fspath(dst)
-            if dst_str.endswith(".json"):
-                raise OSError("Disk full")
-            return original_rename(src, dst)
-
-        with patch("os.rename", side_effect=selective_rename):
-            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                result = await get_redmine_attachment_download_url(456)
-
-        # Should return error dict
-        assert "error" in result
-        assert "Failed to save metadata" in result["error"]
-
-
 class TestHelperFunctionEdgeCases:
     """Test edge cases for helper functions to improve coverage."""
 
@@ -2252,401 +2036,6 @@ class TestUpdateIssueStatusHandling:
         assert "error" not in result
         assert result["id"] == 123
 
-
-class TestAttachmentDownloadEdgeCases:
-    """Test edge cases for get_redmine_attachment_download_url (line 1380)."""
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
-    async def test_attachment_download_no_client(self):
-        """Test attachment download with no Redmine client (line 1286)."""
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        result = await get_redmine_attachment_download_url(123)
-        assert "error" in result
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_public_host_0000_converts_to_localhost(self, mock_redmine, tmp_path):
-        """PUBLIC_HOST=0.0.0.0 converts to localhost in URL (line 1380)."""
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        # Create a temp file to simulate downloaded attachment
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 789
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Set PUBLIC_HOST to 0.0.0.0
-        with patch.dict(
-            os.environ,
-            {
-                "ATTACHMENTS_DIR": str(attachments_dir),
-                "PUBLIC_HOST": "0.0.0.0",
-                "PUBLIC_PORT": "9000",
-            },
-        ):
-            result = await get_redmine_attachment_download_url(789)
-
-        # URL should use localhost, not 0.0.0.0
-        assert "error" not in result
-        assert "localhost" in result["download_url"]
-        assert "0.0.0.0" not in result["download_url"]
-        assert ":9000" in result["download_url"]
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_file_rename_error_with_cleanup_failure(self, mock_redmine, tmp_path):
-        """File rename error with cleanup also failing (lines 1332-1333)."""
-        from pathlib import Path
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 999
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Make rename fail
-        original_rename = os.rename
-        rename_call_count = [0]
-
-        def failing_rename(src, dst):
-            rename_call_count[0] += 1
-            if rename_call_count[0] == 1:
-                # First rename (to temp) succeeds
-                return original_rename(src, dst)
-            # Second rename fails
-            raise OSError("Disk full")
-
-        # Make unlink also fail during cleanup
-        def failing_unlink(self, *args, **kwargs):
-            raise OSError("Cannot delete file")
-
-        with patch("os.rename", side_effect=failing_rename):
-            with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                    result = await get_redmine_attachment_download_url(999)
-
-        # Should still return error even if cleanup fails
-        assert "error" in result
-        assert "Failed to store attachment" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_metadata_write_error_with_cleanup_failure(
-        self, mock_redmine, tmp_path
-    ):
-        """Metadata write error with cleanup also failing (lines 1369-1370)."""
-        from pathlib import Path
-        from redmine_mcp_server.redmine_handler import (
-            get_redmine_attachment_download_url,
-        )
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 888
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Make json.dump fail and cleanup also fail
-        def failing_unlink(self, *args, **kwargs):
-            raise OSError("Cannot delete file")
-
-        original_rename = os.rename
-        rename_count = [0]
-
-        def selective_rename(src, dst):
-            rename_count[0] += 1
-            dst_str = str(dst)
-            if dst_str.endswith(".json"):
-                raise OSError("Cannot write metadata")
-            return original_rename(src, dst)
-
-        with patch("os.rename", side_effect=selective_rename):
-            with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                    result = await get_redmine_attachment_download_url(888)
-
-        # Should still return error even if cleanup fails
-        assert "error" in result
-        assert "Failed to save metadata" in result["error"]
-
-
-class TestCleanupTaskManager:
-    """Test CleanupTaskManager loop behavior (lines 211-232)."""
-
-    @pytest.mark.asyncio
-    async def test_cleanup_loop_handles_exception(self):
-        """Test cleanup loop handles exceptions and continues (lines 229-232)."""
-        import asyncio
-        from redmine_mcp_server.redmine_handler import CleanupTaskManager
-
-        # Save real sleep before patching
-        real_sleep = asyncio.sleep
-
-        # Make sleep return immediately but still be awaitable
-        async def instant_sleep(seconds):
-            await real_sleep(0.001)
-
-        manager = CleanupTaskManager()
-        manager.enabled = True
-        manager.interval_seconds = 0.01
-
-        # Create a mock file manager that raises exception
-        mock_file_manager = Mock()
-        call_count = [0]
-
-        def cleanup_with_count():
-            call_count[0] += 1
-            if call_count[0] <= 2:
-                raise Exception("Test error")
-            return {"cleaned_files": 0, "cleaned_mb": 0}
-
-        mock_file_manager.cleanup_expired_files.side_effect = cleanup_with_count
-        manager.manager = mock_file_manager
-
-        with patch("redmine_mcp_server.redmine_handler.asyncio.sleep", instant_sleep):
-            loop_task = asyncio.create_task(manager._cleanup_loop())
-            await real_sleep(0.05)
-            loop_task.cancel()
-            try:
-                await loop_task
-            except asyncio.CancelledError:
-                pass
-
-        # Verify cleanup was attempted
-        assert mock_file_manager.cleanup_expired_files.called
-
-    @pytest.mark.asyncio
-    async def test_cleanup_loop_cancelled_error(self):
-        """Test cleanup loop handles CancelledError gracefully (lines 226-228)."""
-        import asyncio
-        from redmine_mcp_server.redmine_handler import CleanupTaskManager
-
-        manager = CleanupTaskManager()
-        manager.enabled = True
-        manager.interval_seconds = 10
-
-        mock_file_manager = Mock()
-        mock_file_manager.cleanup_expired_files.return_value = {
-            "cleaned_files": 0,
-            "cleaned_mb": 0,
-        }
-        manager.manager = mock_file_manager
-
-        # Start the loop - it will hit initial sleep
-        loop_task = asyncio.create_task(manager._cleanup_loop())
-
-        # Give it time to start
-        await asyncio.sleep(0.01)
-
-        # Cancel it during the initial sleep
-        loop_task.cancel()
-
-        # Should raise CancelledError
-        with pytest.raises(asyncio.CancelledError):
-            await loop_task
-
-    @pytest.mark.asyncio
-    async def test_cleanup_loop_logs_cleaned_files(self):
-        """Test cleanup loop logs when files are cleaned (lines 214-219)."""
-        import asyncio
-        from redmine_mcp_server.redmine_handler import CleanupTaskManager
-
-        real_sleep = asyncio.sleep
-
-        async def instant_sleep(seconds):
-            await real_sleep(0.001)
-
-        manager = CleanupTaskManager()
-        manager.enabled = True
-        manager.interval_seconds = 0.01
-
-        mock_file_manager = Mock()
-        mock_file_manager.cleanup_expired_files.return_value = {
-            "cleaned_files": 5,
-            "cleaned_mb": 1.5,
-        }
-        manager.manager = mock_file_manager
-
-        with patch("redmine_mcp_server.redmine_handler.asyncio.sleep", instant_sleep):
-            loop_task = asyncio.create_task(manager._cleanup_loop())
-            await real_sleep(0.02)
-            loop_task.cancel()
-            try:
-                await loop_task
-            except asyncio.CancelledError:
-                pass
-
-        assert mock_file_manager.cleanup_expired_files.called
-
-    @pytest.mark.asyncio
-    async def test_cleanup_loop_no_files_to_clean(self):
-        """Test cleanup loop handles case with no expired files (lines 220-221)."""
-        import asyncio
-        from redmine_mcp_server.redmine_handler import CleanupTaskManager
-
-        real_sleep = asyncio.sleep
-
-        async def instant_sleep(seconds):
-            await real_sleep(0.001)
-
-        manager = CleanupTaskManager()
-        manager.enabled = True
-        manager.interval_seconds = 0.01
-
-        mock_file_manager = Mock()
-        mock_file_manager.cleanup_expired_files.return_value = {
-            "cleaned_files": 0,
-            "cleaned_mb": 0,
-        }
-        manager.manager = mock_file_manager
-
-        with patch("redmine_mcp_server.redmine_handler.asyncio.sleep", instant_sleep):
-            loop_task = asyncio.create_task(manager._cleanup_loop())
-            await real_sleep(0.02)
-            loop_task.cancel()
-            try:
-                await loop_task
-            except asyncio.CancelledError:
-                pass
-
-        assert mock_file_manager.cleanup_expired_files.called
-
-
-class TestServeAttachmentEndpointEdgeCases:
-    """Test serve_attachment HTTP endpoint edge cases (lines 332-333, 358)."""
-
-    @pytest.mark.asyncio
-    async def test_expired_file_cleanup_oserror_ignored(self, tmp_path):
-        """Test OSError during expired file cleanup is ignored (lines 332-333)."""
-        from pathlib import Path
-        from datetime import datetime, timezone, timedelta
-        import json
-        import uuid as uuid_module
-        from httpx import AsyncClient, ASGITransport
-        from redmine_mcp_server.redmine_handler import mcp
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        file_id = str(uuid_module.uuid4())  # Valid UUID
-        uuid_dir = attachments_dir / file_id
-        uuid_dir.mkdir()
-
-        # Create an expired file
-        test_file = uuid_dir / "expired_file.txt"
-        test_file.write_text("expired content")
-
-        # Create metadata with expired timestamp
-        expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
-        metadata = {
-            "file_id": file_id,
-            "original_filename": "expired_file.txt",
-            "file_path": str(test_file),
-            "expires_at": expires_at.isoformat(),
-        }
-        metadata_file = uuid_dir / "metadata.json"
-        metadata_file.write_text(json.dumps(metadata))
-
-        # Get the underlying Starlette app
-        app = mcp.http_app(stateless_http=True)
-
-        # Make the unlink fail during cleanup
-        original_unlink = Path.unlink
-
-        def selective_unlink(self, *args, **kwargs):
-            # Only fail for our test file, not metadata
-            if "expired_file.txt" in str(self):
-                raise OSError("Cannot delete")
-            return original_unlink(self, *args, **kwargs)
-
-        with patch.object(Path, "unlink", selective_unlink):
-            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as client:
-                    response = await client.get(f"/files/{file_id}")
-
-        # Should still return 404 (file expired) even if cleanup OSError occurred
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_invalid_datetime_format_in_metadata(self, tmp_path):
-        """Test invalid datetime format returns 500 error (line 358)."""
-        import json
-        import uuid as uuid_module
-        from httpx import AsyncClient, ASGITransport
-        from redmine_mcp_server.redmine_handler import mcp
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        file_id = str(uuid_module.uuid4())  # Valid UUID
-        uuid_dir = attachments_dir / file_id
-        uuid_dir.mkdir()
-
-        test_file = uuid_dir / "test_file.txt"
-        test_file.write_text("test content")
-
-        # Create metadata with INVALID datetime format
-        metadata = {
-            "file_id": file_id,
-            "original_filename": "test_file.txt",
-            "file_path": str(test_file),
-            "expires_at": "not-a-valid-datetime",  # Invalid format
-        }
-        metadata_file = uuid_dir / "metadata.json"
-        metadata_file.write_text(json.dumps(metadata))
-
-        app = mcp.http_app(stateless_http=True)
-
-        with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                response = await client.get(f"/files/{file_id}")
-
-        # Should return 500 due to invalid datetime format
-        assert response.status_code == 500
-        assert "Invalid metadata format" in response.text
-
-
-class TestGetRedmineIssueJournalPagination:
-    """Test journal pagination on get_redmine_issue."""
-
     @pytest.fixture
     def mock_issue_with_many_journals(self):
         """Create an issue with 10 journals."""
@@ -2675,7 +2064,7 @@ class TestGetRedmineIssueJournalPagination:
         return issue
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_limit_returns_limited_journals(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2686,7 +2075,7 @@ class TestGetRedmineIssueJournalPagination:
         assert "Comment 1" in result["journals"][0]["notes"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_offset_skips_journals(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2697,7 +2086,7 @@ class TestGetRedmineIssueJournalPagination:
         assert "Comment 6" in result["journals"][0]["notes"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_limit_and_offset_combined(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2708,7 +2097,7 @@ class TestGetRedmineIssueJournalPagination:
         assert "Comment 3" in result["journals"][0]["notes"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_pagination_metadata_present(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2724,7 +2113,7 @@ class TestGetRedmineIssueJournalPagination:
         assert p["has_more"] is True
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_no_params_returns_all_no_metadata(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2735,7 +2124,7 @@ class TestGetRedmineIssueJournalPagination:
         assert "journal_pagination" not in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_offset_beyond_total(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2747,7 +2136,7 @@ class TestGetRedmineIssueJournalPagination:
         assert result["journal_pagination"]["has_more"] is False
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_limit_larger_than_remaining(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2758,7 +2147,7 @@ class TestGetRedmineIssueJournalPagination:
         assert result["journal_pagination"]["has_more"] is False
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_limit_zero_returns_empty(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2769,7 +2158,7 @@ class TestGetRedmineIssueJournalPagination:
         assert result["journal_pagination"]["total"] == 10
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_pagination_ignored_when_journals_disabled(
         self, mock_redmine, mock_cleanup, mock_issue_with_many_journals
@@ -2822,7 +2211,7 @@ class TestGetRedmineIssueIncludeFlags:
         return issue
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_watchers_excluded_by_default(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2834,7 +2223,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "watchers" not in include_str
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_include_watchers_true(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2848,7 +2237,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "watchers" in include_str
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_relations_excluded_by_default(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2858,7 +2247,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "relations" not in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_include_relations_true(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2871,7 +2260,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "relations" in include_str
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_children_excluded_by_default(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2881,7 +2270,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "children" not in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_include_children_true(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2893,7 +2282,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert result["children"][0]["subject"] == "Child Issue"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_all_flags_true(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2914,7 +2303,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "children" in include_str
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_include_string_order(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2927,7 +2316,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert "watchers" in include_str
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_only_new_flags_no_journals(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2943,7 +2332,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert include_str == "watchers"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_watchers_missing_attribute(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
@@ -2954,7 +2343,7 @@ class TestGetRedmineIssueIncludeFlags:
         assert result["watchers"] == []
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_children_structure(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras

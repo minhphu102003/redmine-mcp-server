@@ -43,9 +43,7 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`generate_scrum_report`](#generate_scrum_report) | Consolidated | Generate daily/weekly/custom scrum report drafts |
 | [`export_weekly_report_markdown`](#export_weekly_report_markdown) | Consolidated | Export weekly report as a markdown file |
 | [`export_weekly_report_docx`](#export_weekly_report_docx) | Consolidated | Export weekly report as a `.docx` file |
-| [`search_entire_redmine`](#search_entire_redmine) | Search / attachment | Search issues and wiki pages across the instance |
-| [`get_redmine_attachment_download_url`](#get_redmine_attachment_download_url) | Search / attachment | Get an HTTP download URL for an attachment |
-| [`cleanup_attachment_files`](#cleanup_attachment_files) | Search / attachment | Clean up expired attachment files, return storage stats |
+| [`search_entire_redmine`](#search_entire_redmine) | Search | Search issues and wiki pages across the instance |
 | [`get_redmine_wiki_page`](#get_redmine_wiki_page) | Wiki | Retrieve full wiki page content |
 | [`create_redmine_wiki_page`](#create_redmine_wiki_page) | Wiki | Create a new wiki page |
 | [`update_redmine_wiki_page`](#update_redmine_wiki_page) | Wiki | Update an existing wiki page |
@@ -627,7 +625,7 @@ Delete a wiki page from a Redmine project.
 
 ---
 
-## Search / attachment / maintenance tools
+## Search tools
 
 ### `search_entire_redmine`
 
@@ -643,29 +641,6 @@ Search for issues and wiki pages across the Redmine instance.
 Requires Redmine 3.3.0+. Raises `VersionMismatchError` on unsupported versions.
 
 **Returns:** `Dict` with matches grouped by resource type.
-
----
-
-### `get_redmine_attachment_download_url`
-
-Get HTTP download URL for a Redmine attachment.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `attachment_id` | int | (required) | Attachment ID |
-
-**Returns:** `Dict` with a time-limited download URL (expiry controlled by
-`ATTACHMENT_EXPIRES_MINUTES`, default 60). Served via `GET /files/{file_id}`.
-
----
-
-### `cleanup_attachment_files`
-
-Clean up expired attachment files and return storage statistics.
-
-**Parameters:** None
-
-**Returns:** `Dict` with cleanup counters and storage statistics.
 
 ---
 
@@ -701,8 +676,11 @@ write operations.
 | Route | Method | Description |
 |---|---|---|
 | `/health` | GET | Health check for orchestration |
-| `/files/{file_id}` | GET | Serve downloaded attachment files (expiry-checked) |
-| `/cleanup/status` | GET | Cleanup task status and storage statistics |
+
+> **Note:** Attachment download/cleanup tools were removed in this release. To
+> download a Redmine attachment, use the `content_url` field returned in the
+> issue/journal metadata (still serialized by `get_redmine_issue` and
+> `get_redmine_wiki_page` when `include_attachments=True`).
 
 ## Notes
 

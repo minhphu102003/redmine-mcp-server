@@ -7,10 +7,6 @@ from .analytics import (
     search_entire_redmine_impl,
     summarize_project_status_impl,
 )
-from .attachments import (
-    cleanup_attachment_files_impl,
-    get_redmine_attachment_download_url_impl,
-)
 from .issues import (
     create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
@@ -70,14 +66,12 @@ from .memory import (
 )
 
 __all__ = [
-    "cleanup_attachment_files_impl",
     "create_redmine_issue_with_subtasks_impl",
     "create_redmine_issue_impl",
     "create_redmine_wiki_page_impl",
     "create_time_entry_impl",
     "delete_redmine_wiki_page_impl",
     "delete_time_entry_impl",
-    "get_redmine_attachment_download_url_impl",
     "get_redmine_issue_impl",
     "get_redmine_wiki_page_impl",
     "list_project_issue_categories_impl",

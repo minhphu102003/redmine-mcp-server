@@ -65,7 +65,6 @@ logger = logging.getLogger(__name__)
 if _env_loaded:
     logger.info("Loaded .env for Redmine MCP Server")
 
-from .attachment_manager import AttachmentFileManager  # noqa: E402
 from .handler_impl import issue_fields as _issue_fields  # noqa: E402
 from .handler_impl.errors import handle_redmine_error  # noqa: E402
 from .security import (  # noqa: E402
@@ -76,7 +75,6 @@ from .security import (  # noqa: E402
 )
 from .handler_impl.tools import (  # noqa: E402
     append_google_sheet_impl,
-    cleanup_attachment_files_impl,
     create_redmine_issue_with_subtasks_impl,
     create_redmine_issue_impl,
     create_redmine_issue_relation_impl,
@@ -90,7 +88,6 @@ from .handler_impl.tools import (  # noqa: E402
     export_weekly_report_docx_impl,
     export_weekly_report_markdown_impl,
     generate_scrum_report_impl,
-    get_redmine_attachment_download_url_impl,
     get_project_issue_context_impl,
     get_redmine_issue_impl,
     get_redmine_issue_allowed_statuses_impl,
@@ -116,11 +113,7 @@ from .handler_impl.tools import (  # noqa: E402
     write_google_sheet_impl,
 )
 from .handler_impl.http_routes import (  # noqa: E402
-    CleanupTaskManager,
-    cleanup_status_payload,
-    ensure_cleanup_started,
     health_payload,
-    serve_attachment_by_id,
 )
 from .serializers import (  # noqa: E402
     wrap_insecure_content,
@@ -348,13 +341,6 @@ def _get_redmine_client(strict: bool = True) -> Optional[Redmine]:
 mcp = FastMCP("redmine_mcp_tools")
 
 
-# Initialize cleanup manager
-cleanup_manager = CleanupTaskManager()
-
-
-# Global flag to track if cleanup has been initialized
-_cleanup_initialized = False
-
 _STATUS_ID_CACHE: Dict[str, tuple[Optional[int], float]] = {}
 _PRIORITY_ID_CACHE: Dict[str, tuple[Optional[int], float]] = {}
 _TRACKER_NAME_CACHE: Dict[tuple[str, int], tuple[Optional[str], float]] = {}
@@ -362,12 +348,8 @@ _METADATA_CACHE_TTL_SECONDS = 300.0
 _CACHE_MISS = object()
 
 
-async def _ensure_cleanup_started():
-    """Ensure cleanup task is started (lazy initialization)."""
-    global _cleanup_initialized
-    _cleanup_initialized, _ = await ensure_cleanup_started(
-        cleanup_manager, _cleanup_initialized
-    )
+async def _no_op_cleanup() -> None:
+    """No-op cleanup hook kept for tool API stability."""
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -375,31 +357,7 @@ async def health_check(request):
     """Health check endpoint for container orchestration and monitoring."""
     from starlette.responses import JSONResponse
 
-    await _ensure_cleanup_started()
     return JSONResponse(health_payload(REDMINE_AUTH_MODE))
-
-
-@mcp.custom_route("/files/{file_id}", methods=["GET"])
-async def serve_attachment(request):
-    """Serve downloaded attachment files via HTTP."""
-    from starlette.exceptions import HTTPException
-
-    result = serve_attachment_by_id(request.path_params["file_id"])
-    if isinstance(result, dict):
-        raise HTTPException(
-            status_code=result.get("status_code", 500),
-            detail=result.get("detail", "Unknown error"),
-        )
-
-    return result
-
-
-@mcp.custom_route("/cleanup/status", methods=["GET"])
-async def cleanup_status(request):
-    """Get cleanup task status and statistics."""
-    from starlette.responses import JSONResponse
-
-    return JSONResponse(cleanup_status_payload(cleanup_manager))
 
 
 def _handle_redmine_error(
@@ -865,7 +823,7 @@ async def get_redmine_issue(
         include_watchers,
         include_relations,
         include_children,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         get_client=_get_redmine_client,
         issue_to_dict=_issue_to_dict,
         journals_to_list=_journals_to_list,
@@ -914,7 +872,7 @@ async def get_project_issue_context(
     return await get_project_issue_context_impl(
         project_id,
         tracker_id,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         get_client=_get_redmine_client,
         custom_field_applies_to_tracker=_issue_fields._custom_field_applies_to_tracker,
         custom_field_to_dict=_issue_fields._custom_field_to_dict,
@@ -1046,7 +1004,7 @@ async def list_redmine_issues(
         include_pagination_info,
         fields,
         filters,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         get_client=_get_redmine_client,
         issue_to_dict_selective=_issue_to_dict_selective,
         handle_error=_handle_redmine_error,
@@ -1961,32 +1919,6 @@ async def manage_time_entries(
 
 
 @mcp.tool()
-async def get_redmine_attachment_download_url(
-    attachment_id: Annotated[
-        int,
-        Field(
-            description=(
-                "ID of the attachment (found in get_redmine_issue results or issue"
-                " journals)."
-            )
-        ),
-    ],
-) -> Dict[str, Any]:
-    """Get an HTTP download URL for a Redmine attachment.
-
-    Use to obtain a temporary download link for an attached file; the file is
-    fetched through this server so downloads work even when the Redmine
-    instance is not directly reachable by the agent.
-    """
-    return await get_redmine_attachment_download_url_impl(
-        attachment_id,
-        ensure_cleanup_started=_ensure_cleanup_started,
-        get_client=_get_redmine_client,
-        handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
 async def summarize_project_status(
     project_id: Annotated[
         int,
@@ -2312,7 +2244,7 @@ async def search_entire_redmine(
         resources,
         limit,
         offset,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         get_client=_get_redmine_client,
         resource_to_dict=_resource_to_dict,
         handle_error=_handle_redmine_error,
@@ -2356,7 +2288,7 @@ async def get_redmine_wiki_page(
         version,
         include_attachments,
         get_client=_get_redmine_client,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         wiki_page_to_dict=_wiki_page_to_dict,
         handle_error=_handle_redmine_error,
     )
@@ -2397,7 +2329,7 @@ async def create_redmine_wiki_page(
         text,
         comments,
         get_client=_get_redmine_client,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         wiki_page_to_dict=_wiki_page_to_dict,
@@ -2439,7 +2371,7 @@ async def update_redmine_wiki_page(
         text,
         comments,
         get_client=_get_redmine_client,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         wiki_page_to_dict=_wiki_page_to_dict,
@@ -2467,7 +2399,7 @@ async def delete_redmine_wiki_page(
         project_id,
         wiki_page_title,
         get_client=_get_redmine_client,
-        ensure_cleanup_started=_ensure_cleanup_started,
+        ensure_cleanup_started=_no_op_cleanup,
         is_read_only_mode=_is_read_only_mode,
         read_only_error=_READ_ONLY_ERROR,
         handle_error=_handle_redmine_error,
@@ -2649,15 +2581,6 @@ async def list_time_entry_activities() -> List[Dict[str, Any]]:
     return await list_time_entry_activities_impl(
         get_client=_get_redmine_client,
         handle_error=_handle_redmine_error,
-    )
-
-
-@mcp.tool()
-async def cleanup_attachment_files() -> Dict[str, Any]:
-    """Clean up expired attachment files and return storage statistics."""
-    return await cleanup_attachment_files_impl(
-        attachment_manager_factory=AttachmentFileManager,
-        log=logger,
     )
 
 

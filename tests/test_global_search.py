@@ -131,7 +131,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_success(
         self, mock_cleanup, mock_redmine, mock_search_results
     ):
@@ -152,7 +152,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_empty_results(self, mock_cleanup, mock_redmine):
         """Test search with no results returns empty structure."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -169,7 +169,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_with_resource_filter(self, mock_cleanup, mock_redmine):
         """Test search with resource type filtering."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -199,7 +199,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_invalid_resource_types_filtered(
         self, mock_cleanup, mock_redmine
     ):
@@ -219,7 +219,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_default_resources(self, mock_cleanup, mock_redmine):
         """Test that default search includes both issues and wiki_pages."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -233,7 +233,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_pagination(self, mock_cleanup, mock_redmine):
         """Test pagination parameters are passed correctly."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -248,7 +248,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_limit_capped(self, mock_cleanup, mock_redmine):
         """Test that limit is capped at 100 (Redmine API max)."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -262,7 +262,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_version_mismatch(self, mock_cleanup, mock_redmine):
         """Test handling of VersionMismatchError (Redmine < 3.3.0)."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -277,7 +277,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exceptions."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -291,7 +291,7 @@ class TestSearchEntireRedmine:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_search_unknown_resources_ignored(self, mock_cleanup, mock_redmine):
         """Test that 'unknown' category from plugins is handled gracefully."""
         from redmine_mcp_server.redmine_handler import search_entire_redmine
@@ -361,7 +361,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_success(self, mock_cleanup, mock_redmine, mock_wiki_page):
         """Test successful wiki page retrieval."""
         from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
@@ -382,7 +382,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
         from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
@@ -400,7 +400,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_specific_version(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -422,7 +422,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_with_attachments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -453,7 +453,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_without_attachments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -473,7 +473,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_missing_attributes(self, mock_cleanup, mock_redmine):
         """Test handling of wiki page with missing optional attributes."""
         from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
@@ -496,7 +496,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_integer_project_id(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -511,7 +511,7 @@ class TestGetRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exceptions."""
         from redmine_mcp_server.redmine_handler import get_redmine_wiki_page

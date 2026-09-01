@@ -102,27 +102,10 @@ The Redmine MCP Server supports comprehensive SSL/TLS configuration for secure c
 
 ### File Handling Security
 
-The server implements multiple security layers for file operations:
-
-1. **Server-Controlled Storage**
-   - Attachment storage location controlled by server (`ATTACHMENTS_DIR`)
-   - Clients cannot specify arbitrary file paths
-   - Prevents directory traversal attacks
-
-2. **UUID-Based File Storage**
-   - Files stored with UUID-based names, not original filenames
-   - Prevents path manipulation and collision attacks
-   - Predictable cleanup and management
-
-3. **Time-Limited Access**
-   - Download URLs expire based on server configuration
-   - Default expiry: 60 minutes (configurable via `ATTACHMENT_EXPIRES_MINUTES`)
-   - Automatic cleanup of expired files
-
-4. **Secure File Serving**
-   - Metadata validation before file access
-   - Expiry checks on every request
-   - No directory listing or browsing
+Attachment download/cleanup is not handled by this server. To download a
+Redmine attachment, use the `content_url` field returned in the issue or wiki
+page metadata (when `include_attachments=True`). All metadata text returned to
+the agent is wrapped in prompt-injection boundary tags.
 
 ### Docker Deployment Security
 
@@ -161,7 +144,7 @@ When enabled, the following tools return an error instead of executing:
 - `update_redmine_wiki_page`
 - `delete_redmine_wiki_page`
 
-All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) and local operations (`cleanup_attachment_files`) continue to work normally.
+All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally.
 
 ### Prompt Injection Protection
 
@@ -1174,7 +1157,7 @@ get_redmine_wiki_page(
 ```
 
 **Notes:**
-- Use `get_redmine_attachment_download_url()` to download wiki attachments
+- Attachment download is not provided by this server; use the `content_url` field in attachment metadata to download from the Redmine host directly
 - Supports both string identifiers (e.g., "my-project") and numeric IDs
 
 ---
@@ -1328,59 +1311,10 @@ delete_redmine_wiki_page(
 
 ## File Operations
 
-### `get_redmine_attachment_download_url`
+> **Note:** The `get_redmine_attachment_download_url` and
+> `cleanup_attachment_files` tools were removed to reduce MCP tool surface area
+> and per-request memory. Use the `content_url` field returned in attachment
+> metadata (via `get_redmine_issue` / `get_redmine_wiki_page` with
+> `include_attachments=True`) to download files directly from your Redmine
+> instance.
 
-Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.
-
-**Parameters:**
-- `attachment_id` (integer, required): The ID of the attachment to download
-
-**Returns:**
-```json
-{
-    "download_url": "http://localhost:8000/files/12345678-1234-5678-9abc-123456789012",
-    "filename": "document.pdf",
-    "content_type": "application/pdf",
-    "size": 1024,
-    "expires_at": "2025-09-22T10:30:00Z",
-    "attachment_id": 123
-}
-```
-
-**Security Features:**
-- Server-controlled storage location and expiry policy
-- UUID-based filenames prevent path traversal attacks
-- No client control over server configuration
-- Automatic cleanup of expired files
-
-**Example:**
-```python
-# Get download URL for an attachment
-result = get_redmine_attachment_download_url(attachment_id=456)
-print(f"Download from: {result['download_url']}")
-print(f"Expires at: {result['expires_at']}")
-```
-
----
-
-### `cleanup_attachment_files`
-
-Removes expired attachment files and provides cleanup statistics.
-
-**Parameters:** None
-
-**Returns:** Cleanup statistics:
-- `cleaned_files`: Number of files removed
-- `cleaned_bytes`: Total bytes cleaned up
-- `cleaned_mb`: Total megabytes cleaned up (rounded)
-
-**Example:**
-```json
-{
-    "cleaned_files": 12,
-    "cleaned_bytes": 15728640,
-    "cleaned_mb": 15
-}
-```
-
-**Note:** Automatic cleanup runs in the background based on server configuration. This tool allows manual cleanup on demand.
