@@ -1,6 +1,6 @@
 # Google Sheets Schema
 
-This file is created only for **testers** (role = Tester or Both). It maps Redmine projects to test management spreadsheets.
+This file is created only for **testers**. It maps Redmine projects to test management spreadsheets.
 
 ## Service Account
 

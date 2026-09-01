@@ -1,6 +1,6 @@
 ---
 name: redmine-init
-description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. For testers: files are stored in server-side memory (MCP memory tools keyed by user identity); for devs: files are stored at the git worktree root. Testers do NOT map repo → project; they save the full `projects` array and later pick which project(s) to map to Google Sheets. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
+description: Use when the user asks to initialize or refresh the Redmine project mapping for the current repository, e.g. "redmine init", "khởi tạo redmine", "map repo này với project redmine", "tạo file .redmine", "refresh redmine context", "redmine context bị cũ". Creates or refreshes the `.redmine` JSON cache file, storing the project ID and the static ID lists (trackers, statuses, priorities, members, versions, categories, custom fields) with a `fetched_at` timestamp, so issue-creation skills can create tasks without re-fetching every value. For testers: files are stored in server-side memory (MCP memory tools keyed by user identity); for devs: files are stored at the git worktree root. Testers do NOT fetch project context at init time — they save the full `projects` array, then per-project context is fetched lazily during Google Sheets setup and stored in `.redmine.project_contexts["<project_id>"]` to prevent cross-project contamination. Use ONLY for init/refresh of the cache, NOT for creating issues, logging time, or wiki work.
 ---
 
 # Redmine Init
@@ -79,7 +79,7 @@ Ask the user (structured ask tool, plain text as fallback):
    - **Tester**: **SKIP this step entirely**. Testers don't map repos to projects — they work with multiple projects at once via the `projects` array in step 5b. The `project` field in `.redmine` schema is still required, so set it to the first project from step 3 as a placeholder (testers ignore this field and use `projects` instead). Step 5b saves the full project list for QA skills to iterate over.
 5. **Fetch project context**:
    - **Dev/Leader**: call the project-context capability (e.g. `redmine_get_project_issue_context`, project_id) with the project chosen in step 4 → returns project, trackers, categories, members (with roles), versions, statuses (`is_closed`), **priorities**, custom_fields, required_custom_fields. The `priorities` section is the **complete** list (e.g. `{"id": 2, "name": "Normal"}`); Redmine has no separate "list priorities" endpoint, the context tool provides it. This caches only the **static option list** (the dropdown of values), never any issue's current priority — per-issue priority state changes hourly and is always fetched live.
-   - **Tester**: call the project-context capability with the first project from step 3 (the placeholder project) to get the `members` list (needed for the `member_names` parameter when calling `create_test_sheet_structure` in section 2b) and the dropdown option lists. The context is stored under the placeholder `project` field; QA skills use the `projects` array instead for actual project lookup.
+   - **Tester**: **SKIP this step entirely**. Testers do NOT fetch any project context at init. Per-project context (trackers/members/priorities/etc.) is fetched **lazily and per-project** during Google Sheets setup (section 2b step 2.0) so that each project gets its own context — never reuse one project's context for another. The `.redmine` file for a tester does NOT contain root-level `trackers`/`members`/`priorities`/`statuses` fields; it only contains `projects[]` (lean list) and `project_contexts{}` (per-project dict, populated during 2b).
 5b. **For testers only — save all projects**: if role = Tester or Both, the `projects` list (from step 3) is saved into `.redmine` as `projects` array. This allows QA skills to list all projects when setting up Google Sheets, without calling `list_redmine_projects` again. Devs do NOT get this field — they only need the single `project`.
 6. **Map GitHub account ↔ Redmine member (dev/leader only)**: **SKIP this step if role = Tester.** Testers don't need GitHub↔Redmine mapping — they work in Google Sheets, not Git commits.
    1. Detect GitHub side: run `gh api user` (requires `gh` CLI, installed first per the issue-workflow skill's prerequisites) → returns `login`, `name`, `email`. If `gh` is unavailable, fall back to `git config user.name` + `git config user.email`.
@@ -123,6 +123,12 @@ The MCP server authenticates with this service account. Users create their own G
    - Ask: "Bạn muốn setup Google Sheet cho project nào? (gõ số/tên từ bảng, hoặc 'all' để setup tất cả, hoặc 'done' nếu không setup project nào bây giờ)"
    - User picks 1+ projects (or 'all' / 'done').
 
+2.0. **Fetch per-project context (lazily, one project at a time)**:
+   - For EACH project the user picked (not skipped), call `get_project_issue_context(project_id)` and save the full result into `.redmine.project_contexts["<project_id>"]` (key is the string form of the project ID; create the dict if absent, update if present).
+   - This is the **only** point where project context is fetched for testers — one project at a time, never reused across projects. This prevents the cross-project contamination bug where one project's trackers/priorities/members get applied to a different project.
+   - Skip this step for projects the user picked "skip" for (saves tokens).
+   - After fetching, show a one-line context summary to the user before the per-project setup begins: "Project X (id 12) — 3 trackers, 5 priorities, 10 members, 2 versions, 0 custom fields" so the user can confirm they're setting up the right project.
+
 3. **For each picked project, do the per-project setup**:
 
    a. **Show instructions**:
@@ -143,10 +149,11 @@ The MCP server authenticates with this service account. Users create their own G
       - Verify access by calling `get_sheet_metadata` MCP tool with the spreadsheet_id
 
    c. **Add TestCases/Bugs sheets to user's spreadsheet**:
+      - Read `.redmine.project_contexts["<project_id>"]` (fetched in step 2.0) → use its `members` list for the `member_names` parameter. This guarantees the dropdown contains only members of THIS project, not members of some other project.
       - Call `create_test_sheet_structure` MCP tool with:
         - `spreadsheet_id`: the ID from user (NOT creating new)
         - `title`: spreadsheet title (for logging, e.g. `'<project_name> - QA Test Management'`)
-        - `member_names`: list of member names from `.redmine` members
+        - `member_names`: list of member names from `.redmine.project_contexts["<project_id>"].members`
       - Tool behavior:
         - Adds "TestCases" and "Bugs" sheets to the user's spreadsheet
         - Skips sheets that already exist (no overwrite, no header re-write)
@@ -183,7 +190,9 @@ The MCP server authenticates with this service account. Users create their own G
    - **Tester**: call `get_user_memory(key=".redmine")` → get the existing data.
    - **Dev/Leader**: read the existing `.redmine` from git worktree root.
 2. **Reuse the stored `project.id`** — do NOT re-ask which project. Just re-fetch project context using the stored ID.
-3. Re-fetch project context + priorities (step 5 of the init flow) and update with a fresh `fetched_at`, keeping the same schema.
+3. **Re-fetch project context**:
+   - **Dev/Leader**: re-fetch project context + priorities (step 5 of the init flow) and update with a fresh `fetched_at`, keeping the same schema.
+   - **Tester**: re-fetch `projects[]` by calling `list_redmine_projects` again. For each existing `project_id` in `.redmine.project_contexts`, re-call `get_project_issue_context(project_id)` and overwrite the entry with a fresh per-project `fetched_at`. Do NOT touch root-level fields (tester files don't have them).
 4. **Write updated data**:
    - **Tester**: call `set_user_memory(key=".redmine", value=<updated_data>)`.
    - **Dev/Leader**: overwrite the local file.
@@ -200,10 +209,12 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 2. **Verify each mapped spreadsheet still exists** by reading its metadata. If a spreadsheet was deleted or access was revoked → warn the user and remove the mapping.
    3. **Add new projects**: if `.redmine` has projects not yet in `.google-sheets` → for each new project:
     - Show project name + ID
+    - **Fetch project context**: call `get_project_issue_context(project_id)` and save into `.redmine.project_contexts["<project_id>"]` (create new key). Same as init flow step 2.0 — never reuse another project's context.
+    - Show context summary to user
     - Instruct user to create sheet and share with `redmine-mcp-sheets@robotic-jet-430316-k5.iam.gserviceaccount.com`
     - User pastes spreadsheet URL
     - Verify access via `get_sheet_metadata`
-    - Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])` to inject TestCases/Bugs sheets into the user's spreadsheet (no re-share needed)
+    - Call `create_test_sheet_structure(spreadsheet_id=<id>, title=<title>, member_names=[...])` to inject TestCases/Bugs sheets into the user's spreadsheet (no re-share needed). Use `member_names` from the freshly-fetched `project_contexts["<project_id>"].members`.
     - Add mapping to `.google-sheets` with `us_color_index: 0, us_id_counter: 1`
 4. **Remove stale projects**: if a project in `.google-sheets` no longer exists in `.redmine` → remove the mapping.
 5. **Sync sheet structure**: for each mapped spreadsheet, call `get_sheet_metadata` to verify "TestCases" and "Bugs" sheets exist → if missing, call `create_test_sheet_structure(spreadsheet_id=<id>, ...)` (it auto-skips sheets that already exist, safe to re-run).
@@ -244,6 +255,40 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 - `projects` (testers only): `[{id, name, identifier}]` — used by QA skills.
 - `user_mappings` (dev/leader only): GitHub↔Redmine mapping. Optional — if absent, issue-workflow asks per author.
 - `member_rules` (leaders only): per-member working rules as told by the user. Never invent rules.
+
+### Per-project context (testers only)
+
+For testers, `.redmine` also stores a `project_contexts` dict keyed by `project_id` (string). Each entry holds the full context fetched **lazily during Google Sheets setup** (section 2b step 2.0) — never at init time, and never shared between projects.
+
+```json
+{
+  "project_contexts": {
+    "12": {
+      "project": {...},
+      "trackers": [...],
+      "categories": [...],
+      "members": [...],
+      "versions": [...],
+      "statuses": [...],
+      "custom_fields": [...],
+      "required_custom_fields": [...],
+      "priorities": [...],
+      "fetched_at": "2026-09-01T00:00:00Z"
+    },
+    "45": {
+      "project": {...},
+      "trackers": [...],
+      ...
+      "fetched_at": "2026-09-01T00:00:00Z"
+    }
+  }
+}
+```
+
+- Each `project_contexts["<project_id>"]` entry has its own `fetched_at` (per-project TTL).
+- A project the tester has never set up will NOT have an entry — fetched on demand.
+- Dev/leader `.redmine` files do NOT have this field.
+- This is the **only** source of per-project trackers/priorities/members for QA skills — root-level fields like `trackers` are NOT present in tester files (would be misleading cross-project data).
 
 ---
 
@@ -299,4 +344,7 @@ Also triggered when user says: "thêm project mới vào google sheets", "add pr
 
 - [ ] **Memory access**: Tester → MCP memory tools (`set_user_memory`/`get_user_memory`), Dev/Leader → local file at git worktree root. Not a git repo and not tester → ask the user.
 - [ ] `user_mappings` is optional — if absent, the issue-workflow skill falls back to asking the user for each author. Only for dev/leader (testers skip this step entirely).
+- [ ] **Tester does not fetch project context at init**: the `.redmine` file written for a Tester contains only `projects[]` (id/name/identifier). `get_project_issue_context` is called lazily in section 2b step 2.0 for each project the user sets up. This prevents fetching one project's context and accidentally using it for another (cross-project contamination).
+- [ ] **Per-project context is mandatory for Tester**: `.redmine.project_contexts["<project_id>"]` must be present for any project the tester actively uses. Missing entry → re-fetch on demand (call `get_project_issue_context` for that specific project). Never substitute another project's context.
+- [ ] **No cross-project fallback**: if a tester asks QA skills to operate on a project not in `project_contexts`, the skill must live-fetch via `get_project_issue_context` — never read root-level `trackers`/`priorities`/`members` (tester files do not have them, and dev files' values belong to a different project).
 - [ ] After moving/editing this skill file, remind the user to **restart the agent** (quit and reopen opencode / opencode) for the skill to load.
