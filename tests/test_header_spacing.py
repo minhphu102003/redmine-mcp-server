@@ -407,16 +407,17 @@ def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
     assert len(batch_calls) == 1
     requests = batch_calls[0].kwargs["body"]["requests"]
 
-    # Must have 4 requests: insertRange, repeatCell(background), mergeCells, repeatCell(text)
+    # Must have 4 requests: insertDimension, repeatCell(background), mergeCells, repeatCell(text)
     assert len(requests) == 4
 
-    # insertRange
-    insert = next(r for r in requests if "insertRange" in r)
-    assert insert["insertRange"]["range"]["sheetId"] == 5
-    assert insert["insertRange"]["range"]["startRowIndex"] == 2
-    assert insert["insertRange"]["range"]["endRowIndex"] == 3
-    assert insert["insertRange"]["range"]["startColumnIndex"] == 0
-    assert insert["insertRange"]["range"]["endColumnIndex"] == 11
+    # insertDimension (with inheritFromBefore=false so the new row inherits
+    # from rows below, not the colored US title above)
+    insert = next(r for r in requests if "insertDimension" in r)
+    assert insert["insertDimension"]["range"]["sheetId"] == 5
+    assert insert["insertDimension"]["range"]["dimension"] == "ROWS"
+    assert insert["insertDimension"]["range"]["startIndex"] == 2
+    assert insert["insertDimension"]["range"]["endIndex"] == 3
+    assert insert["insertDimension"]["inheritFromBefore"] is False
 
     # repeatCell background + text format (full row A-K)
     fmt_cell = next(
@@ -522,3 +523,230 @@ def test_color_palette_rotates():
     assert color_8 == palette[0]
     color_15 = palette[15 % 8]
     assert color_15 == palette[7]
+
+
+# --- TC row default formatting (prevent inheritance from US header) ---
+
+
+def test_apply_tc_rows_default_formatting_emits_repeat_cell(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.apply_tc_rows_default_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        start_row=3,  # 1-based
+        row_count=5,
+        num_columns=11,
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    assert len(batch_calls) == 1
+    requests = batch_calls[0].kwargs["body"]["requests"]
+    assert len(requests) == 1
+
+    repeat = requests[0]["repeatCell"]
+    assert repeat["range"]["sheetId"] == 5
+    # 1-based start_row=3 → 0-based startRowIndex=2, endRowIndex=7
+    assert repeat["range"]["startRowIndex"] == 2
+    assert repeat["range"]["endRowIndex"] == 7
+    assert repeat["range"]["startColumnIndex"] == 0
+    assert repeat["range"]["endColumnIndex"] == 11
+
+    fmt = repeat["cell"]["userEnteredFormat"]
+    # White background
+    assert fmt["backgroundColor"] == {"red": 1.0, "green": 1.0, "blue": 1.0}
+    # Black text
+    assert fmt["textFormat"]["foregroundColor"] == {
+        "red": 0.0,
+        "green": 0.0,
+        "blue": 0.0,
+    }
+    # Wrap and top-aligned for readability
+    assert fmt["wrapStrategy"] == "WRAP"
+    assert fmt["verticalAlignment"] == "TOP"
+    assert fmt["horizontalAlignment"] == "LEFT"
+
+    # fields mask must list every format field we are resetting
+    assert repeat["fields"] == (
+        "userEnteredFormat("
+        "backgroundColor,textFormat,horizontalAlignment,"
+        "verticalAlignment,wrapStrategy"
+        ")"
+    )
+
+
+def test_apply_tc_rows_default_formatting_skips_when_zero_rows(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.apply_tc_rows_default_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        start_row=3,
+        row_count=0,
+        num_columns=11,
+    )
+    service.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+def test_apply_tc_rows_default_formatting_handles_missing_sheet(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    service.spreadsheets.return_value.get.return_value.execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 99, "title": "OtherSheet"}}]
+    }
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.apply_tc_rows_default_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        start_row=3,
+        row_count=5,
+        num_columns=11,
+    )
+    service.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+# --- Reset all TC blocks (clears inherited color from old pushes) ---
+
+
+def _mock_service_with_col_a(
+    sheet_id: int, col_a_values: list[list[str]], row_count: int = 100
+) -> MagicMock:
+    """Build a mock service where ``values().get(A:A)`` returns the given rows."""
+    service = MagicMock()
+    service.spreadsheets.return_value.get.return_value.execute.return_value = {
+        "sheets": [
+            {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "title": "TestCases",
+                    "gridProperties": {"rowCount": row_count, "columnCount": 11},
+                }
+            }
+        ]
+    }
+    # values().get for column A
+    col_a_resp = {"values": col_a_values}
+
+    # Use side_effect to dispatch by range
+    def _values_get(*args, **kwargs):
+        response = MagicMock()
+        rng = kwargs.get("range", "") or (args[0] if args else "")
+        if rng.endswith("!A:A"):
+            response.execute.return_value = col_a_resp
+        else:
+            response.execute.return_value = {"values": []}
+        return response
+
+    service.spreadsheets.return_value.values.return_value.get.side_effect = _values_get
+    service.spreadsheets.return_value.batchUpdate.return_value.execute.return_value = {}
+    return service
+
+
+def test_reset_all_tc_blocks_emits_one_repeat_per_block(monkeypatch):
+    """Two US blocks: header (row 0), US-1 (row 1), TC rows (2-4), US-2 (row 5),
+    TC rows (6-9). Expect 2 repeatCell requests covering rows 2-4 and 6-9."""
+    manager = GoogleSheetsManager()
+    manager.reset()
+    # 0-based col A rows. Row 0 = header, row 1 = [US-1], row 5 = [US-2]
+    col_a = [
+        ["TEST_CASE_ID"],
+        ["[US-1] Login"],
+        ["TC-001"],
+        ["TC-002"],
+        ["TC-003"],
+        ["[US-2] Register"],
+        ["TC-004"],
+        ["TC-005"],
+        ["TC-006"],
+        ["TC-007"],
+    ]
+    service = _mock_service_with_col_a(sheet_id=5, col_a_values=col_a, row_count=10)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.reset_all_tc_blocks_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        num_columns=11,
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    assert len(batch_calls) == 1
+    requests = batch_calls[0].kwargs["body"]["requests"]
+    assert len(requests) == 2
+
+    # First block: rows 2-5 (0-based, end-exclusive) → TC-001..TC-003
+    r1 = requests[0]["repeatCell"]
+    assert r1["range"]["sheetId"] == 5
+    assert r1["range"]["startRowIndex"] == 2
+    assert r1["range"]["endRowIndex"] == 5
+    assert r1["range"]["startColumnIndex"] == 0
+    assert r1["range"]["endColumnIndex"] == 11
+    assert r1["cell"]["userEnteredFormat"]["backgroundColor"] == {
+        "red": 1.0,
+        "green": 1.0,
+        "blue": 1.0,
+    }
+    assert r1["cell"]["userEnteredFormat"]["textFormat"]["foregroundColor"] == {
+        "red": 0.0,
+        "green": 0.0,
+        "blue": 0.0,
+    }
+
+    # Second block: rows 6-10 (0-based, end-exclusive) → TC-004..TC-007
+    r2 = requests[1]["repeatCell"]
+    assert r2["range"]["startRowIndex"] == 6
+    assert r2["range"]["endRowIndex"] == 10
+
+
+def test_reset_all_tc_blocks_with_one_block_resets_all_tc(monkeypatch):
+    """If only one US block exists, reset from after that US title to sheet end."""
+    manager = GoogleSheetsManager()
+    manager.reset()
+    col_a = [
+        ["TEST_CASE_ID"],
+        ["[US-1] Login"],
+        ["TC-001"],
+        ["TC-002"],
+        ["TC-003"],
+    ]
+    service = _mock_service_with_col_a(sheet_id=5, col_a_values=col_a, row_count=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.reset_all_tc_blocks_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        num_columns=11,
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    assert len(batch_calls) == 1
+    requests = batch_calls[0].kwargs["body"]["requests"]
+    assert len(requests) == 1
+    # Single range covering rows 2..5 (0-based end-exclusive) → TC-001..TC-003
+    assert requests[0]["repeatCell"]["range"]["startRowIndex"] == 2
+    assert requests[0]["repeatCell"]["range"]["endRowIndex"] == 5
+
+
+def test_reset_all_tc_blocks_handles_missing_sheet(monkeypatch):
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    service.spreadsheets.return_value.get.return_value.execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 99, "title": "OtherSheet"}}]
+    }
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    manager.reset_all_tc_blocks_formatting(
+        spreadsheet_id="abc123",
+        sheet_name="TestCases",
+        num_columns=11,
+    )
+    service.spreadsheets.return_value.batchUpdate.assert_not_called()

@@ -410,17 +410,28 @@ class GoogleSheetsManager:
         total_columns = len(TESTCASES_HEADERS)
 
         rgb = _hex_to_rgb(color)
+        logger.info(
+            "add_us_section_header ENTRY sheet_id=%s row_index=%d color=%s",
+            sheet_id,
+            row_index,
+            color,
+        )
+        # Use insertDimension (not insertRange) so we can control
+        # inheritFromBefore=false — the new US title row inherits formatting
+        # from the rows BELOW (TC rows / default empty), not from the row
+        # above (which may be a previous US title with colored background).
+        # This prevents the US title's colored background from "leaking" into
+        # the TC rows that follow.
         requests: List[Dict[str, Any]] = [
             {
-                "insertRange": {
+                "insertDimension": {
                     "range": {
                         "sheetId": sheet_id,
-                        "startRowIndex": row_index,
-                        "endRowIndex": row_index + 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": total_columns,
+                        "dimension": "ROWS",
+                        "startIndex": row_index,
+                        "endIndex": row_index + 1,
                     },
-                    "shiftDimension": "ROWS",
+                    "inheritFromBefore": False,
                 }
             },
             {
@@ -479,11 +490,328 @@ class GoogleSheetsManager:
         ]
 
         try:
+            response = (
+                service.spreadsheets()
+                .batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": requests})
+                .execute()
+            )
+            logger.info("add_us_section_header: batchUpdate response = %s", response)
+        except Exception as e:
+            logger.warning("add_us_section_header batchUpdate failed: %s", e)
+
+    def reset_all_tc_blocks_formatting(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        num_columns: int,
+    ) -> None:
+        """Reset default formatting for ALL TC data rows in the sheet,
+        across every US block.
+
+        Scans the sheet to find US title rows (cells whose value matches
+        ``[US-N] <title>``). All rows that are NOT US title rows are
+        considered TC rows and have their formatting reset to defaults
+        (black text, white background, wrap, top-aligned, left-aligned).
+
+        Use this when ``clear_existing=False`` to ensure old TC rows
+        (which may have been written by a previous code version) are
+        also reset and do not keep the inherited US title background.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name (e.g. "TestCases").
+            num_columns: Number of columns that span each TC row.
+        """
+        logger.info(
+            "reset_all_tc_blocks_formatting ENTRY spreadsheet_id=%s sheet_name=%s",
+            spreadsheet_id,
+            sheet_name,
+        )
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets.properties(sheetId,title)",
+                )
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                if s["properties"]["title"] == sheet_name:
+                    sheet_id = s["properties"]["sheetId"]
+                    break
+        except Exception as e:
+            logger.warning("reset_all_tc_blocks_formatting: get meta failed: %s", e)
+            return
+
+        if sheet_id is None:
+            logger.warning(
+                "reset_all_tc_blocks_formatting: sheet not found (%s)", sheet_name
+            )
+            return
+
+        # Read column A to find US title rows
+        us_row_indices: set[int] = set()
+        col_a_raw: List[str] = []
+        try:
+            col_a = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A:A")
+                .execute()
+            )
+            for idx, row in enumerate(col_a.get("values", [])):
+                cell_value = row[0].strip() if row and row[0] else ""
+                col_a_raw.append(cell_value)
+                # US title rows match "[US-N] ..." pattern
+                if cell_value.startswith("[US-") and "]" in cell_value:
+                    us_row_indices.add(idx)  # 0-based row index
+        except Exception as e:
+            logger.warning("reset_all_tc_blocks_formatting: read col A failed: %s", e)
+            return
+
+        # DEBUG: log full col A to verify what's in the sheet
+        logger.info(
+            "reset_all_tc_blocks_formatting: DEBUG col A contents (0-based rows) = %s",
+            col_a_raw,
+        )
+        logger.info(
+            "reset_all_tc_blocks_formatting: found %d US title rows at indices=%s",
+            len(us_row_indices),
+            sorted(us_row_indices),
+        )
+
+        # Determine total rows in the sheet
+        total_rows = 1000
+        try:
+            dim = (
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets.properties(sheetId,gridProperties/rowCount)",
+                )
+                .execute()
+            )
+            for s in dim.get("sheets", []):
+                if s["properties"].get("sheetId") == sheet_id:
+                    total_rows = (
+                        s["properties"].get("gridProperties", {}).get("rowCount", 1000)
+                    )
+                    break
+        except Exception:
+            pass
+
+        # Build contiguous ranges of TC rows (rows that are NOT US title rows,
+        # and are after the header row).
+        # header = row 0 (0-based), US titles = us_row_indices.
+        # TC rows = all other rows starting from row 1.
+        tc_ranges: List[tuple[int, int]] = []
+        current_start: Optional[int] = None
+        for r in range(1, total_rows):
+            if r in us_row_indices:
+                if current_start is not None:
+                    tc_ranges.append((current_start, r))
+                    current_start = None
+            else:
+                if current_start is None:
+                    current_start = r
+        if current_start is not None:
+            tc_ranges.append((current_start, total_rows))
+
+        if not tc_ranges:
+            logger.info("reset_all_tc_blocks_formatting: no TC ranges to reset")
+            return
+
+        logger.info(
+            "reset_all_tc_blocks_formatting: TC ranges to reset (0-based end-exclusive): %s",
+            tc_ranges,
+        )
+
+        tc_format = {
+            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+            "textFormat": {
+                "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+            },
+            "horizontalAlignment": "LEFT",
+            "verticalAlignment": "TOP",
+            "wrapStrategy": "WRAP",
+        }
+        fields = (
+            "userEnteredFormat("
+            "backgroundColor,textFormat,horizontalAlignment,"
+            "verticalAlignment,wrapStrategy"
+            ")"
+        )
+
+        requests: List[Dict[str, Any]] = [
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start,
+                        "endRowIndex": end,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": num_columns,
+                    },
+                    "cell": {"userEnteredFormat": tc_format},
+                    "fields": fields,
+                }
+            }
+            for start, end in tc_ranges
+        ]
+
+        # DEBUG: log every range and the full request bodies before sending
+        logger.info(
+            "reset_all_tc_blocks_formatting: DEBUG tc_ranges (0-based end-exclusive) = %s",
+            tc_ranges,
+        )
+        logger.info(
+            "reset_all_tc_blocks_formatting: DEBUG full request body = %s",
+            requests,
+        )
+
+        try:
             service.spreadsheets().batchUpdate(
                 spreadsheetId=spreadsheet_id, body={"requests": requests}
             ).execute()
+            logger.info(
+                "reset_all_tc_blocks_formatting: emitted %d repeatCell requests",
+                len(requests),
+            )
+        except Exception as e:
+            logger.warning("reset_all_tc_blocks_formatting failed: %s", e)
+
+    def apply_tc_rows_default_formatting(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        start_row: int,
+        row_count: int,
+        num_columns: int,
+    ) -> None:
+        """Reset userEnteredFormat on TC data rows so they do not inherit
+        the colored background from the US section header row above.
+
+        New rows inserted via the Sheets API inherit ``userEnteredFormat``
+        from the row above them. Because the US section header above the
+        TC block has a colored background and white text, the appended
+        TC rows would otherwise keep that styling. This method explicitly
+        overwrites the relevant fields with neutral defaults
+        (black text, white background, wrap, top-aligned, left-aligned)
+        using ``repeatCell`` with an explicit ``fields`` mask so all
+        listed format fields are reset in a single call.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name (e.g. "TestCases").
+            start_row: 1-based row index of the first TC row to reset.
+            row_count: Number of TC rows to reset.
+            num_columns: Number of columns that span the TC block.
+        """
+        logger.info(
+            "apply_tc_rows_default_formatting ENTRY spreadsheet_id=%s sheet_name=%s "
+            "start_row=%d row_count=%d num_columns=%d",
+            spreadsheet_id,
+            sheet_name,
+            start_row,
+            row_count,
+            num_columns,
+        )
+        if row_count <= 0 or num_columns <= 0:
+            logger.info("apply_tc_rows_default_formatting: skip (zero rows/columns)")
+            return
+
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(spreadsheetId=spreadsheet_id, fields="sheets.properties")
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                if s["properties"]["title"] == sheet_name:
+                    sheet_id = s["properties"]["sheetId"]
+                    break
         except Exception:
-            pass
+            return
+
+        if sheet_id is None:
+            logger.warning(
+                "apply_tc_rows_default_formatting: sheet_id is None, "
+                "skipping (sheet_name=%s)",
+                sheet_name,
+            )
+            return
+
+        logger.info(
+            "apply_tc_rows_default_formatting: emitting repeatCell "
+            "sheet_id=%s start_row=%d row_count=%d num_columns=%d",
+            sheet_id,
+            start_row,
+            row_count,
+            num_columns,
+        )
+        tc_format = {
+            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+            "textFormat": {
+                "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+            },
+            "horizontalAlignment": "LEFT",
+            "verticalAlignment": "TOP",
+            "wrapStrategy": "WRAP",
+        }
+        fields = (
+            "userEnteredFormat("
+            "backgroundColor,textFormat,horizontalAlignment,"
+            "verticalAlignment,wrapStrategy"
+            ")"
+        )
+
+        requests: List[Dict[str, Any]] = [
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row - 1,
+                        "endRowIndex": start_row - 1 + row_count,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": num_columns,
+                    },
+                    "cell": {"userEnteredFormat": tc_format},
+                    "fields": fields,
+                }
+            }
+        ]
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": requests}
+            ).execute()
+            logger.info(
+                "apply_tc_rows_default_formatting: repeatCell emitted successfully"
+            )
+            # Verify by reading back the first TC row's format
+            try:
+                verify = (
+                    service.spreadsheets()
+                    .get(
+                        spreadsheetId=spreadsheet_id,
+                        fields=f"sheets.properties.sheetId",
+                    )
+                    .execute()
+                )
+                logger.info(
+                    "apply_tc_rows_default_formatting: verify sheet_id=%s", sheet_id
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning("apply_tc_rows_default_formatting failed: %s", e)
 
     def create_spreadsheet(
         self,
