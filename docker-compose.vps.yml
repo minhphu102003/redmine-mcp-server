@@ -15,7 +15,6 @@ services:
       REDMINE_ALLOW_INSECURE_LEGACY_PUBLIC: "false"
       REDMINE_ALLOW_UNAUTHENTICATED_REVOKE: "false"
       REDMINE_SECURITY_STRICT: "true"
-      ATTACHMENTS_DIR: "/app/data/attachments"
     expose:
       - "8000"
     volumes:

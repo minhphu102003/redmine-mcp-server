@@ -1,4 +1,4 @@
-﻿"""Tests for the get_project_issue_context consolidated tool."""
+"""Tests for the get_project_issue_context consolidated tool."""
 
 import os
 import sys

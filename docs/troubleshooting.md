@@ -420,48 +420,12 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    docker run -p 8001:8000 redmine-mcp-server
    ```
 
-### File Permission Errors
-
-**Symptoms:**
-- "Permission denied" when accessing attachments
-- Cannot write to attachments directory
-
-**Solutions:**
-
-1. **Check Directory Permissions**
-   ```bash
-   # Ensure attachments directory is writable
-   chmod 755 ./attachments
-   ```
-
-2. **Configure Custom Directory**
-   ```bash
-   # In .env file
-   ATTACHMENTS_DIR=/path/to/writable/directory
-   ```
-
 ### Attachment Download Failures
 
-**Symptoms:**
-- "Failed to download attachment" errors
-- File download URLs expire immediately
-
-**Solutions:**
-
-1. **Check Disk Space**
-   ```bash
-   df -h  # Ensure sufficient space in attachments directory
-   ```
-
-2. **Verify Redmine Permissions**
-   - Ensure your Redmine user can access attachments
-   - Check attachment exists in Redmine
-
-3. **Configure Expiry Time**
-   ```bash
-   # In .env file
-   ATTACHMENT_EXPIRES_MINUTES=120  # Increase expiry time
-   ```
+> **Note:** This server no longer provides attachment download/cleanup tools.
+> Download attachments directly from your Redmine instance using the
+> `content_url` field returned in `get_redmine_issue` / `get_redmine_wiki_page`
+> responses (when `include_attachments=True`).
 
 ### Memory or Performance Issues
 
@@ -472,11 +436,7 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
 **Solutions:**
 
-1. **Enable Automatic Cleanup**
-   ```bash
-   # In .env file
-   AUTO_CLEANUP_ENABLED=true
-   CLEANUP_INTERVAL_MINUTES=10
+1. **Reduce tool surface for agents**
    ```
 
 2. **Monitor Resource Usage**
@@ -615,11 +575,8 @@ docker logs -f <container-id>
 
 #### "File not found or expired"
 
-**Cause:** Attachment file was cleaned up or URL expired
-
-**Solution:**
-1. Generate new download URL using `get_redmine_attachment_download_url`
-2. Increase `ATTACHMENT_EXPIRES_MINUTES` in `.env`
+> **Note:** Attachment download endpoints were removed. Download files
+> directly from Redmine using the `content_url` field in attachment metadata.
 
 #### "Token limit exceeded"
 

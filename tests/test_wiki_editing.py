@@ -52,7 +52,7 @@ class TestCreateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_create_wiki_page_success(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -75,7 +75,7 @@ class TestCreateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_create_wiki_page_with_comments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -96,7 +96,7 @@ class TestCreateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_create_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
         from redmine_mcp_server.redmine_handler import create_redmine_wiki_page
@@ -117,7 +117,7 @@ class TestCreateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_create_wiki_page_validation_error(self, mock_cleanup, mock_redmine):
         """Test handling of validation error."""
         from redmine_mcp_server.redmine_handler import create_redmine_wiki_page
@@ -136,7 +136,7 @@ class TestCreateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_create_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
         from redmine_mcp_server.redmine_handler import create_redmine_wiki_page
@@ -192,7 +192,7 @@ class TestUpdateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_update_wiki_page_success(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -214,7 +214,7 @@ class TestUpdateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_update_wiki_page_with_comments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
@@ -235,7 +235,7 @@ class TestUpdateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_update_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
         from redmine_mcp_server.redmine_handler import update_redmine_wiki_page
@@ -253,7 +253,7 @@ class TestUpdateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_update_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
         from redmine_mcp_server.redmine_handler import update_redmine_wiki_page
@@ -274,7 +274,7 @@ class TestUpdateRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_update_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
         from redmine_mcp_server.redmine_handler import update_redmine_wiki_page
@@ -309,7 +309,7 @@ class TestDeleteRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_delete_wiki_page_success(self, mock_cleanup, mock_redmine):
         """Test successful wiki page deletion."""
         from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page
@@ -327,7 +327,7 @@ class TestDeleteRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_delete_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
         from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page
@@ -344,7 +344,7 @@ class TestDeleteRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_delete_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
         from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page
@@ -364,7 +364,7 @@ class TestDeleteRedmineWikiPage:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler._no_op_cleanup")
     async def test_delete_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
         from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page

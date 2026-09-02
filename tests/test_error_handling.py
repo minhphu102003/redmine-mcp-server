@@ -272,7 +272,6 @@ class TestLoggingCleanup:
             'print(f"Error creating',
             'print(f"Error updating',
             'print(f"Error summarizing',
-            'print(f"Error during attachment',
         ]
 
         for pattern in forbidden_patterns:

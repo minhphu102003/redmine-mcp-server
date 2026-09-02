@@ -64,7 +64,7 @@ docker build -t redmine-mcp-server .
 docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 ```
 
-See [.env.example](./.env.example) for all available settings (read-only mode, attachment cleanup, SSL, SSRF protection, ...).
+See [.env.example](./.env.example) for all available settings (read-only mode, SSL, SSRF protection, ...).
 
 ### 3. Google Sheets (for testers)
 

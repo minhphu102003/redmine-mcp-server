@@ -63,30 +63,6 @@
           "format": "number",
           "default": "8000",
           "name": "PUBLIC_PORT"
-        },
-        {
-          "description": "Directory for storing downloaded attachments (default: ./attachments)",
-          "format": "string",
-          "default": "./attachments",
-          "name": "ATTACHMENTS_DIR"
-        },
-        {
-          "description": "Enable automatic cleanup of expired files (default: true)",
-          "format": "boolean",
-          "default": "true",
-          "name": "AUTO_CLEANUP_ENABLED"
-        },
-        {
-          "description": "Interval between cleanup runs in minutes (default: 10)",
-          "format": "number",
-          "default": "10",
-          "name": "CLEANUP_INTERVAL_MINUTES"
-        },
-        {
-          "description": "Default expiry time for attachments in minutes (default: 60)",
-          "format": "number",
-          "default": "60",
-          "name": "ATTACHMENT_EXPIRES_MINUTES"
         }
       ]
     }
