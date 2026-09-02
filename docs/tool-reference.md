@@ -184,10 +184,6 @@ To reduce invalid tool calls, the server exposes contract resources:
 - `redmine://issue-contract/{project_id}/{tracker_id}`
   - Describes issue create/update fields, required custom fields, allowed values, and tracker bindings.
 
-- `redmine://workflow/{project_id}`
-- `redmine://workflow/{project_id}/{tracker_id}`
-  - Provides inferred transition matrix (`from status -> allowed statuses`) for the current auth context.
-
 - `redmine://time-entry/contract`
   - Provides time-entry validation rules, allowed activities, and payload examples.
 
@@ -256,39 +252,6 @@ context = await get_project_issue_context(project_id="my-project")
 
 ---
 
-### `summarize_project_status`
-
-Provide a comprehensive summary of project status based on issue activity over a specified time period.
-
-**Parameters:**
-- `project_id` (integer, required): The ID of the project to summarize
-- `days` (integer, optional): Number of days to analyze. Default: `30`
-
-**Returns:** Comprehensive project status summary including:
-- Recent activity metrics (issues created/updated)
-- Status, priority, and assignee breakdowns
-- Project totals and overall statistics
-- Activity insights and trends
-
-**Example:**
-```json
-{
-  "project_id": 1,
-  "project_name": "My Project",
-  "analysis_period_days": 30,
-  "recent_activity": {
-    "created_count": 15,
-    "updated_count": 42
-  },
-  "status_breakdown": {
-    "New": 5,
-    "In Progress": 8,
-    "Resolved": 12
-  }
-}
-```
-
----
 
 ## Issue Operations
 

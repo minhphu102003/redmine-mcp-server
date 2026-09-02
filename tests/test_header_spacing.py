@@ -33,7 +33,6 @@ from redmine_mcp_server.serializers.google_sheets import (  # noqa: E402
     parse_markdown_to_rich_text,
 )
 
-
 # --- Pure function tests ---
 
 
