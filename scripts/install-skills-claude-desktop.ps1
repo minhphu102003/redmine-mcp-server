@@ -1,7 +1,7 @@
 # install-skills-claude-desktop.ps1
-# NOTE: keep this file ASCII-only (no em-dash, no smart-quote) so it parses
-# correctly via 'irm ... | iex' on Windows PowerShell 5.1, which can strip
-# BOM from raw.githubusercontent.com responses.
+# NOTE: keep this file ASCII-only with NO BOM. raw.githubusercontent.com
+# serves the BOM through to 'irm', and Windows PowerShell 5.1 then fails
+# to parse the param() block when the script is run via 'irm ... | iex'.
 # Create ZIP files for each skill for Claude Desktop import
 # Usage: irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
 
