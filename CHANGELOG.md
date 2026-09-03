@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **`install-skills-user.ps1`** — new user-level installer that copies the 6 tester skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`) to `$env:USERPROFILE\.agents\skills` (the opencode global auto-scan path; the same path is expected to be picked up by the ChatGPT desktop client). One-liner: `irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex`. Idempotent; supports optional `-GitHubToken` to lift the unauthenticated API rate limit. Output is a per-skill file list and an auto-scan coverage note.
+- **`install-skills-user.ps1`** — new user-level installer that copies the 6 tester skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`) to `$env:USERPROFILE\.agents\skills` (the opencode global auto-scan path; same path is auto-scanned by the ChatGPT desktop app — confirmed). One-liner: `irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex`. Idempotent; supports optional `-GitHubToken` to lift the unauthenticated API rate limit. Output is a per-skill file list and an auto-scan coverage note.
 - **`scripts/_lib/Install-Skill.ps1`** — shared helper module (`Install-SkillFromLocal`, `Install-SkillFromGitHub`) that all six `install-skills*.ps1` scripts now dot-source. Both helpers copy `SKILL.md` plus every `*.md` in the skill folder except `README.md`, so future template files are picked up automatically (no more hardcoded per-skill extra-file lists).
 
 ### Changed

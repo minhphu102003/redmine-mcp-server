@@ -51,8 +51,7 @@ Write-Host "Done." -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Auto-scan coverage:" -ForegroundColor Yellow
 Write-Host "  • opencode      → ~/.agents/skills/  (verified)"
-Write-Host "  • ChatGPT app   → verify ~/.agents/skills/ matches your client config"
-Write-Host "                     (reply the correct path if different and we'll update this script)"
+Write-Host "  • ChatGPT app   → ~/.agents/skills/  (confirmed by user)"
 Write-Host ""
 Write-Host "To update later: re-run this script (idempotent, overwrites in place)."
 Write-Host "To uninstall:    Remove-Item -Recurse -Force $destRoot"
