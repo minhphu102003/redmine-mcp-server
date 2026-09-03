@@ -287,6 +287,8 @@ This creates ZIP files in `dist/claude-desktop-skills/`. Then:
 2. Click **Add Skill** → **Upload ZIP file**
 3. Select a ZIP and repeat for each skill you need
 
+Available skill ZIPs (QA-focused):
+
 | Skill | Description |
 |-------|-------------|
 | `redmine-init` | Maps repo ↔ Redmine project |
@@ -303,6 +305,36 @@ gh auth login
 ```
 
 Then restart your agent, run `redmine init` once in your repo, and start with e.g. *"create a Redmine issue for this commit"*.
+
+### For user-level install (opencode global / ChatGPT desktop)
+
+All the install scripts above drop skills into `<repo>/.agents/skills/`. If you want the skills to be available **everywhere** — so they auto-load no matter which directory the agent starts in — install them once at the user level instead. Both opencode and the ChatGPT desktop app auto-scan the same path:
+
+```
+%USERPROFILE%\.agents\skills\
+```
+
+**For testers (QA skills, recommended for tester machines):**
+
+```powershell
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex
+```
+
+The script installs the 6 tester skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`) plus any `*.md` template files in each skill folder (e.g. `USER_STORY_TEMPLATE.md`, `member-rules-catalog.md`, `google-sheets-schema.md`). `README.md` is filtered out — only skill payload lands on disk.
+
+**Optional — pass a GitHub token to lift the unauthenticated rate limit:**
+
+By default the script uses the unauthenticated GitHub Contents API (60 requests/hour per IP). That is enough for a single install of all 6 skills. Re-run many times in the same hour and you may hit `403 rate limit exceeded`. To avoid that, set a token first (any PAT with `public_repo` scope is enough since the repo is public):
+
+```powershell
+$env:GITHUB_TOKEN = "<your_pat>"; irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex
+```
+
+If you skip this and hit the rate limit, just wait an hour or generate a token — the script itself does not require a token to run.
+
+To uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
+
+> Prefer the per-repo installer (`install-skills-dev.ps1` / `install-skills-tester.ps1` / `install-skills.ps1`) if you work on a single repo — the user-level install is for shared, machine-wide availability.
 
 ## Under the hood — the tools powering the workflow
 

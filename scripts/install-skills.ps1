@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Target = "",
     [string]$Repo = "minhphu102003/redmine-mcp-server",
     [string]$Branch = "develop",
@@ -7,6 +7,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$libPath = Join-Path $PSScriptRoot "_lib\Install-Skill.ps1"
+. $libPath
 
 $skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
 
@@ -35,52 +38,16 @@ if ($localSkills -and (Test-Path -LiteralPath $localSkills)) {
 
 foreach ($skill in $skills) {
     $dest = Join-Path $destRoot $skill
-    New-Item -ItemType Directory -Path $dest -Force | Out-Null
-    $destFile = Join-Path $dest "SKILL.md"
 
     if ($local) {
-        Copy-Item -Path (Join-Path $localSkills "$skill\SKILL.md") -Destination $destFile -Force
-        # Copy extra files (e.g. USER_STORY_TEMPLATE.md)
-        $extraFiles = Get-ChildItem -Path (Join-Path $localSkills $skill) -File | Where-Object { $_.Name -ne "SKILL.md" -and $_.Name -ne "README.md" }
-        foreach ($f in $extraFiles) {
-            Copy-Item -Path $f.FullName -Destination $dest -Force
-            Write-Host "Installed: $(Join-Path $dest $f.Name) (local copy)"
-        }
-        Write-Host "Installed: $destFile (local copy)"
+        Install-SkillFromLocal -SkillName $skill -SourceDir (Join-Path $localSkills $skill) -DestDir $dest
+        Write-Host "Installed: $dest (local copy)"
     } else {
-        $url = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/SKILL.md" -f $Repo, $Branch, $skill
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $destFile
-            Write-Host "Installed: $destFile (from $url)"
-        } catch {
-            throw "Failed to download skill '$skill' from $url. Check that the repo is public and the branch exists."
-        }
-        # Download extra files for redmine-init
-        if ($skill -eq "redmine-init") {
-            $extraFiles = @("member-rules-catalog.md", "google-sheets-schema.md")
-            foreach ($extraFile in $extraFiles) {
-                $extraUrl = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/{3}" -f $Repo, $Branch, $skill, $extraFile
-                $extraPath = Join-Path $dest $extraFile
-                try {
-                    Invoke-WebRequest -Uri $extraUrl -OutFile $extraPath
-                    Write-Host "Installed: $extraPath (from $extraUrl)"
-                } catch {
-                    Write-Host "WARNING: Failed to download $extraFile — the skill may not work correctly."
-                }
-            }
-        }
-        # Download extra files for testcase-generation
-        if ($skill -eq "testcase-generation") {
-            $extraUrl = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}/USER_STORY_TEMPLATE.md" -f $Repo, $Branch, $skill
-            $extraFile = Join-Path $dest "USER_STORY_TEMPLATE.md"
-            try {
-                Invoke-WebRequest -Uri $extraUrl -OutFile $extraFile
-                Write-Host "Installed: $extraFile (from $extraUrl)"
-            } catch {
-                Write-Host "WARNING: Failed to download USER_STORY_TEMPLATE.md — the skill may not work correctly."
-            }
-        }
+        Install-SkillFromGitHub -SkillName $skill -Repo $Repo -Branch $Branch -DestDir $dest
+        Write-Host "Installed: $dest (from github)"
     }
+
+    $destFile = Join-Path $dest "SKILL.md"
 
     if ($skill -eq "redmine-issue-workflow" -and -not [string]::IsNullOrWhiteSpace($CommitWorkflowPath)) {
         $content = [System.IO.File]::ReadAllText($destFile)

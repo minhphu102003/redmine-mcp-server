@@ -1,8 +1,11 @@
-# install-skills-claude-code.ps1
+﻿# install-skills-claude-code.ps1
 # Install MCP skills to Claude Code skills directory
 # Usage: .\scripts\install-skills-claude-code.ps1
 
 $ErrorActionPreference = "Stop"
+
+$libPath = Join-Path $PSScriptRoot "_lib\Install-Skill.ps1"
+. $libPath
 
 $SourceDir = Join-Path (Join-Path $PSScriptRoot "..") "skills"
 $TargetDir = Join-Path (Join-Path $env:USERPROFILE ".claude") "skills"
@@ -47,12 +50,12 @@ foreach ($Skill in $Skills) {
 
         # Update existing skill
         Remove-Item -Path $TargetPath -Recurse -Force
-        Copy-Item -Path $SourcePath -Destination $TargetPath -Recurse
+        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath
         Write-Host "  Update $SkillName" -ForegroundColor Yellow
         $Updated++
     } else {
         # Install new skill
-        Copy-Item -Path $SourcePath -Destination $TargetPath -Recurse
+        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath
         Write-Host "  Install $SkillName" -ForegroundColor Green
         $Installed++
     }
