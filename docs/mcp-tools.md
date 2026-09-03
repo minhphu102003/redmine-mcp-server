@@ -11,11 +11,11 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 
 | Kind | Count |
 |---|---|
-| MCP tools (`@mcp.tool()`) | 31 |
-| MCP resources (`@mcp.resource()`) | 6 |
-| Custom HTTP routes (`@mcp.custom_route()`) | 3 |
+| MCP tools (`@mcp.tool()`) | 37 |
+| MCP resources (`@mcp.resource()`) | 4 |
+| Custom HTTP routes (`@mcp.custom_route()`) | 1 |
 
-## Quick reference (all 31 tools)
+## Quick reference (all 37 tools)
 
 | Tool | Category | Description |
 |---|---|---|
@@ -29,10 +29,7 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`delete_redmine_issue_relation`](#delete_redmine_issue_relation) | Issues | Delete an issue relation |
 | [`list_redmine_issue_statuses`](#list_redmine_issue_statuses) | Issues | List all issue statuses defined in Redmine |
 | [`get_redmine_issue_allowed_statuses`](#get_redmine_issue_allowed_statuses) | Issues | Get allowed status transitions for a specific issue |
-| [`get_redmine_project_workflow`](#get_redmine_project_workflow) | Issues | Infer project workflow from issue-level allowed statuses (sample-based) |
-| [`get_issue_workflow_context`](#get_issue_workflow_context) | Consolidated | Unified entry point for status/workflow context (4 modes) |
 | [`list_redmine_projects`](#list_redmine_projects) | Projects | List all accessible projects |
-| [`summarize_project_status`](#summarize_project_status) | Projects | Summary of project status over a time period |
 | [`get_project_issue_context`](#get_project_issue_context) | Consolidated | Complete issue-creation context for a project (replaces 5 project lookups) |
 | [`manage_time_entries`](#manage_time_entries) | Consolidated | Unified time-entry tool (list/create/update/delete/activities) |
 | [`list_time_entries`](#list_time_entries) | Time entries | List time entries with filters and pagination |
@@ -40,9 +37,6 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`update_time_entry`](#update_time_entry) | Time entries | Update an existing time entry |
 | [`delete_time_entry`](#delete_time_entry) | Time entries | Delete a time entry |
 | [`list_time_entry_activities`](#list_time_entry_activities) | Time entries | List available time-entry activities |
-| [`generate_scrum_report`](#generate_scrum_report) | Consolidated | Generate daily/weekly/custom scrum report drafts |
-| [`export_weekly_report_markdown`](#export_weekly_report_markdown) | Consolidated | Export weekly report as a markdown file |
-| [`export_weekly_report_docx`](#export_weekly_report_docx) | Consolidated | Export weekly report as a `.docx` file |
 | [`search_entire_redmine`](#search_entire_redmine) | Search | Search issues and wiki pages across the instance |
 | [`get_redmine_wiki_page`](#get_redmine_wiki_page) | Wiki | Retrieve full wiki page content |
 | [`create_redmine_wiki_page`](#create_redmine_wiki_page) | Wiki | Create a new wiki page |
@@ -57,45 +51,6 @@ Consolidated tools group related operations behind one entry point to reduce
 tool-selection overhead and token usage in agent workflows. The legacy direct
 tools remain available for backward compatibility where noted.
 
-### `get_issue_workflow_context`
-
-Unified entry point for issue-status/workflow context.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `mode` | str | `"issue"` | `"statuses"`, `"issue"`, `"project"`, or `"transition_check"` |
-| `issue_id` | int | `None` | Required for `"issue"` and `"transition_check"` modes |
-| `project_id` | str/int | `None` | Required for `"project"` mode |
-| `tracker_id` | int | `None` | Optional tracker filter (project mode) |
-| `status_id` | str/int | `None` | Optional starting status (project mode) |
-| `sample_limit` | int | `25` | Max issues sampled to infer workflow |
-| `target_status_id` | int | `None` | Target status for `"transition_check"` |
-| `target_status_name` | str | `None` | Target status name for `"transition_check"` |
-
-Modes:
-
-- `"statuses"` — list globally defined issue statuses.
-- `"issue"` — current status + allowed transitions for one issue.
-- `"project"` — infer project workflow snapshot from sampled issues.
-- `"transition_check"` — validate whether a target status is currently allowed
-  (matches by `target_status_id` or `target_status_name`).
-
-**Returns:** `Dict` with a `mode` key plus `data` (or `error`).
-
-**Example:**
-
-```json
-{
-  "mode": "transition_check",
-  "issue_id": 42,
-  "current_status": {"id": 1, "name": "New"},
-  "target": {"id": 4, "name": "Closed"},
-  "allowed": true,
-  "matched_status": {"id": 4, "name": "Closed"}
-}
-```
-
----
 
 ### `get_project_issue_context`
 
@@ -169,75 +124,8 @@ Unified entry point for time logging operations.
 
 ---
 
-### `generate_scrum_report`
 
-Generate daily/weekly/custom scrum report drafts from logged time entries.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `report_type` | str | `"daily"` | `"daily"`, `"weekly"`, or `"custom"` |
-| `user_id` | str/int | `None` | Restrict to one user (cross-project scope) |
-| `project_id` | str/int | `None` | Restrict to one project (team scope) |
-| `from_date` | str | `None` | Required for `"custom"` |
-| `to_date` | str | `None` | Required for `"custom"` |
-| `top_n_items` | int | `7` | Number of top items in lists |
-| `include_entries` | bool | `False` | Include raw time entries in output |
-
-Behavior:
-
-- `"daily"` — auto-reads the **yesterday** range.
-- `"weekly"` — auto-reads the **previous week** range (Mon–Sun).
-- `"custom"` — requires both `from_date` and `to_date`; the range limit is
-  controlled by `REDMINE_SCRUM_REPORT_MAX_DAYS` (default: 31).
-
-Output includes summary metrics, `top_issues`, `top_activities`, `top_users`,
-`report_draft`, and `report_templates` (`standup_three_questions`,
-`standup_workflow_focused`, `weekly_status_summary`).
-
-Tips:
-
-- Pass only `project_id` → team-level report across multiple users.
-- Pass only `user_id` → individual report across projects.
-- Pass both → one user's report inside one project.
-- The tool always reads fresh data; re-generate anytime by calling it again.
-
----
-
-### `export_weekly_report_markdown`
-
-Export a weekly report to a markdown file based on a template.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `user_id` | str/int | `None` | User filter passed to the scrum report |
-| `project_id` | str/int | `None` | Project filter passed to the scrum report |
-| `top_n_items` | int | `7` | Number of top items |
-| `template_path` | str | `docs/templates/weekly_work_report_plan_template.md` | Custom template file |
-| `output_dir` | str | `reports/weekly` | Output directory |
-| `file_name` | str | auto | Output file name |
-| `unit_name` | str | `"TRUNG TÂM CSE"` | Unit name shown in the report |
-| `reporter_name` | str | `"NGƯỜI BÁO CÁO"` | Reporter name shown in the report |
-| `location` | str | `"Đà Nẵng"` | Location shown in the report |
-| `from_date` | str | `None` | Custom range start (falls back to previous week) |
-| `to_date` | str | `None` | Custom range end |
-
-Internally calls `generate_scrum_report(report_type="weekly")`, renders the
-template, and writes a `.md` file so devs can share/edit quickly.
-
----
-
-### `export_weekly_report_docx`
-
-Export a weekly report to `.docx` for client delivery.
-
-Same parameters and defaults as `export_weekly_report_markdown`. Reuses the
-weekly markdown template and generates a plain-text Word document under
-`reports/weekly` (or custom `output_dir`). Current behavior keeps markdown
-semantics as text (not native Word tables/headings).
-
----
-
-## Core issue tools
 
 ### `get_redmine_issue`
 
@@ -454,22 +342,6 @@ Get allowed status transitions for a specific issue.
 
 ---
 
-### `get_redmine_project_workflow`
-
-Infer project workflow from issue-level allowed statuses (sample-based).
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `project_id` | str/int | (required) | Project ID or identifier |
-| `tracker_id` | int | `None` | Restrict to one tracker |
-| `status_id` | str/int | `None` | Restrict to one starting status |
-| `sample_limit` | int | `25` | Max issues sampled |
-
-**Returns:** `Dict` with a normalized transition matrix and status list.
-
----
-
-## Project tools
 
 ### `list_redmine_projects`
 
@@ -481,21 +353,6 @@ Lists all accessible projects in Redmine.
 
 ---
 
-### `summarize_project_status`
-
-Provide a summary of project status over the specified time period.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `project_id` | int | (required) | Project ID |
-| `days` | int | `30` | Look-back window in days |
-
-**Returns:** `Dict` with issue analytics and status summary. Raises
-`ResourceNotFoundError` for unknown projects.
-
----
-
-## Time entry tools (legacy direct tools)
 
 ### `list_time_entries`
 
@@ -661,12 +518,6 @@ write operations.
     flags + allowed values), tracker bindings, linked description template
     contract.
 
-- `redmine://workflow/{project_id}`
-- `redmine://workflow/{project_id}/{tracker_id}`
-  - Workflow transition contract: sampled workflow snapshot, normalized
-    transition matrix (`from -> allowed`), status list for the current auth
-    context.
-
 - `redmine://time-entry/contract`
   - Time logging contract: required fields and validation rules, available
     activities (id/name/active/default), create/update payload examples.
@@ -681,13 +532,24 @@ write operations.
 > download a Redmine attachment, use the `content_url` field returned in the
 > issue/journal metadata (still serialized by `get_redmine_issue` and
 > `get_redmine_wiki_page` when `include_attachments=True`).
+>
+> **Note:** Reporting/workflow tools were removed in this release:
+> `get_redmine_project_workflow`, `get_issue_workflow_context`,
+> `summarize_project_status`, `generate_scrum_report`,
+> `export_weekly_report_markdown`, `export_weekly_report_docx`, and the
+> `redmine://workflow/...` resources. For per-issue transitions, use
+> `get_redmine_issue_allowed_statuses`. For daily/weekly personal reports,
+> use the `redmine-daily-report` skill which builds reports from `git log`
+> and `get_redmine_issue`.
 
 ## Notes
 
-- **Consolidated vs legacy tools**: Consolidated tools (`get_issue_workflow_context`,
-  `manage_time_entries`, `generate_scrum_report`, `export_weekly_report_markdown`,
-  `export_weekly_report_docx`) are recommended for agent workflows; the legacy
-  direct tools remain for backward compatibility.
+- **Consolidated vs legacy tools**: Consolidated tools (`manage_time_entries`)
+  are recommended for agent workflows; the legacy direct tools remain for
+  backward compatibility. The previous project-workflow contract tool and
+  resources (`get_redmine_project_workflow`, `get_issue_workflow_context`,
+  `redmine://workflow/...`) were removed — use `get_redmine_issue_allowed_statuses`
+  to inspect allowed transitions for a single issue instead.
 - **Read-only mode**: All write tools (create/update/delete) respect
   `REDMINE_MCP_READ_ONLY` and return an `error` payload when write access is
   disabled.

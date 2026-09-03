@@ -12,7 +12,7 @@ from .projects import (
     list_project_trackers_impl,
     list_redmine_versions_impl,
 )
-from .workflow import list_redmine_issue_statuses_impl
+from .workflow_statuses import list_redmine_issue_statuses_impl
 
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
