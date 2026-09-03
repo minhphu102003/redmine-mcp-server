@@ -253,6 +253,9 @@ This repo ships skills that teach your agent the workflow above:
 - [`status-sync`](./skills/status-sync/README.md) — syncs Redmine issue statuses back to Google Sheets
 - [`reopen-bug`](./skills/reopen-bug/README.md) — reopens bugs on Redmine and Google Sheets
 
+**Manager skills (boss oversight, read-only recommended):**
+- [`boss-project-oversight`](./skills/boss-project-oversight/README.md) — answers the boss about one employee at a time: personnel list → pick a person → day/week performance summary grouped by project (uses the `list_personnel` + `get_person_work_summary` tools; requires an admin API key for person resolution)
+
 Install skills into your repo with one command (opencode auto-scans `.agents/skills/`):
 
 **For developers** (issue workflow, planning, daily report):

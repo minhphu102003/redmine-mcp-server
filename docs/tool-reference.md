@@ -993,6 +993,63 @@ Use this tool to discover valid `activity_id` values before calling `create_time
 
 ---
 
+## Personnel & Performance (manager oversight, read-only)
+
+### `list_personnel`
+
+List unique project members across projects — step 1 of the boss workflow
+(the boss picks one person from this list).
+
+**Parameters:**
+- `project_ids` (array of integers, optional): Restrict to these project IDs. Omit for all accessible projects.
+
+**Returns:** Dictionary with `personnel` (each: `id`, `name`, `projects` with `id`/`name`/`roles`), `count`, `project_count`, `groups_skipped` (group memberships are not people and are skipped), and `errors` (per-project failures kept without failing the whole call).
+
+**Example:**
+```python
+people = list_personnel()
+# {"personnel": [{"id": 7, "name": "An Nguyen",
+#    "projects": [{"id": 1, "name": "Web", "roles": ["Developer"]}]}],
+#  "count": 1, ...}
+```
+
+---
+
+### `get_person_work_summary`
+
+Summarize one person's performance for a day or a Monday–Sunday week, grouped by project — step 3 of the boss workflow (the backend aggregates, the agent renders the UI).
+
+**Parameters:**
+- `person` (integer or string, required): User ID (from `list_personnel`) or name/login. Ambiguous names return an error listing candidates instead of guessing
+- `window` (string, optional): `"day"` (default) or `"week"` (Mon–Sun week containing the reference date, even when it is a Sunday)
+- `date_str` (string, optional): Reference date `YYYY-MM-DD`. Defaults to today (server date)
+- `project_ids` (array of integers, optional): Restrict to these project IDs. Omit for all accessible projects
+- `compact` (boolean, optional): When `true`, skip the per-project detail and return only `person`, `window`, `widget_data`, `totals`, and `evidence` (smaller payload for the oversight widget). Default: `false`
+
+**Returns:** Dictionary with:
+- `person` (`id`, `name`, `login`, `mail`)
+- `window` (`type`, `from`, `to`)
+- `widget_data`: completed tasks bucketed per weekday (`Thứ 2` … `Chủ nhật`), each item `id`, `name`, `project`, `est`, `actual`, `url` — embed verbatim into the oversight widget. A task counts as completed when `done_ratio == 100` (even with an open status) and it was updated inside the window; `est` is 0 when Redmine has no estimate, `actual` sums the time entries logged on that issue inside the window (0 when none)
+- `per_project`: per project, `activity` (`hours`, `touched`/`touched_count`, `closed`/`closed_count`) and `backlog` (`open_count`, `overdue`/`overdue_count`, `no_due_date`/`no_due_date_count`, `in_progress`). Each issue brief carries `id`, `subject`, `status`, `due_date`, `done_ratio`, `estimated_hours`, `actual_hours`, `updated_on`, and `url`. Omitted when `compact=true`
+- `totals`: `hours`, `time_entries`, `touched_count`, `closed_count`, `open_count`, `overdue_count`, `no_due_date_count`
+- `evidence`: `queried_at`, `person_query`, `filters_used`, `totals` — cite this block so the boss can cross-check every answer in the Redmine UI
+
+**Overdue rule (fixed):** status is open (`is_closed == false`) AND `due_date < today`. Due today is not overdue; closed issues are never overdue; issues without `due_date` are listed separately and never counted.
+
+**Example:**
+```python
+summary = get_person_work_summary(7, window="week", date_str="2026-09-03")
+# {"person": {"id": 7, ...},
+#  "window": {"type": "week", "from": "2026-08-31", "to": "2026-09-06"},
+#  "per_project": [...], "totals": {...}, "evidence": {...}}
+```
+
+**Notes:**
+- Person resolution uses the admin `/users.json` API — the caller's API key needs admin rights
+- Pure read tool: works with `REDMINE_MCP_READ_ONLY=true`
+
+---
+
 ## Search & Wiki
 
 ### `search_entire_redmine`

@@ -21,7 +21,7 @@ async def test_server_exposes_no_prompts():
 async def test_server_still_exposes_all_tools():
     """All MCP tools must remain registered (after removal of reporting/workflow tools)."""
     tools = await mcp.list_tools()
-    assert len(tools) == 37
+    assert len(tools) == 39
 
 
 @pytest.mark.asyncio

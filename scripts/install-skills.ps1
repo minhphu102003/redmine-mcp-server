@@ -33,7 +33,7 @@ if ($libCandidate) {
     . ([scriptblock]::Create($libCode))
 }
 
-$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
+$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "boss-project-oversight", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {
@@ -61,11 +61,15 @@ if ($localSkills -and (Test-Path -LiteralPath $localSkills)) {
 foreach ($skill in $skills) {
     $dest = Join-Path $destRoot $skill
 
+    # Boss-only: ship the widget template alongside the skill payload.
+    $extraExt = @()
+    if ($skill -eq "boss-project-oversight") { $extraExt = @(".html") }
+
     if ($local) {
-        Install-SkillFromLocal -SkillName $skill -SourceDir (Join-Path $localSkills $skill) -DestDir $dest
+        Install-SkillFromLocal -SkillName $skill -SourceDir (Join-Path $localSkills $skill) -DestDir $dest -ExtraExtensions $extraExt
         Write-Host "Installed: $dest (local copy)"
     } else {
-        Install-SkillFromGitHub -SkillName $skill -Repo $Repo -Branch $Branch -DestDir $dest
+        Install-SkillFromGitHub -SkillName $skill -Repo $Repo -Branch $Branch -DestDir $dest -ExtraExtensions $extraExt
         Write-Host "Installed: $dest (from github)"
     }
 

@@ -57,12 +57,16 @@ foreach ($Skill in $Skills) {
 
         # Update existing skill
         Remove-Item -Path $TargetPath -Recurse -Force
-        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath
+        $extraExt = @()
+        if ($SkillName -eq "boss-project-oversight") { $extraExt = @(".html") }
+        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath -ExtraExtensions $extraExt
         Write-Host "  Update $SkillName" -ForegroundColor Yellow
         $Updated++
     } else {
         # Install new skill
-        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath
+        $extraExt = @()
+        if ($SkillName -eq "boss-project-oversight") { $extraExt = @(".html") }
+        Install-SkillFromLocal -SkillName $SkillName -SourceDir $SourcePath -DestDir $TargetPath -ExtraExtensions $extraExt
         Write-Host "  Install $SkillName" -ForegroundColor Green
         $Installed++
     }

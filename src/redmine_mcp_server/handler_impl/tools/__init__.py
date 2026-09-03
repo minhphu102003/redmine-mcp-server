@@ -57,6 +57,10 @@ from .memory import (
     delete_user_memory_impl,
     list_user_memory_impl,
 )
+from .personnel import (
+    get_person_work_summary_impl,
+    list_personnel_impl,
+)
 
 __all__ = [
     "create_redmine_issue_with_subtasks_impl",
@@ -100,4 +104,6 @@ __all__ = [
     "set_user_memory_impl",
     "delete_user_memory_impl",
     "list_user_memory_impl",
+    "get_person_work_summary_impl",
+    "list_personnel_impl",
 ]

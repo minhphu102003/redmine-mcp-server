@@ -7,13 +7,17 @@
 #   - Always copy SKILL.md (entry point).
 #   - Always copy every *.md file in the skill folder EXCEPT README.md
 #     (README is a meta-doc, not a skill payload).
+#   - Optionally copy extra non-md payload files (e.g. an .html widget
+#     template) when the caller passes -ExtraExtensions. Used boss-only
+#     for now; every other skill installs exactly as before.
 #   - Skip silently if the source folder is empty (caller decides what to do).
 
 function Install-SkillFromLocal {
     param(
         [Parameter(Mandatory)] [string]$SkillName,
         [Parameter(Mandatory)] [string]$SourceDir,
-        [Parameter(Mandatory)] [string]$DestDir
+        [Parameter(Mandatory)] [string]$DestDir,
+        [string[]]$ExtraExtensions = @()
     )
 
     if (-not (Test-Path -LiteralPath $SourceDir)) {
@@ -33,6 +37,14 @@ function Install-SkillFromLocal {
     foreach ($f in $extra) {
         Copy-Item -Path $f.FullName -Destination $DestDir -Force
     }
+
+    foreach ($ext in $ExtraExtensions) {
+        $payload = Get-ChildItem -Path $SourceDir -Filter ("*" + $ext) -File |
+            Where-Object { $_.BaseName -ne "README" }
+        foreach ($f in $payload) {
+            Copy-Item -Path $f.FullName -Destination $DestDir -Force
+        }
+    }
 }
 
 function Install-SkillFromGitHub {
@@ -41,7 +53,8 @@ function Install-SkillFromGitHub {
         [Parameter(Mandatory)] [string]$Repo,
         [Parameter(Mandatory)] [string]$Branch,
         [Parameter(Mandatory)] [string]$DestDir,
-        [string]$GitHubToken = $env:GITHUB_TOKEN
+        [string]$GitHubToken = $env:GITHUB_TOKEN,
+        [string[]]$ExtraExtensions = @()
     )
 
     New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
@@ -64,8 +77,13 @@ function Install-SkillFromGitHub {
     $rawBase = "https://raw.githubusercontent.com/{0}/{1}/skills/{2}" -f $Repo, $Branch, $SkillName
     foreach ($item in $response) {
         if ($item.type -ne "file") { continue }
-        if ($item.name -notmatch "\.md$") { continue }
-        if ($item.name -eq "README.md") { continue }
+        $isMd = $item.name -match "\.md$"
+        $isExtra = $false
+        foreach ($ext in $ExtraExtensions) {
+            if ($item.name -like ("*" + $ext)) { $isExtra = $true }
+        }
+        if (-not ($isMd -or $isExtra)) { continue }
+        if ($item.name -eq "README.md" -or $item.name -like "README.*") { continue }
         $raw = "$rawBase/$($item.name)"
         $out = Join-Path $DestDir $item.name
         try {

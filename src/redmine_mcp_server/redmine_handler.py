@@ -90,6 +90,8 @@ from .handler_impl.tools import (  # noqa: E402
     get_redmine_issue_allowed_statuses_impl,
     get_redmine_wiki_page_impl,
     get_sheet_metadata_impl,
+    list_personnel_impl,
+    get_person_work_summary_impl,
     list_redmine_issue_statuses_impl,
     list_redmine_issues_impl,
     list_redmine_projects_impl,
@@ -2065,6 +2067,102 @@ async def delete_time_entry(
 async def list_time_entry_activities() -> List[Dict[str, Any]]:
     """List available time entry activities from Redmine."""
     return await list_time_entry_activities_impl(
+        get_client=_get_redmine_client,
+        handle_error=_handle_redmine_error,
+    )
+
+
+# =============================================================================
+# Personnel & Performance Tools (manager oversight, read-only)
+# =============================================================================
+
+
+@mcp.tool()
+async def list_personnel(
+    project_ids: Annotated[
+        Optional[List[int]],
+        Field(
+            description=(
+                "Restrict to these project IDs. Omit for all accessible" " projects."
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """List unique project members across projects for the boss workflow.
+
+    Use as step 1 when the boss asks for the employee list: returns deduplicated
+    people (id, name, their projects + roles) so the boss can pick one person.
+    Group memberships are skipped. Read-only.
+    """
+    return await list_personnel_impl(
+        project_ids,
+        get_client=_get_redmine_client,
+        membership_to_dict=_membership_to_dict,
+        handle_error=_handle_redmine_error,
+    )
+
+
+@mcp.tool()
+async def get_person_work_summary(
+    person: Annotated[
+        Union[int, str],
+        Field(
+            description=(
+                "Person to summarize: user ID (from list_personnel) or"
+                " name/login. Ambiguous names return candidates to pick from."
+            )
+        ),
+    ],
+    window: Annotated[
+        str,
+        Field(description="Performance window: 'day' or 'week' (Mon-Sun)."),
+    ] = "day",
+    date_str: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Reference date (YYYY-MM-DD) inside the window. Defaults to"
+                " today (server date). A week window covers the Mon-Sun week"
+                " containing this date."
+            )
+        ),
+    ] = None,
+    project_ids: Annotated[
+        Optional[List[int]],
+        Field(
+            description=(
+                "Restrict to these project IDs. Omit for all accessible" " projects."
+            )
+        ),
+    ] = None,
+    compact: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, skip the per-project detail and return only"
+                " person, window, widget_data, totals and evidence"
+                " (smaller payload for the oversight widget)."
+            )
+        ),
+    ] = False,
+) -> Dict[str, Any]:
+    """Summarize one person's performance for a day or week, grouped by project.
+
+    Use as step 3 of the boss workflow after the boss picks a person and a
+    day/week window. Always returns widget_data (completed tasks per weekday
+    with estimate vs actual hours, ready to embed into the oversight widget)
+    plus per-project activity (hours logged, issues touched and closed in the
+    window), the current backlog (open, overdue where due_date is past and
+    status is open, no-due-date listed separately) and an evidence block
+    (filters used, query time, totals) so every answer can be cross-checked
+    in the Redmine UI. Read-only.
+    """
+    return await get_person_work_summary_impl(
+        person,
+        window,
+        date_str,
+        project_ids,
+        compact,
         get_client=_get_redmine_client,
         handle_error=_handle_redmine_error,
     )
