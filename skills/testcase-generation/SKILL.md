@@ -17,17 +17,12 @@ Generate test cases from a user story, let the user review and refine them in a 
 2. **Mandatory approval gate**: the user must explicitly approve ("chốt", "ok", "approve", "xong rồi", "looks good") before pushing to Google Sheets. Nothing is written to the sheet until this gate passes.
 3. **Iterative refinement**: the user can edit the draft file freely — add/remove/reorder test cases, change fields. The agent re-reads the file when the user says it's ready.
 4. **Auto-generated IDs**: test_case_id follows the pattern TC-001, TC-002, TC-003... based on existing rows in the sheet (assigned at push time, not in the draft).
-5. **Required fields**: every test case must have: title, module, precondition, steps, expected_result. Missing fields → ask the user or mark `[?]`.
-6. **Bugs sheet auto-creation**: when pushing, always check if "Bugs" sheet exists. If not, create it with all 14 headers.
-7. **Test case content is English** unless the user asks otherwise.
-8. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
-9. **ASK, DON'T ASSUME (CRITICAL)**: never invent business rules, edge cases, validation rules, workflows, UI details, or test data. If the US file is missing info → ask the user. See `USER_STORY_TEMPLATE.md` for the full template and validation rules.
-10. **Traceability**: every test case must trace to a specific Acceptance Criteria or Business Rule from the US. Use the "Source" field in the draft.
-11. **Output limit (max ~10 detailed TCs per turn)**: avoid generating too much output in one turn — this cap protects accuracy (longer single-turn generation causes attention drift, self-repetition, and technique dilution; see "Why the cap exists" below), so it is kept even for casual/non-technical users. If the US requires more than 10 test cases, generate detailed versions for the first 10 (prioritize happy path + critical edge cases), and write outlines for the rest.
-12. **Continuation must never look like an error (CRITICAL — for non-technical users)**: whenever a turn ends with test cases still remaining (outlines not yet detailed), the response MUST end with a plain-language status line and a simple, literal instruction the user can copy — never assume the user infers this is normal or knows jargon like "outline"/"detail". See the mandatory presentation template in Section 6.
-
-### Why the cap exists (do not remove even if asked to "just generate everything")
-Sinh quá nhiều TC liên tục trong 1 lượt làm giảm độ chính xác vì: (a) model "quên" dần chi tiết cụ thể của US gốc → dễ suy diễn thay vì bám nguồn (vi phạm rule 9), (b) dễ lặp lại pattern → tạo TC trùng nhau về bản chất mà không tự nhận ra, (c) bảng kỹ thuật thiết kế test (Section 5) được chọn 1 lần ở đầu nhưng dễ bị áp dụng lệch/thiếu ở các TC cuối nếu sinh liền mạch quá dài. Nếu người dùng yêu cầu bỏ giới hạn, giải thích ngắn gọn lý do này và đề xuất tiếp tục theo từng đợt thay vì tắt cơ chế.
+5. **Bugs sheet auto-creation**: when pushing, always check if "Bugs" sheet exists. If not, create it with all 14 headers.
+6. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names.
+7. **ASK, DON'T ASSUME (CRITICAL)**: never invent business rules, edge cases, validation rules, workflows, UI details, or test data. If the US file is missing info → ask the user. See `USER_STORY_TEMPLATE.md` for the full template and validation rules.
+8. **Traceability**: every test case must trace to a specific Acceptance Criteria or Business Rule from the US. Use the "Source" field in the draft.
+9. **Output limit (max ~10 detailed TCs per turn) + mandatory continuation message**: avoid generating too much output in one turn — longer single-turn generation causes attention drift, self-repetition, and technique dilution. If the US requires more than 10 test cases, generate detailed versions for the first 10 (prioritize happy path + critical edge cases), and write self-contained outlines for the rest. Whenever a turn ends with outlines still remaining, the response MUST end with the plain-language status template in Section 6 — never assume the user infers this is normal.
+10. After moving/editing this skill file, remind the user to **restart the agent**.
 
 ---
 
@@ -109,8 +104,6 @@ If the source is a Redmine issue, use the issue's description, acceptance criter
 3. **Don't auto-define validation rules** — if US doesn't specify email format, don't assume
 4. **Don't auto-generate test data** without flagging it as placeholder
 
-For the 8 detailed questions to ask, the example US, and the full anti-patterns list → see [`USER_STORY_TEMPLATE.md`](./USER_STORY_TEMPLATE.md).
-
 ### If US is severely incomplete
 
 If the US has only a vague idea (e.g. just a title like "Login feature"):
@@ -126,21 +119,21 @@ Before writing any test case, **analyze the US characteristics** and **select wh
 
 **CRITICAL PRINCIPLE: Techniques are COMBINED per test case, not applied in isolation.** The goal is ~10-15 well-designed test cases per US, not 30+ scattered tests. One test case can cover EP + BVA + Error Guessing simultaneously.
 
+> Detailed technique catalog, full worked example, and dedup walkthrough → see [`TEST_DESIGN_TECHNIQUES.md`](./TEST_DESIGN_TECHNIQUES.md). Summary below.
+
 ### Technique catalog
 
-| # | Technique | When to use | What it covers |
-|---|-----------|-------------|----------------|
-| 1 | **Equivalence Partitioning (EP)** | Input fields with defined valid/invalid ranges | Divides input into classes; one test per class instead of testing every value |
-| 2 | **Boundary Value Analysis (BVA)** | Any numeric range, length constraint, or count limit | Tests at boundaries (min-1, min, min+1, max-1, max, max+1) where defects cluster |
-| 3 | **Decision Table Testing** | Business rules with multiple interacting conditions | Every condition combination → expected action (2^N rules for N conditions) |
-| 4 | **State Transition Testing** | Features with states, workflows, or sequential logic | Tests valid transitions, invalid transitions, and state-dependent behavior |
-| 5 | **Error Guessing** | Every test case (experience-based layer) | Targets common defects: null/empty, special chars, SQL/XSS injection, overflow |
-| 6 | **Pairwise Testing** | Multiple configuration parameters with many values | Reduces combinatorial explosion by covering all parameter pairs, not all combinations |
-| 7 | **Use Case / Scenario Testing** | End-to-end user journeys | Happy path through the full flow with realistic data |
+| # | Technique | When to use |
+|---|-----------|-------------|
+| 1 | **Equivalence Partitioning (EP)** | Input fields with defined valid/invalid ranges |
+| 2 | **Boundary Value Analysis (BVA)** | Any numeric range, length constraint, or count limit |
+| 3 | **Decision Table Testing** | Business rules with multiple interacting conditions (≥2 conditions interact) |
+| 4 | **State Transition Testing** | Features with states, workflows, or sequential logic |
+| 5 | **Error Guessing** | Every test case (experience-based layer) |
+| 6 | **Pairwise Testing** | Multiple configuration parameters (≥3 params × ≥2 values) |
+| 7 | **Use Case / Scenario Testing** | End-to-end user journeys |
 
 ### Selection process
-
-Analyze the parsed US and **check each technique against the US characteristics**:
 
 ```
 FOR EACH technique in [EP, BVA, Decision Table, State Transition, Error Guessing, Pairwise, Use Case]:
@@ -149,18 +142,6 @@ FOR EACH technique in [EP, BVA, Decision Table, State Transition, Error Guessing
   3. If YES → mark technique as APPLICABLE with specific reasons
   4. If NO → mark as NOT APPLICABLE with reason
 ```
-
-### Selection triggers (what to look for in the US)
-
-| Technique | Trigger (look for in US) |
-|-----------|--------------------------|
-| **EP** | Input fields with ranges (age 18-65), allowed values (role = admin/editor/viewer), or length limits (max 100 chars) |
-| **BVA** | Any numeric range in AC/Business Rules (min/max quantities, price thresholds, character limits, retry counts) |
-| **Decision Table** | ≥2 conditions that interact (e.g. "if member AND order > $100 AND has coupon → discount X"), multiple if/else branches |
-| **State Transition** | Workflow steps, status changes (New → In Progress → Done), sequential logic, retry/lockout mechanisms |
-| **Error Guessing** | Every feature (always apply as a layer on top of other techniques) |
-| **Pairwise** | ≥3 configuration parameters each with ≥2 values (browser × OS × locale, role × action × resource type) |
-| **Use Case** | End-to-end scenario with multiple steps and actor interactions |
 
 ### COMBINE techniques, don't stack them (CRITICAL)
 
@@ -178,30 +159,28 @@ RIGHT (1 combined TC per scenario):
   TC-3: EP+EG — email="'; DROP TABLE users;--" (SQL injection) → error
 ```
 
-### Combination rules
+### Combination rules (summary)
 
 | Combination | How to combine |
-|-------------|---------------|
-| **EP + BVA** | Always pair. EP gives the groups, BVA gives the specific values. One test per boundary value, not one per partition AND one per boundary. |
-| **EP + Error Guessing** | Add error scenarios (null, empty, special chars) as additional partitions in EP, not separate technique. |
-| **BVA + Error Guessing** | Test boundary values that are also error-inducing (e.g. max+1 overflow, min-1 negative). |
-| **Decision Table + EP** | Each rule in the decision table uses EP-derived values for its conditions. |
-| **State Transition + Error Guessing** | Test invalid transitions (e.g. trying to close an already-closed issue). |
-| **Pairwise + EP** | Use EP to define values for each parameter, then pairwise to reduce combinations. |
+|-------------|----------------|
+| **EP + BVA** | Always pair. One test per boundary value. |
+| **EP + Error Guessing** | Add error scenarios (null, empty, special chars) as additional partitions in EP. |
+| **BVA + Error Guessing** | Test boundary values that are also error-inducing (max+1 overflow, min-1 negative). |
+| **Decision Table + EP** | Each rule uses EP-derived values for its conditions. |
+| **State Transition + Error Guessing** | Test invalid transitions (already-closed issue, etc.). |
+| **Pairwise + EP** | Use EP to define values, then pairwise to reduce combinations. |
 
 ### Deduplication rules (reduce TC count)
 
 After generating TCs from all techniques, **merge and deduplicate**:
 
-1. **Same field, same expected outcome → merge.** If TC-1 (EP: empty email → error) and TC-2 (Error Guessing: null email → error) produce the same result → keep 1, mark it as "EP+EG".
-2. **Same boundary, same side → merge.** If BVA generates min-1 and EP generates "invalid below range" for the same boundary → keep 1.
-3. **Decision Table: merge rules with same action.** If Rules R1 and R2 both produce "10% discount" → merge into 1 TC that tests both condition combinations.
-4. **Happy path already covers Use Case.** Don't write a separate Use Case TC if the happy path EP test already walks through the full flow.
-5. **Error Guessing: max 3-5 error TCs per feature.** Don't test every possible error type — pick the 3-5 most likely based on field type (text → injection, numeric → overflow, file → size/type).
+1. **Same field, same expected outcome → merge.** (TC-1 empty → error + TC-2 null → error → keep 1, mark "EP+EG")
+2. **Same boundary, same side → merge.** (BVA min-1 + EP invalid-below-range → keep 1)
+3. **Decision Table: merge rules with same action.**
+4. **Happy path already covers Use Case** — don't write a separate Use Case TC if the happy path EP test already walks through the full flow.
+5. **Error Guessing: max 3-5 error TCs per feature** — pick 3-5 most likely based on field type (text → injection, numeric → overflow, file → size/type).
 
-### Risk-based depth (focus techniques where it matters)
-
-Not every field needs the same depth. Apply **risk-based prioritization**:
+### Risk-based depth
 
 | Risk level | Technique depth | Example |
 |------------|----------------|---------|
@@ -251,48 +230,17 @@ Generated: <YYYY-MM-DD>
 7. **Target 10-15 TCs per US.** If you're generating 25+, you're not combining — go back and merge.
 8. **After generating all TCs, run deduplication** before writing the draft.
 
-### Example: combined techniques in practice
-
-**US says:** "User can register with email (must be valid format, max 100 chars) and password (8-50 chars)"
-
-**Without combining (28 TCs — BAD):**
-| Technique | TCs |
-|-----------|-----|
-| EP | TC-1: valid email, TC-2: invalid no @, TC-3: invalid no domain, TC-4: empty email |
-| BVA | TC-5: email length 99, TC-6: email length 100, TC-7: email length 101, TC-8: pw length 7, TC-9: pw length 8, TC-10: pw length 9, TC-11: pw length 49, TC-12: pw length 50, TC-13: pw length 51 |
-| Error Guessing | TC-14: SQL injection email, TC-15: XSS email, TC-16: null email, TC-17: null pw, TC-18: special chars pw, TC-19: whitespace email, TC-20: unicode email |
-| Use Case | TC-21: full happy path |
-| ... | (more from other fields) |
-
-**With combining (12 TCs — GOOD):**
-| TC | Techniques | Test | Why |
-|----|-----------|------|-----|
-| TC-1 | EP+BVA+EG | email='a@b.co' → success | Valid format, mid-length |
-| TC-2 | EP+BVA+EG | email='' → error "Email required" | Empty = EP invalid + EG null |
-| TC-3 | EP+EG | email='user@' → error "Invalid format" | EP invalid partition |
-| TC-4 | EP+EG | email='user@.com' → error "Invalid format" | EP invalid partition |
-| TC-5 | EP+BVA | email length=100 → accept | BVA boundary max |
-| TC-6 | EP+BVA | email length=101 → reject | BVA boundary max+1 |
-| TC-7 | EP+BVA+EG | pw='abc' (3 chars) → error | BVA min-1 + EG short |
-| TC-8 | EP+BVA | pw='abcdefgh' (8 chars) → accept | BVA boundary min |
-| TC-9 | EP+BVA | pw='a'*50 → accept | BVA boundary max |
-| TC-10 | EP+BVA+EG | pw='a'*51 → reject | BVA max-1 + EG overflow |
-| TC-11 | EP+EG | pw="'; DROP TABLE users;--" → error | EG injection |
-| TC-12 | EP+EG | pw='' → error "Password required" | EG empty |
-
-**28 → 12 TCs (57% reduction)** while covering the same scenarios.
-
 ---
 
 ## 6. Step 3 — Write draft file
 
-**Output limit: max ~10 detailed test cases per turn.** Avoid generating too much output in one turn. If the US requires more than 10 test cases, AI generates detailed versions for the first 10 (prioritize happy path + critical edge cases), writes **self-contained outlines** for the rest, and asks the user to request more detail.
+**Output limit: max ~10 detailed test cases per turn.** If the US requires more than 10, AI generates detailed versions for the first 10 (prioritize happy path + critical edge cases), writes **self-contained outlines** for the rest, and asks the user to request more detail.
 
 ### Draft file location and preview (CRITICAL — do this every time the draft is created or updated)
 
 Write the draft directly to `/mnt/user-data/outputs/testcases-draft.md` (not a workspace-only path like `.tmp/`) so the user can open, preview, and download it immediately from the chat — never make the user ask "how do I see this file" first.
 
-After every `create_file`/`str_replace` on this file (initial draft, every refine edit in Step 4, every batch of detailed outlines), call `present_files` on it again so an updated preview card appears in the conversation. Re-presenting the same path is expected and cheap — do it on every change, not just the first.
+After every `create_file`/`str_replace` on this file (initial draft, every refine edit in Step 7, every batch of detailed outlines), call `present_files` on it again so an updated preview card appears in the conversation. Re-presenting the same path is expected and cheap — do it on every change, not just the first.
 
 **One-way sync limitation — say this explicitly the first time the draft is presented:** the user can open/download the presented file, but if they edit that downloaded copy directly, those edits are invisible — nothing syncs back. Tell them plainly: to change anything, describe the change in chat (or paste back the edited content) and the draft will be regenerated and re-presented; don't rely on them discovering this on their own.
 
@@ -301,7 +249,7 @@ After every `create_file`/`str_replace` on this file (initial draft, every refin
 Each outline must be self-contained — AI can read a single outline and re-generate the full TC without re-reading the US. Every outline has 4 mandatory fields:
 
 | Field | Purpose | Example |
-|-------|---------|-------|
+|-------|---------|---------|
 | **Do** | Specific action (verb + object) | "Submit form with empty email" |
 | **With** | Specific input/data used (exact values) | "email='', password='abc123'" |
 | **Expect** | Expected result (including error message if any) | "Show error 'Please enter email' below field" |
@@ -456,25 +404,7 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 3. **Extract `us_title`**: read the `US Title:` field from the draft file header (e.g. "Login Feature"). This is passed to the tool to generate the US section header row.
 4. Read the existing TestCases sheet to find the highest TC-XXX number (for ID generation).
 5. Generate IDs: continue from the highest existing TC-XXX. If the sheet is empty, start at TC-001.
-6. **Field mapping (draft → sheet)**:
-
-| Draft field | Sheet column | Notes |
-|-------------|-------------|-------|
-| TC title (## TC-N: ...) | `title` | |
-| Module | `module` | |
-| Precondition | `precondition` | |
-| Steps | `steps` | Join numbered lines into single string |
-| Expected | `expected_result` | |
-| Tester | `tester` | From draft, or empty |
-| Evidence | `evidence` | Optional. URL or hyperlink string (paste link to screenshot, recording, etc.). Text-only — agent does not upload image files. |
-| US Title | *(not a column)* | Passed as `us_title` parameter to tool — a merged colored header row is auto-inserted before the TC rows |
-| *(auto)* | `test_case_id` | Generated: TC-001, TC-002... |
-| *(auto)* | `created_date` | Set to today (YYYY-MM-DD) |
-| *(auto)* | `last_test_result` | Set to "Not Tested" |
-| *(auto)* | `last_test_date` | Set to empty |
-| Source | *(not pushed)* | Traceability only — keep in draft for review |
-
-6. Proceed to step 6 (push).
+6. **Field mapping (draft → sheet)**: `title` from `## TC-N: ...`, `module`, `precondition`, `steps` (join numbered lines), `expected_result`, `tester` (from draft or empty), `evidence` (optional URL string — text only, no file upload). Auto-fields (`test_case_id`, `created_date`, `last_test_result`="Not Tested", `last_test_date`) are handled by the push tool. `Source` is traceability only — not pushed. `US Title` is passed as `us_title` parameter (tool auto-inserts a merged colored header row before the TC rows).
 
 ---
 
@@ -541,7 +471,6 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 - [ ] Each test case must trace to a specific AC or Business Rule (use "Source" field).
 - [ ] When US is missing info → ask, never auto-define (see `USER_STORY_TEMPLATE.md`).
 - [ ] **Max ~10 detailed TCs per turn** — the rest go in self-contained outlines (4 fields: Do/With/Expect/Source).
-- [ ] **Outlines must be self-contained** — AI reads one outline and writes the full TC without re-reading US.
 - [ ] **ALWAYS select techniques BEFORE writing TCs** — Step 2.75 must complete before Step 3.
 - [ ] **Every TC must declare its techniques** in the Source field (e.g. "EP+BVA", "Decision Table — merged R1+R3").
 - [ ] **COMBINE techniques per TC, don't stack separate TCs per technique.** Target 10-15 TCs per US, not 30+.
@@ -551,4 +480,3 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 - [ ] **Never end a turn with remaining outlines and no plain-language status message** — assume the reader is non-technical and may mistake a partial batch for an error. Always show X/Y fraction + "không phải lỗi" + literal next action (see Section 6).
 - [ ] **Repeat the continuation message on every batch**, not just the first — don't assume the user remembers the syntax from turn 1.
 - [ ] **Run the Coverage & Dedup Audit (Section 8, step 1.5) before pushing** whenever the draft was built across multiple turns — don't push if any AC/BR is uncovered or any outline is still undetailed.
-- [ ] After moving/editing this skill file, remind the user to **restart the agent**.
