@@ -24,3 +24,10 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 - The MCP server must expose `list_personnel` and `get_person_work_summary` (added in the same release as this skill).
 - Boss access: read-only recommended (`REDMINE_MCP_READ_ONLY=true`); person resolution uses the admin `/users.json` API, so the boss API key needs admin rights.
+
+## Widget template
+
+Step 3 of the skill renders from `widget-template.html`, a reference template
+living next to `SKILL.md`. The installers copy it alongside the skill payload
+(boss skill only — other skills install exactly as before). After updating
+the template, re-run the installer so the new file lands next to `SKILL.md`.

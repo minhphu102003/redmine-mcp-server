@@ -41,15 +41,19 @@ foreach ($SkillName in $SkillNames) {
         $WebResponse = Invoke-WebRequest -Uri $ApiUrl -UseBasicParsing
         $JsonContent = $WebResponse.Content
         $Response = ConvertFrom-Json -InputObject $JsonContent
+        # Boss-only: also ship the widget template (.html) with the skill.
+        $wantHtml = $SkillName -eq "boss-project-oversight"
         foreach ($Item in $Response) {
-            if ($Item.type -eq "file" -and $Item.name -match "\.md$" -and $Item.name -ne "README.md") {
-                $DownloadUrl = "${RawBase}/skills/${SkillName}/$($Item.name)"
-                $DestPath = Join-Path $SkillDir $Item.name
-                try {
-                    Invoke-WebRequest -Uri $DownloadUrl -OutFile $DestPath -UseBasicParsing
-                } catch {
-                    Write-Host "  Warning: Could not download $($Item.name) for $SkillName" -ForegroundColor Yellow
-                }
+            if ($Item.type -ne "file") { continue }
+            $isMd = $Item.name -match "\.md$" -and $Item.name -ne "README.md"
+            $isHtml = $wantHtml -and $Item.name -like "*.html" -and $Item.name -notlike "README.*"
+            if (-not ($isMd -or $isHtml)) { continue }
+            $DownloadUrl = "${RawBase}/skills/${SkillName}/$($Item.name)"
+            $DestPath = Join-Path $SkillDir $Item.name
+            try {
+                Invoke-WebRequest -Uri $DownloadUrl -OutFile $DestPath -UseBasicParsing
+            } catch {
+                Write-Host "  Warning: Could not download $($Item.name) for $SkillName" -ForegroundColor Yellow
             }
         }
     } catch {
@@ -80,6 +84,10 @@ foreach ($SkillName in $SkillNames) {
     }
 
     $MdFiles = Get-ChildItem -Path $SkillDir -Filter "*.md"
+    $HtmlFiles = @()
+    if ($SkillName -eq "boss-project-oversight") {
+        $HtmlFiles = @(Get-ChildItem -Path $SkillDir -Filter "*.html")
+    }
     if ($MdFiles.Count -eq 0) {
         Write-Host "  Skipping $SkillName.zip (no .md files)" -ForegroundColor Yellow
         continue
@@ -90,11 +98,13 @@ foreach ($SkillName in $SkillNames) {
         Remove-Item -Path $ZipPath -Force
     }
 
-    # Create ZIP with all .md files in skill directory
-    Compress-Archive -Path "$SkillDir\*.md" -DestinationPath $ZipPath -Force
+    # Create ZIP with all .md files (plus the boss widget template if present)
+    $zipPaths = @("$SkillDir\*.md")
+    if ($HtmlFiles.Count -gt 0) { $zipPaths += "$SkillDir\*.html" }
+    Compress-Archive -Path $zipPaths -DestinationPath $ZipPath -Force
 
     $ZipSize = [math]::Round((Get-Item $ZipPath).Length / 1KB, 1)
-    $FileCount = $MdFiles.Count
+    $FileCount = $MdFiles.Count + $HtmlFiles.Count
     Write-Host "  Created: $SkillName.zip ($ZipSize KB, $FileCount files)" -ForegroundColor Green
 }
 

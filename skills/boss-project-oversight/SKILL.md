@@ -52,40 +52,44 @@ After the boss picks a person (by number or name), ask before calling anything:
 
 ---
 
-## 4. Step 3 — Interactive performance widget (single HTML artifact)
+## 4. Step 3 — Interactive performance widget (template-first)
 
-Call `get_person_work_summary(person=<id from step 1>, window=<day|week>, date_str=<date>, compact=true)`. If the tool returns an `ambiguous` error, present the candidates and let the boss pick — never guess.
+### 4.0 Read the template BEFORE calling any tool
 
-Then build **one self-contained interactive HTML artifact** (inline `<style>` + `<script>`, **no CDN, no external requests** — it must work offline) from the tool's `widget_data`, embedded verbatim as `const DATA = {...}`:
+The skill ships with a reference template, `widget-template.html`, in the **same folder as this SKILL.md** (the installer copies it next to `SKILL.md` — boss skill only). **Read that file first, in full, before calling `get_person_work_summary`.** It is the single source of truth for layout, element IDs, CSS classes, palette, and Vietnamese labels. The spec in §4a–4b below is only the fallback for when the file is missing.
 
-```json
-{
-  "Thứ 2": [{"id": 1, "name": "Task A", "project": "Web",
-              "est": 3, "actual": 2.5, "url": "https://.../issues/1"}],
-  "Thứ 3": [], "Thứ 4": [], "Thứ 5": [],
-  "Thứ 6": [], "Thứ 7": [], "Chủ nhật": []
-}
-```
+### 4.1 Template contract (TEMPLATE CONTRACT — PENDING: fill in from widget-template.html once the file lands)
 
-Never invent, reorder, or summarize this data — embed it exactly as returned (day keys stay Monday-first). `est` = estimate hours (0 when Redmine has none), `actual` = hours logged on that task inside the window (0 when none logged).
+> The template file has not been provided yet. When it lands, replace this
+> block with its real contract: version pin comment, DATA slot marker,
+> title slot marker, footer/query-time slot marker, chart/table element IDs,
+> fixed palette, and the exact pre-emit checklist tied to those names.
+> Until then, every run uses the §4.3 fallback below.
 
-### 4a. Layout (top to bottom)
+Rules that already apply to whatever the template contains:
+
+1. **Slots only**: replace only the marked slot contents (data, title, footer/query time). Never restructure layout, rename element IDs/classes, change the palette, relabel days, or reorder columns.
+2. **Data verbatim**: embed the tool's `widget_data` exactly as returned (day keys stay Monday-first). Never invent, summarize, or fabricate tasks, hours, or colors.
+3. **Version pin**: the template header carries `<!-- boss-widget-template vN -->`. If `N` differs from the version named in this contract, STOP and tell the boss to update the skill — never render against a mismatched template.
+4. **Offline single file**: the emitted artifact keeps the template's inline `<style>` + `<script>`; no CDN, no external requests.
+
+### 4.2 Fill and emit
+
+1. Call `get_person_work_summary(person=<id from step 1>, window=<day|week>, date_str=<date>, compact=true)`. `ambiguous` error → present candidates, never guess.
+2. Fill the template slots with the live result (`widget_data` → DATA slot, person + window → title slot, `evidence.queried_at` → footer slot).
+3. Run the pre-emit checklist from the contract (shape of it: 7 weekday columns in order; dropdown options equal the projects present in DATA; variance red when actual − est > 0 else green; links use each task's `url`; evidence footer present), then emit **one HTML artifact**.
+
+### 4.3 Fallback when the template file is missing (compact spec)
+
+If `widget-template.html` is absent (old install), build one self-contained HTML artifact (inline `<style>` + `<script>`, no CDN) from `widget_data` embedded verbatim as `const DATA = {...}`:
 
 1. **Title**: `Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}`.
-2. **Project dropdown** (top): `Tất cả` + one option per project found in DATA (order of first appearance). Default: `Tất cả`.
-3. **Two metric cards** (recomputed from the active filter):
-   - Tổng task hoàn thành = number of tasks matching the filter.
-   - Tỷ lệ hiệu suất = Σest / Σactual × 100, one decimal + `%`; when Σactual is 0 show `—`.
-4. **Stacked bar chart** (Thứ 2 → Chủ nhật, fixed order): each column stacks completed-task counts per project; `Tất cả` shows all projects stacked, one project shows only its segment. Column height scales to the tallest column. Below/above: a **legend** of project name + color swatch.
-5. **Detail table** (hidden until a column is clicked): rows = tasks of the clicked day AND the active project filter. Columns: Tên task (hyperlink via `url`), Project, Giờ estimate, Giờ thực tế, Chênh lệch = actual − est with 2 decimals — **red when > 0 (over estimate), green when ≤ 0**. Empty day → one row: `Không có task hoàn thành`.
-6. **Footer inside the widget**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
-
-### 4b. Behavior (all client-side, no re-fetch)
-
-- One state `{projectFilter: 'all' | name, selectedDay: string | null}` and one `render()` that recomputes cards, chart, and table on every change (dropdown change, bar click).
-- Clicking a bar selects that day (visual highlight) and renders its table; clicking the selected bar again deselects it.
-- Fixed palette by project index (same project = same color everywhere): `#2563eb, #16a34a, #dc2626, #d97706, #7c3aed, #0891b2, #db2777, #65a30d` (wrap around if more than 8 projects).
-- Numbers: hours with up to 2 decimals, counts as integers, Vietnamese day labels verbatim.
+2. **Project dropdown** (top): `Tất cả` + one option per project in DATA (first-appearance order). Default `Tất cả`.
+3. **Two metric cards** from the active filter: completed-task count; Σest/Σactual × 100 with one decimal + `%` (`—` when Σactual is 0).
+4. **Stacked bar chart** Thứ 2 → Chủ nhật: per-project stacked counts (`Tất cả`) or single-project data; legend with name + color swatch.
+5. **Detail table** on bar click (day AND active project filter): Tên task (hyperlink via `url`), Project, estimate, actual, variance = actual − est (2 decimals, red > 0, green ≤ 0). Empty day → `Không có task hoàn thành`.
+6. **Footer**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
+7. Behavior: one state `{projectFilter, selectedDay}`, one `render()` on every change, toggle-select on bars. Palette: `#2563eb, #16a34a, #dc2626, #d97706, #7c3aed, #0891b2, #db2777, #65a30d` (wrap past 8).
 
 ### 4c. After the artifact (chat message, concise)
 

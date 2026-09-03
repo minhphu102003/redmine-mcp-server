@@ -62,8 +62,11 @@ Write-Host ""
 
 foreach ($skill in $skills) {
     $dest = Join-Path $destRoot $skill
+    # Boss-only: ship the widget template alongside the skill payload.
+    $extraExt = @()
+    if ($skill -eq "boss-project-oversight") { $extraExt = @(".html") }
     try {
-        Install-SkillFromGitHub -SkillName $skill -Repo $Repo -Branch $Branch -DestDir $dest -GitHubToken $GitHubToken
+        Install-SkillFromGitHub -SkillName $skill -Repo $Repo -Branch $Branch -DestDir $dest -GitHubToken $GitHubToken -ExtraExtensions $extraExt
         $files = Get-ChildItem -Path $dest -File | Select-Object -ExpandProperty Name
         Write-Host ("  [OK] {0}  ({1} file(s): {2})" -f $skill, $files.Count, ($files -join ", "))
     } catch {
