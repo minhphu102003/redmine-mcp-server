@@ -14,12 +14,13 @@ Create or update a Redmine issue from a description, uncommitted code changes, a
 1. **Live data first** — never trust memory or this skill's examples. Exception: a fresh `.redmine` cache (≤ 14 days) is a trusted fast path for static lists. Anything missing from cache or dynamic (allowed status transitions, parent-issue validity) must be fetched live. Stale cache → warn + suggest `redmine init`; no cache → live lookups.
 2. **Verify before creating/updating**: project, trackers, statuses, priorities, members, versions, categories.
 3. **Issue content is English** (subject + description).
-4. **Ask-before-act**: every required parameter is confirmed with the user — never silently chosen. Use the agent's structured ask tool; plain text as fallback. Ask-tool limits: 1–4 questions per call, ≤ 4 clickable options per question. For longer lists, embed full numbered list in question text. Batch confirmations when possible.
+4. **Ask-before-act**: every required parameter is confirmed with the user — never silently chosen. Use the agent's structured ask tool; plain text as fallback. Ask-tool limits: 1–4 questions per call, ≤ 4 clickable options per question. For longer lists, embed full numbered list in question text. Batch confirmations when possible. This rule applies to all "default" fields below (status, priority, tracker, assignee, dates, category, version, custom fields, estimated_hours, done_ratio).
 5. **Description is auto-drafted by you**, not the user: fill the template (Step 6) fully from context. The user only reviews/edits at confirmation.
 6. **Dates are pre-proposed**: start = commit date or today, due = start + 1 day — present as defaults, user adjusts.
 7. **Two modes**: **create** (new issue) and **update** (existing issue). User chooses first.
 8. **Subject format**: `[<module>] [<role>] <title>` — module and role chosen by the user, title comes from input.
 9. **"Task này đang làm gì?"** — this question appears in both create and update flows to gather context about the work.
+10. After moving/editing this skill file, remind the user to **restart the agent** for the skill to load.
 
 ---
 
@@ -82,9 +83,8 @@ Ask the user for the context of the work:
 
 ### 3a. Author → Redmine member
 
-- `.redmine` `user_mappings` first: match by `github` login or `git_email` → use `redmine_user_id` directly.
-- No mapping → match against live `members` list.
-- No confident match → **ask the user**.
+- Read `.redmine` `user_mappings` (set up by `redmine-init`); match by `github` login or `git_email` → use `redmine_user_id` directly.
+- No mapping or no confident match → **ask the user**.
 
 ### 3b. Ask user — `[Module] [Role]`
 
@@ -147,20 +147,20 @@ Same as Step 1 — use cache or fetch live for statuses, priorities, members.
 
 ### 5c. Task này đang làm gì?
 
-Ask the user for context (same as Step 2):
+> Reuse Step 2 — same 4 modes (describe/changes/PR/commit). Ask: "Task này đang làm gì? Cung cấp context để so sánh với issue hiện tại."
 
-**"Task này đang làm gì? Cung cấp context để so sánh với issue hiện tại."**
+### 5d. Diff context vs current issue + propose changes
 
-| # | Mode | Agent |
-|---|------|-------|
-| 1 | **describe** | User gõ mô tả thay đổi |
-| 2 | **changes** | `git diff --stat` + `git diff` |
-| 3 | **PR** | `gh api pulls/<n>` |
-| 4 | **commit** | `git show <hash>` |
+| Source | Proposed changes |
+|--------|-----------------|
+| PR merged | Status → Done, done_ratio → 100 |
+| PR open | Status → In Progress |
+| PR closed (not merged) | Status → Closed/Rejected (ask) |
+| Commit | Append changelog entry to description |
+| Changes | Update description with diff summary |
+| Describe | Update fields theo user mô tả |
 
-### 5d. So sánh & Show diff
-
-Đọc context theo mode, sau đó so sánh với issue hiện tại:
+Show this diff table for transparency:
 
 ```markdown
 | Field | Issue hiện tại | Context (code/PR/commit) | Khác? |
@@ -172,29 +172,11 @@ Ask the user for context (same as Step 2):
 | Description | (8 sections) | (PR body / diff summary) | ℹ️ |
 ```
 
-### 5e. Đề xuất update
+### 5e. Confirm
 
-Dựa vào source:
+Present: issue ID + current info, proposed changes, diff summary — per Rule 4. Hỏi user muốn update field nào (subject, description, status/assignee/priority, time log, category/version).
 
-| Source | Đề xuất |
-|--------|---------|
-| PR merged | Status → Done, done_ratio → 100 |
-| PR open | Status → In Progress |
-| PR closed (not merged) | Status → Closed/Rejected (ask) |
-| Commit | Append changelog entry |
-| Changes | Update description với diff summary |
-| Describe | Update fields theo user mô tả |
-
-### 5f. Confirm
-
-Present: issue ID + current info, proposed changes, diff summary — per Rule 4. Hỏi user muốn update field nào:
-- Subject (format [<Module>] [<Role>])
-- Description (8 sections hoặc append changelog)
-- Status / Assignee / Priority
-- Time log
-- Category / Version
-
-### 5g. Execute update
+### 5f. Execute update
 
 1. Update issue with confirmed fields (`status_id`, `done_ratio`, `description`, `assigned_to_id`, etc.).
 2. If time logging confirmed → get valid `activity_id` first, then create time entry.
@@ -218,15 +200,15 @@ Present: issue ID + current info, proposed changes, diff summary — per Rule 4.
 Agent drafts the entire description from context; user only reviews/edits at confirmation. Fill all 8 sections fully in English:
 
 ```markdown
-## Context
+## 1. Context
 - Describe the problem/business context this change solves.
 
-## User story
+## 2. User story
 - **As a** [role — e.g. system admin / ingest pipeline]
 - **I want** [capability — e.g. upload PDF/DOCX and get Markdown via API]
 - **So that** [business value — e.g. documents can be chunked, embedded, and loaded into the knowledge base]
 
-## Scope
+## 3. Scope
 - In scope:
   - [item 1]
   - [item 2]
@@ -234,35 +216,24 @@ Agent drafts the entire description from context; user only reviews/edits at con
   - [item 1]
   - [item 2]
 
-## Proposed solution
+## 4. Proposed solution
 - Describe the high-level implementation approach.
 
-## Related data and integrations
+## 5. Related data and integrations
 - API/Service: [e.g. parsing service, endpoint]
 - Schema/Fields: [relevant request/response fields]
 - Constraints: [e.g. supported formats, limitations]
 
-## Acceptance criteria
+## 6. Acceptance criteria
 - [ ] AC1: [verifiable outcome]
 - [ ] AC2: [verifiable outcome]
 - [ ] AC3: [verifiable outcome]
 
-## Success measurement
+## 7. Success measurement
 - KPI/metrics: [e.g. 100% test pass rate]
 
+## 9. PR
 PR: [GitHub PR URL]
 ```
 
-Rules:
-- User story uses exactly **As a → I want → So that**, each phrase **bolded**.
-- Keep all section headers verbatim; fill only the bullet content.
-- Append PR link on last line; no PR yet → `Commit: <sha>` or `Commit: working-tree changes` instead.
-- Reference actual code/files from context in Context / Proposed solution.
-
----
-
-## Step 7 — Gotchas
-
-- [ ] Priority IDs differ per instance — never assume ID→name mapping.
-- [ ] After moving/editing this skill file, remind the user to **restart the agent** for the skill to load.
-- [ ] `.redmine` cache is 14-day TTL — stale cache can have wrong IDs.
+> Headers verbatim (1-7, 9). User story uses bolded **As a / I want / So that**. Append PR link as section 9; no PR yet → `Commit: <sha>` or `Commit: working-tree changes`. Reference actual code/files in section 1 / 4.
