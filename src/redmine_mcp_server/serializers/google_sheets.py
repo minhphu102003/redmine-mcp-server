@@ -56,7 +56,7 @@ VALID_BUG_STATUSES = [
     "Duplicate",
 ]
 
-VALID_TEST_RESULTS = ["Pass", "Fail", "Not Tested"]
+VALID_TEST_RESULTS = ["Not Tested", "Pass", "Fail", "Blocked"]
 
 VALID_PRIORITIES = ["High", "Medium", "Low"]
 

@@ -439,12 +439,12 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
      column=6,
      options=["Nguyen Van A", "Tran Thi B", "Le Van C"],
      start_row=2,
-     end_row=1000,
+     end_row=100000,
      input_message="Select tester"
    )
    ```
 
-   **Only set dropdowns once** (on first push or sheet creation). Skip if dropdowns already exist.
+   **The system auto-re-applies data validation after every push.** When `add_us_section_header` inserts a US section header row, `insertDimension` can drop existing data validation rules on the shifted rows. The push flow automatically calls `reapply_sheet_validations` (which fetches member names from `.redmine.project_contexts[<project_id>].members`) to restore the dropdowns. AI does NOT need to call `set_sheet_data_validation` manually for the normal push flow — only call it explicitly when setting up a brand new spreadsheet or fixing a column that was never configured.
 
 6. **Report**:
    ```
@@ -480,3 +480,4 @@ When the user says "chốt", "ok", "approve", "push đi", "xong rồi", "looks g
 - [ ] **Never end a turn with remaining outlines and no plain-language status message** — assume the reader is non-technical and may mistake a partial batch for an error. Always show X/Y fraction + "không phải lỗi" + literal next action (see Section 6).
 - [ ] **Repeat the continuation message on every batch**, not just the first — don't assume the user remembers the syntax from turn 1.
 - [ ] **Run the Coverage & Dedup Audit (Section 8, step 1.5) before pushing** whenever the draft was built across multiple turns — don't push if any AC/BR is uncovered or any outline is still undetailed.
+- [ ] **Pre-existing column format is preserved on insert** — `add_us_section_header` uses `insertDimension` to insert the US section header row; this can drop data validation rules on the shifted rows. The system auto-re-applies `setDataValidation` + `addConditionalFormatRule` (tester/last_test_result dropdowns and their colors) after every push via `reapply_sheet_validations`. If you observe a row with plain text where a dropdown is expected, check the push log for the re-apply warning — most often it means `.redmine.project_contexts[<project_id>].members` is empty (re-run `redmine init` §2b step 2.0 to fetch it).

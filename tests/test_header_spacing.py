@@ -394,12 +394,17 @@ def test_add_us_section_header_emits_insert_merge_background_text(monkeypatch):
     service = _mock_service_with_sheet(sheet_id=5)
     monkeypatch.setattr(manager, "get_service", lambda: service)
 
-    manager.add_us_section_header(
-        spreadsheet_id="abc123",
-        sheet_name="TestCases",
-        us_title="[US-1] Login Feature",
-        row_index=2,
-        color="#4285F4",
+    import asyncio
+
+    asyncio.run(
+        manager.add_us_section_header(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            us_title="[US-1] Login Feature",
+            row_index=2,
+            color="#4285F4",
+            get_user_memory=None,
+        )
     )
 
     batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
@@ -477,16 +482,142 @@ def test_add_us_section_header_handles_missing_sheet(monkeypatch):
     monkeypatch.setattr(manager, "get_service", lambda: service)
 
     # Should not raise — just silently skip
-    manager.add_us_section_header(
-        spreadsheet_id="abc123",
-        sheet_name="TestCases",
-        us_title="[US-2] Register",
-        row_index=5,
-        color="#34A853",
+    import asyncio
+
+    asyncio.run(
+        manager.add_us_section_header(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            us_title="[US-2] Register",
+            row_index=5,
+            color="#34A853",
+            get_user_memory=None,
+        )
     )
 
     # batchUpdate should NOT have been called
     service.spreadsheets.return_value.batchUpdate.assert_not_called()
+
+
+def test_add_us_section_header_reapplies_validation_with_members(monkeypatch):
+    """When get_user_memory is provided AND .redmine.project_contexts has
+    members for the mapped redmine_project_id, a SECOND batchUpdate is
+    emitted containing setDataValidation + addConditionalFormatRule
+    for the TESTER (col 6) and LAST_TEST_RESULT (col 8) columns.
+
+    The first batchUpdate still contains only the 4 original requests
+    (insertDimension, repeatCell, mergeCells, repeatCell value).
+    """
+    import asyncio
+
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    # Mock memory fetch
+    async def fake_get_user_memory(key: str):
+        if key == ".google-sheets":
+            return {
+                "value": {
+                    "projects": [
+                        {
+                            "spreadsheet_id": "abc123",
+                            "redmine_project_id": 12,
+                        }
+                    ]
+                }
+            }
+        if key == ".redmine":
+            return {
+                "value": {
+                    "project_contexts": {
+                        "12": {
+                            "members": [
+                                {"user": {"id": 1, "name": "Alice"}},
+                                {"user": {"id": 2, "name": "Bob"}},
+                            ]
+                        }
+                    }
+                }
+            }
+        return {}
+
+    asyncio.run(
+        manager.add_us_section_header(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            us_title="[US-1] Login Feature",
+            row_index=2,
+            color="#4285F4",
+            get_user_memory=fake_get_user_memory,
+        )
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    # 1st call: insert + format (4 requests). 2nd call: re-apply validation.
+    assert len(batch_calls) == 2
+
+    reapply_requests = batch_calls[1].kwargs["body"]["requests"]
+    # 2 columns (tester, last_test_result) + conditional formats
+    set_data_validations = [r for r in reapply_requests if "setDataValidation" in r]
+    assert len(set_data_validations) == 2
+
+    # Column 6 (tester) must contain both member names
+    tester_rule = next(
+        r
+        for r in set_data_validations
+        if r["setDataValidation"]["range"]["startColumnIndex"] == 6
+    )
+    tester_values = [
+        v["userEnteredValue"]
+        for v in tester_rule["setDataValidation"]["rule"]["condition"]["values"]
+    ]
+    assert "Alice" in tester_values
+    assert "Bob" in tester_values
+
+    # Column 8 (last_test_result) must contain 4 options incl. Blocked
+    result_rule = next(
+        r
+        for r in set_data_validations
+        if r["setDataValidation"]["range"]["startColumnIndex"] == 8
+    )
+    result_values = [
+        v["userEnteredValue"]
+        for v in result_rule["setDataValidation"]["rule"]["condition"]["values"]
+    ]
+    assert "Not Tested" in result_values
+    assert "Pass" in result_values
+    assert "Fail" in result_values
+    assert "Blocked" in result_values
+
+
+def test_add_us_section_header_skips_reapply_without_memory(monkeypatch):
+    """When get_user_memory is None, add_us_section_header must NOT call
+    batchUpdate a second time. Backward-compatible behavior — the 4
+    original requests are still emitted once.
+    """
+    import asyncio
+
+    manager = GoogleSheetsManager()
+    manager.reset()
+    service = _mock_service_with_sheet(sheet_id=5)
+    monkeypatch.setattr(manager, "get_service", lambda: service)
+
+    asyncio.run(
+        manager.add_us_section_header(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            us_title="[US-1] Login Feature",
+            row_index=2,
+            color="#4285F4",
+            get_user_memory=None,
+        )
+    )
+
+    batch_calls = service.spreadsheets.return_value.batchUpdate.call_args_list
+    # Only the original 4 requests — no re-apply call
+    assert len(batch_calls) == 1
 
 
 def test_us_title_cell_format():
