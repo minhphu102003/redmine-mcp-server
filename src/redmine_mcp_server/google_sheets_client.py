@@ -366,19 +366,28 @@ class GoogleSheetsManager:
             .execute()
         )
 
-    def add_us_section_header(
+    async def add_us_section_header(
         self,
         spreadsheet_id: str,
         sheet_name: str,
         us_title: str,
         row_index: int,
         color: str,
+        *,
+        get_user_memory: Optional[Any] = None,
     ) -> None:
         """Insert a US section header row (merged, colored) above test case rows.
 
         Adds a single merged row with background color and bold white text
         displaying "[US-N] US Title" to visually separate test cases belonging
         to different user stories in the same sheet.
+
+        After inserting, re-applies data validation and conditional formatting
+        for the sheet because ``insertDimension`` shifts existing rows and
+        can invalidate data validation rules on the affected range. Re-apply
+        is a no-op (skipped with a warning) when ``get_user_memory`` is not
+        provided or the memory fetch fails — caller compatibility is
+        preserved.
 
         Args:
             spreadsheet_id: Google Spreadsheet ID.
@@ -387,6 +396,12 @@ class GoogleSheetsManager:
             row_index: 0-based row index where the header row is inserted
                        (shifts existing rows down by 1).
             color: Hex color string (e.g. "#4285F4") for the header background.
+            get_user_memory: Optional async callable ``(key: str) -> Any`` used
+                to fetch ``.redmine`` and ``.google-sheets`` memory entries.
+                When provided, the function looks up the Redmine project
+                associated with this spreadsheet and reads its member names
+                from ``.redmine.project_contexts[<project_id>].members`` so
+                the TESTER dropdown has the correct options.
         """
         service = self.get_service()
 
@@ -498,6 +513,99 @@ class GoogleSheetsManager:
             logger.info("add_us_section_header: batchUpdate response = %s", response)
         except Exception as e:
             logger.warning("add_us_section_header batchUpdate failed: %s", e)
+            return
+
+        if get_user_memory is None:
+            logger.info(
+                "add_us_section_header: no get_user_memory provided, "
+                "skipping re-apply of data validation (backward-compat mode)"
+            )
+            return
+
+        member_names: List[str] = []
+        try:
+            sheets_memory = await get_user_memory(".google-sheets")
+            redmine_memory = await get_user_memory(".redmine")
+        except Exception as e:
+            logger.warning(
+                "add_us_section_header: memory fetch failed (%s); "
+                "skipping re-apply of data validation",
+                e,
+            )
+            return
+
+        try:
+            projects = []
+            if isinstance(sheets_memory, dict):
+                value = sheets_memory.get("value")
+                if isinstance(value, dict):
+                    projects = value.get("projects", []) or []
+
+            redmine_project_id: Optional[str] = None
+            for p in projects:
+                if isinstance(p, dict) and p.get("spreadsheet_id") == spreadsheet_id:
+                    raw_pid = p.get("redmine_project_id")
+                    if raw_pid is not None:
+                        redmine_project_id = str(raw_pid)
+                    break
+
+            if redmine_project_id is None:
+                logger.warning(
+                    "add_us_section_header: no redmine_project_id found for "
+                    "spreadsheet_id=%s in .google-sheets memory; "
+                    "skipping re-apply of TESTER dropdown",
+                    spreadsheet_id,
+                )
+            else:
+                project_contexts: Dict[str, Any] = {}
+                if isinstance(redmine_memory, dict):
+                    rm_value = redmine_memory.get("value")
+                    if isinstance(rm_value, dict):
+                        project_contexts = rm_value.get("project_contexts", {}) or {}
+
+                context = project_contexts.get(redmine_project_id, {})
+                if not isinstance(context, dict):
+                    context = {}
+
+                members = context.get("members", []) or []
+                for m in members:
+                    if isinstance(m, dict):
+                        user = m.get("user")
+                        if isinstance(user, dict) and user.get("name"):
+                            member_names.append(str(user["name"]))
+
+                if member_names:
+                    logger.info(
+                        "add_us_section_header: fetched %d member names for "
+                        "redmine_project_id=%s; re-applying validation",
+                        len(member_names),
+                        redmine_project_id,
+                    )
+                else:
+                    logger.warning(
+                        "add_us_section_header: no members found in "
+                        ".redmine.project_contexts[%s] for spreadsheet_id=%s; "
+                        "TESTER dropdown will be skipped",
+                        redmine_project_id,
+                        spreadsheet_id,
+                    )
+        except Exception as e:
+            logger.warning(
+                "add_us_section_header: failed to resolve member names (%s); "
+                "skipping re-apply of TESTER dropdown",
+                e,
+            )
+
+        try:
+            self.reapply_sheet_validations(
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                member_names=member_names,
+            )
+        except Exception as e:
+            logger.warning(
+                "add_us_section_header: reapply_sheet_validations failed: %s", e
+            )
 
     def reset_all_tc_blocks_formatting(
         self,
@@ -1300,6 +1408,180 @@ class GoogleSheetsManager:
             service.spreadsheets().batchUpdate(
                 spreadsheetId=spreadsheet_id, body={"requests": requests}
             ).execute()
+
+    def reapply_sheet_validations(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        member_names: Optional[List[str]] = None,
+    ) -> None:
+        """Re-apply data validation and conditional formatting for a single sheet.
+
+        Used after operations that may have invalidated existing data
+        validation rules (e.g. ``insertDimension`` in
+        :meth:`add_us_section_header`, which shifts existing rows and
+        can drop validation rules on the affected range).
+
+        Only re-applies ``setDataValidation`` and
+        ``addConditionalFormatRule`` requests. Does NOT touch
+        ``userEnteredFormat`` (background, text, alignment) — those
+        must continue to be reset separately by
+        :meth:`reset_all_tc_blocks_formatting` (or
+        :meth:`apply_tc_rows_default_formatting`) to prevent TC rows
+        from inheriting the US title's colored background.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name (e.g. "TestCases" or "Bugs").
+            member_names: List of Redmine member names for the
+                TESTER (TestCases) or ASSIGNED_TO (Bugs) dropdown.
+                If ``None`` or empty, the dynamic member column is
+                skipped with a warning.
+        """
+        logger.info(
+            "reapply_sheet_validations ENTRY spreadsheet_id=%s sheet_name=%s "
+            "member_count=%d",
+            spreadsheet_id,
+            sheet_name,
+            len(member_names) if member_names else 0,
+        )
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        row_count: int = 1000
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    fields=(
+                        "sheets.properties(sheetId,title," "gridProperties/rowCount)"
+                    ),
+                )
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                props = s.get("properties", {})
+                if props.get("title") == sheet_name:
+                    sheet_id = props.get("sheetId")
+                    row_count = props.get("gridProperties", {}).get("rowCount", 1000)
+                    break
+        except Exception as e:
+            logger.warning("reapply_sheet_validations: get meta failed: %s", e)
+            return
+
+        if sheet_id is None:
+            logger.warning(
+                "reapply_sheet_validations: sheet not found (%s)", sheet_name
+            )
+            return
+
+        if sheet_name == "TestCases":
+            validations_map = TESTCASES_VALIDATIONS
+            colors_map = TESTCASES_COLORS
+        elif sheet_name == "Bugs":
+            validations_map = BUGS_VALIDATIONS
+            colors_map = BUGS_COLORS
+        else:
+            logger.warning(
+                "reapply_sheet_validations: unsupported sheet_name=%s", sheet_name
+            )
+            return
+
+        members = member_names or []
+        requests: List[Dict[str, Any]] = []
+
+        for col_idx, options in validations_map.items():
+            if options is None:
+                options = members
+            if not options:
+                logger.warning(
+                    "reapply_sheet_validations: skipping column %d "
+                    "(no options for sheet=%s)",
+                    col_idx,
+                    sheet_name,
+                )
+                continue
+
+            requests.append(
+                {
+                    "setDataValidation": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": row_count,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
+                        },
+                        "rule": {
+                            "condition": {
+                                "type": "ONE_OF_LIST",
+                                "values": [
+                                    {"userEnteredValue": opt} for opt in options
+                                ],
+                            },
+                            "showCustomUi": True,
+                            "strict": True,
+                        },
+                    }
+                }
+            )
+
+            color_map = colors_map.get(col_idx, {})
+            for option in options:
+                if option in color_map:
+                    requests.append(
+                        {
+                            "addConditionalFormatRule": {
+                                "rule": {
+                                    "ranges": [
+                                        {
+                                            "sheetId": sheet_id,
+                                            "startRowIndex": 1,
+                                            "endRowIndex": row_count,
+                                            "startColumnIndex": col_idx,
+                                            "endColumnIndex": col_idx + 1,
+                                        }
+                                    ],
+                                    "booleanRule": {
+                                        "condition": {
+                                            "type": "TEXT_EQ",
+                                            "values": [{"userEnteredValue": option}],
+                                        },
+                                        "format": {
+                                            "backgroundColor": _hex_to_rgb(
+                                                color_map[option]
+                                            )
+                                        },
+                                    },
+                                },
+                                "index": 0,
+                            }
+                        }
+                    )
+
+        if not requests:
+            logger.info(
+                "reapply_sheet_validations: no requests to emit sheet=%s",
+                sheet_name,
+            )
+            return
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": requests}
+            ).execute()
+            logger.info(
+                "reapply_sheet_validations: emitted %d requests sheet=%s",
+                len(requests),
+                sheet_name,
+            )
+        except Exception as e:
+            logger.warning(
+                "reapply_sheet_validations: batchUpdate failed sheet=%s err=%s",
+                sheet_name,
+                e,
+            )
 
 
 google_sheets_manager = GoogleSheetsManager()

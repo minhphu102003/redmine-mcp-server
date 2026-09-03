@@ -2299,8 +2299,8 @@ async def set_sheet_data_validation(
     ] = 2,
     end_row: Annotated[
         int,
-        Field(description="End row index (0-based, default 1000)"),
-    ] = 1000,
+        Field(description="End row index (0-based, default 100000)"),
+    ] = 100000,
     strict: Annotated[
         bool,
         Field(description="If True, only values from the list are allowed"),

@@ -538,12 +538,13 @@ async def create_test_cases_on_sheet_impl(
             us_header_row_index = 1 + existing_count
 
         if sheet_id is not None:
-            google_sheets_manager.add_us_section_header(
+            await google_sheets_manager.add_us_section_header(
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
                 us_title=us_title_cell,
                 row_index=us_header_row_index,
                 color=color,
+                get_user_memory=get_user_memory,
             )
 
         # Append test case rows
@@ -1164,7 +1165,7 @@ async def set_sheet_data_validation_impl(
     options: List[str],
     *,
     start_row: int = 2,
-    end_row: int = 1000,
+    end_row: int = 100000,
     strict: bool = True,
     input_message: str = "",
     get_sheets_service: Callable[[], Any],
