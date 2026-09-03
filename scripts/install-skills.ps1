@@ -33,7 +33,7 @@ if ($libCandidate) {
     . ([scriptblock]::Create($libCode))
 }
 
-$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
+$skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report", "boss-project-oversight", "testcase-generation", "bug-reporting", "bug-to-redmine", "status-sync", "reopen-bug")
 
 if ([string]::IsNullOrWhiteSpace($Target)) {
     try {

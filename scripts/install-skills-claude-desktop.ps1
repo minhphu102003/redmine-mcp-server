@@ -14,14 +14,15 @@ $RawBase = "https://raw.githubusercontent.com/${RepoOwner}/${RepoName}/${Branch}
 $ApiBase = "https://api.github.com/repos/${RepoOwner}/${RepoName}/contents"
 $OutputDir = "claude-desktop-skills"
 
-# Skills list for Claude Desktop (QA-focused)
+# Skills list for Claude Desktop (QA-focused + boss oversight)
 $SkillNames = @(
     "redmine-init",
     "testcase-generation",
     "bug-reporting",
     "bug-to-redmine",
     "status-sync",
-    "reopen-bug"
+    "reopen-bug",
+    "boss-project-oversight"
 )
 
 # Create temp directory for downloading

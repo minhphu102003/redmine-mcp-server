@@ -11,11 +11,11 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 
 | Kind | Count |
 |---|---|
-| MCP tools (`@mcp.tool()`) | 37 |
+| MCP tools (`@mcp.tool()`) | 39 |
 | MCP resources (`@mcp.resource()`) | 4 |
 | Custom HTTP routes (`@mcp.custom_route()`) | 1 |
 
-## Quick reference (all 37 tools)
+## Quick reference (all 39 tools)
 
 | Tool | Category | Description |
 |---|---|---|
@@ -37,6 +37,8 @@ and HTTP route currently exposed by the `redmine-mcp-server`.
 | [`update_time_entry`](#update_time_entry) | Time entries | Update an existing time entry |
 | [`delete_time_entry`](#delete_time_entry) | Time entries | Delete a time entry |
 | [`list_time_entry_activities`](#list_time_entry_activities) | Time entries | List available time-entry activities |
+| [`list_personnel`](#list_personnel) | Personnel | List unique project members across projects (boss step 1) |
+| [`get_person_work_summary`](#get_person_work_summary) | Personnel | Per-person day/week performance grouped by project with evidence (boss step 3) |
 | [`search_entire_redmine`](#search_entire_redmine) | Search | Search issues and wiki pages across the instance |
 | [`get_redmine_wiki_page`](#get_redmine_wiki_page) | Wiki | Retrieve full wiki page content |
 | [`create_redmine_wiki_page`](#create_redmine_wiki_page) | Wiki | Create a new wiki page |
@@ -424,6 +426,44 @@ List available time entry activities from Redmine.
 **Parameters:** None
 
 **Returns:** `List[Dict]` of activities (`id`, `name`, `is_default`, `active`).
+
+---
+
+## Personnel & performance tools (manager oversight, read-only)
+
+### `list_personnel`
+
+List unique project members across projects so the boss can pick one person.
+Deduplicates by user id, merges each person's projects + roles, skips group
+memberships (counted in `groups_skipped`), and keeps per-project errors without
+failing the whole call.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_ids` | `List[int]` | no | Restrict to these projects. Omit for all accessible projects |
+
+**Returns:** `Dict` with `personnel` (`id`, `name`, `projects[{id, name, roles}]`),
+`count`, `project_count`, `groups_skipped`, `errors`.
+
+### `get_person_work_summary`
+
+Summarize one person's performance for a day or a Monday–Sunday week, grouped
+by project. Resolves `person` (user id or name/login via the admin
+`/users.json` API — ambiguous names return candidates instead of guessing),
+then returns per-project activity (hours logged, issues touched/closed in the
+window) plus the current backlog (open count, `overdue` where `due_date` is past
+and the status is open, `no_due_date` listed separately) and an `evidence`
+block (filters used, query time, totals) for Redmine-UI cross-checks.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `person` | `int \| str` | yes | User ID (from `list_personnel`) or name/login |
+| `window` | `str` | no | `'day'` (default) or `'week'` (Mon–Sun containing the date) |
+| `date_str` | `str` | no | Reference date `YYYY-MM-DD` (defaults to server today) |
+| `project_ids` | `List[int]` | no | Restrict to these projects. Omit for all accessible projects |
+
+**Returns:** `Dict` with `person`, `window{type, from, to}`,
+`per_project[{project, activity, backlog}]`, `totals`, `evidence`.
 
 ---
 

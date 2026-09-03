@@ -134,6 +134,7 @@ Nếu bạn là tester và muốn dùng QA skills (testcase-generation, bug-repo
 | `redmine-daily-report` | Báo cáo daily |
 | `redmine-issue-workflow` | Workflow issue |
 | `redmine-planning` | Lập kế hoạch |
+| `boss-project-oversight` | Giám sát nhân sự cho boss (1 người/lần, theo ngày/tuần, cần API key admin) |
 
 ---
 

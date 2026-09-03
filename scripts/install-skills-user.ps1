@@ -40,14 +40,15 @@ if ($libCandidate) {
     . ([scriptblock]::Create($libCode))
 }
 
-# 6 tester skills (same list as install-skills-tester.ps1)
+# 6 tester skills (same list as install-skills-tester.ps1) + boss oversight
 $skills = @(
     "redmine-init",
     "testcase-generation",
     "bug-reporting",
     "bug-to-redmine",
     "status-sync",
-    "reopen-bug"
+    "reopen-bug",
+    "boss-project-oversight"
 )
 
 if (-not $env:USERPROFILE) {
