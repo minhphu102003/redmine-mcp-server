@@ -1,5 +1,8 @@
 ﻿# Install-Skill.ps1
 # Shared helpers for install-skills*.ps1 scripts.
+# NOTE: keep this file ASCII-only (no em-dash, no smart-quote) so it parses
+# correctly via 'irm ... | iex' on Windows PowerShell 5.1, which can strip
+# BOM from raw.githubusercontent.com responses.
 # Both functions:
 #   - Always copy SKILL.md (entry point).
 #   - Always copy every *.md file in the skill folder EXCEPT README.md
@@ -21,7 +24,7 @@ function Install-SkillFromLocal {
 
     $skillMd = Join-Path $SourceDir "SKILL.md"
     if (-not (Test-Path -LiteralPath $skillMd)) {
-        throw "SKILL.md not found in $SourceDir — cannot install '$SkillName'"
+        throw "SKILL.md not found in $SourceDir -- cannot install '$SkillName'"
     }
     Copy-Item -Path $skillMd -Destination (Join-Path $DestDir "SKILL.md") -Force
 
@@ -51,7 +54,7 @@ function Install-SkillFromGitHub {
         $response = Invoke-WebRequest -Uri $apiUrl -Headers $headers -UseBasicParsing |
             ConvertFrom-Json
     } catch {
-        throw "Failed to list files for skill '$SkillName' at $apiUrl — $_"
+        throw "Failed to list files for skill '$SkillName' at $apiUrl -- $_"
     }
 
     if ($null -eq $response -or $response.Count -eq 0) {
@@ -73,6 +76,6 @@ function Install-SkillFromGitHub {
     }
 
     if (-not (Test-Path -LiteralPath (Join-Path $DestDir "SKILL.md"))) {
-        throw "SKILL.md missing for '$SkillName' after install — skill install failed"
+        throw "SKILL.md missing for '$SkillName' after install -- skill install failed"
     }
 }

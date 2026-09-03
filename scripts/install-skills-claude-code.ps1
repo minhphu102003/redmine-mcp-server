@@ -1,4 +1,7 @@
 ﻿# install-skills-claude-code.ps1
+# NOTE: keep this file ASCII-only (no em-dash, no smart-quote) so it parses
+# correctly via 'irm ... | iex' on Windows PowerShell 5.1, which can strip
+# BOM from raw.githubusercontent.com responses.
 # Install MCP skills to Claude Code skills directory
 # Usage: .\scripts\install-skills-claude-code.ps1
 
