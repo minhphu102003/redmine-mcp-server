@@ -1,6 +1,6 @@
 ---
 name: boss-project-oversight
-description: Use when the boss (a manager, in Vietnamese or English) asks about an employee's work — "cho tôi danh sách nhân viên", "xem A đang làm gì", "A có task nào trễ không", "A có kịp tiến độ không", performance by day/week. Runs a 3-step flow: (1) list personnel so the boss picks one person, (2) ask day or week, (3) show the backend summary grouped by project. ONE person per run — team/aggregate views are declined. Use ONLY for per-person oversight, not for daily personal reports, planning, or QA work.
+description: Use when the boss (a manager, in Vietnamese or English) asks about an employee's work — "cho tôi danh sách nhân viên", "xem A đang làm gì", "A có task nào trễ không", "A có kịp tiến độ không", performance by day/week. Runs a 3-step flow: (1) list personnel so the boss picks one person, (2) ask day or week, (3) render an interactive HTML widget (project dropdown, 2 metric cards, stacked bar chart Mon–Sun, click-a-day detail table) from the backend widget_data. ONE person per run — team/aggregate views are declined. Use ONLY for per-person oversight, not for daily personal reports, planning, or QA work.
 ---
 
 # Boss Project Oversight
@@ -18,6 +18,7 @@ Answer the boss's questions about **one employee at a time** using live Redmine 
 3. **One person per run**: if the boss asks about the whole team ("team làm sao rồi"), decline — *"Tôi xem từng người một cho chính xác — boss muốn xem ai trước?"* — then run the flow for that person.
 4. **Live data first, never invent**: every line traces to a tool result. Empty data → say "no tracked activity" and stop. Never fabricate hours, statuses, or blockers.
 5. **Overdue definition (fixed)**: `status is open (not closed) AND due_date < today (server date)`. Due today is NOT overdue. Closed issues are NEVER overdue. Issues with no `due_date` are listed separately and NEVER counted as overdue.
+6. **Completed definition (fixed, drives the widget)**: `done_ratio == 100 AND updated in the viewed window` — even when the status is still open. The tool computes this as `completed`/`widget_data`; the widget counts exactly these tasks.
 6. **Cite everything (evidence rule)**: every answer ends with an evidence footer — the filters used, the query time, `total_count` from the tool, and `issues/<id>` links that open in the Redmine UI for manual cross-check.
 7. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names you reuse.
 
@@ -51,27 +52,45 @@ After the boss picks a person (by number or name), ask before calling anything:
 
 ---
 
-## 4. Step 3 — Summary grouped by project
+## 4. Step 3 — Interactive performance widget (single HTML artifact)
 
-Call `get_person_work_summary(person=<id from step 1>, window=<day|week>, date_str=<date>)`. If the tool returns an `ambiguous` error, present the candidates and let the boss pick — never guess.
+Call `get_person_work_summary(person=<id from step 1>, window=<day|week>, date_str=<date>, compact=true)`. If the tool returns an `ambiguous` error, present the candidates and let the boss pick — never guess.
 
-Render the result in this shape (Vietnamese headers, concise):
+Then build **one self-contained interactive HTML artifact** (inline `<style>` + `<script>`, **no CDN, no external requests** — it must work offline) from the tool's `widget_data`, embedded verbatim as `const DATA = {...}`:
 
-```markdown
-**Hiệu suất — {Tên} — {Ngày | Tuần T2 DD/MM – CN DD/MM}**
-
-Tổng: {hours}h đã log · {touched} issues đã chạm · {closed} đã đóng · tồn đọng {open} (trễ {overdue})
-
-**{Project A}:**
-- Activity: {hours}h · đã chạm: #{id} subject (status, %done) · đã đóng: #{id} subject
-- Tồn đọng: trễ: #{id} subject (due DD/MM, %done, link) · chưa có hạn: #{id} subject · đang làm: ...
-
-**{Project B}:** ...
-
-Evidence: filter assigned_to_id={id}, window {from}..{to}, queried at {time}, total_count {n}. Đối chiếu: {redmine-base}/issues/<id>.
+```json
+{
+  "Thứ 2": [{"id": 1, "name": "Task A", "project": "Web",
+              "est": 3, "actual": 2.5, "url": "https://.../issues/1"}],
+  "Thứ 3": [], "Thứ 4": [], "Thứ 5": [],
+  "Thứ 6": [], "Thứ 7": [], "Chủ nhật": []
+}
 ```
 
-- Verdict line per person ("on-track / at-risk / overdue-heavy") is allowed ONLY as a summary of the numbers above — one line, no new claims.
+Never invent, reorder, or summarize this data — embed it exactly as returned (day keys stay Monday-first). `est` = estimate hours (0 when Redmine has none), `actual` = hours logged on that task inside the window (0 when none logged).
+
+### 4a. Layout (top to bottom)
+
+1. **Title**: `Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}`.
+2. **Project dropdown** (top): `Tất cả` + one option per project found in DATA (order of first appearance). Default: `Tất cả`.
+3. **Two metric cards** (recomputed from the active filter):
+   - Tổng task hoàn thành = number of tasks matching the filter.
+   - Tỷ lệ hiệu suất = Σest / Σactual × 100, one decimal + `%`; when Σactual is 0 show `—`.
+4. **Stacked bar chart** (Thứ 2 → Chủ nhật, fixed order): each column stacks completed-task counts per project; `Tất cả` shows all projects stacked, one project shows only its segment. Column height scales to the tallest column. Below/above: a **legend** of project name + color swatch.
+5. **Detail table** (hidden until a column is clicked): rows = tasks of the clicked day AND the active project filter. Columns: Tên task (hyperlink via `url`), Project, Giờ estimate, Giờ thực tế, Chênh lệch = actual − est with 2 decimals — **red when > 0 (over estimate), green when ≤ 0**. Empty day → one row: `Không có task hoàn thành`.
+6. **Footer inside the widget**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
+
+### 4b. Behavior (all client-side, no re-fetch)
+
+- One state `{projectFilter: 'all' | name, selectedDay: string | null}` and one `render()` that recomputes cards, chart, and table on every change (dropdown change, bar click).
+- Clicking a bar selects that day (visual highlight) and renders its table; clicking the selected bar again deselects it.
+- Fixed palette by project index (same project = same color everywhere): `#2563eb, #16a34a, #dc2626, #d97706, #7c3aed, #0891b2, #db2777, #65a30d` (wrap around if more than 8 projects).
+- Numbers: hours with up to 2 decimals, counts as integers, Vietnamese day labels verbatim.
+
+### 4c. After the artifact (chat message, concise)
+
+- One verdict line per person (`on-track` / `at-risk` / `overdue-heavy`) ONLY as a summary of the widget numbers — no new claims.
+- Evidence footer: `filter assigned_to_id={id}, window {from}..{to}, queried at {time}, completed {n}` + one `issues/<id>` link per completed task for Redmine-UI cross-check.
 - Blockers are never deduced. If the boss asks about blockers, ask the employee — do not guess from statuses.
 
 ---

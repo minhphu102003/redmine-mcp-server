@@ -1024,11 +1024,13 @@ Summarize one person's performance for a day or a Monday–Sunday week, grouped 
 - `window` (string, optional): `"day"` (default) or `"week"` (Mon–Sun week containing the reference date, even when it is a Sunday)
 - `date_str` (string, optional): Reference date `YYYY-MM-DD`. Defaults to today (server date)
 - `project_ids` (array of integers, optional): Restrict to these project IDs. Omit for all accessible projects
+- `compact` (boolean, optional): When `true`, skip the per-project detail and return only `person`, `window`, `widget_data`, `totals`, and `evidence` (smaller payload for the oversight widget). Default: `false`
 
 **Returns:** Dictionary with:
 - `person` (`id`, `name`, `login`, `mail`)
 - `window` (`type`, `from`, `to`)
-- `per_project`: per project, `activity` (`hours`, `touched`/`touched_count`, `closed`/`closed_count`) and `backlog` (`open_count`, `overdue`/`overdue_count`, `no_due_date`/`no_due_date_count`, `in_progress`). Each issue brief carries `id`, `subject`, `status`, `due_date`, `done_ratio`, `updated_on`, and `url`
+- `widget_data`: completed tasks bucketed per weekday (`Thứ 2` … `Chủ nhật`), each item `id`, `name`, `project`, `est`, `actual`, `url` — embed verbatim into the oversight widget. A task counts as completed when `done_ratio == 100` (even with an open status) and it was updated inside the window; `est` is 0 when Redmine has no estimate, `actual` sums the time entries logged on that issue inside the window (0 when none)
+- `per_project`: per project, `activity` (`hours`, `touched`/`touched_count`, `closed`/`closed_count`) and `backlog` (`open_count`, `overdue`/`overdue_count`, `no_due_date`/`no_due_date_count`, `in_progress`). Each issue brief carries `id`, `subject`, `status`, `due_date`, `done_ratio`, `estimated_hours`, `actual_hours`, `updated_on`, and `url`. Omitted when `compact=true`
 - `totals`: `hours`, `time_entries`, `touched_count`, `closed_count`, `open_count`, `overdue_count`, `no_due_date_count`
 - `evidence`: `queried_at`, `person_query`, `filters_used`, `totals` — cite this block so the boss can cross-check every answer in the Redmine UI
 

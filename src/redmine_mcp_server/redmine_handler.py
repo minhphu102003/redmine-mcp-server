@@ -2135,21 +2135,34 @@ async def get_person_work_summary(
             )
         ),
     ] = None,
+    compact: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, skip the per-project detail and return only"
+                " person, window, widget_data, totals and evidence"
+                " (smaller payload for the oversight widget)."
+            )
+        ),
+    ] = False,
 ) -> Dict[str, Any]:
     """Summarize one person's performance for a day or week, grouped by project.
 
     Use as step 3 of the boss workflow after the boss picks a person and a
-    day/week window. Returns per-project activity (hours logged, issues touched
-    and closed in the window) plus the current backlog (open, overdue where
-    due_date is past and status is open, no-due-date listed separately) and an
-    evidence block (filters used, query time, totals) so every answer can be
-    cross-checked in the Redmine UI. Read-only.
+    day/week window. Always returns widget_data (completed tasks per weekday
+    with estimate vs actual hours, ready to embed into the oversight widget)
+    plus per-project activity (hours logged, issues touched and closed in the
+    window), the current backlog (open, overdue where due_date is past and
+    status is open, no-due-date listed separately) and an evidence block
+    (filters used, query time, totals) so every answer can be cross-checked
+    in the Redmine UI. Read-only.
     """
     return await get_person_work_summary_impl(
         person,
         window,
         date_str,
         project_ids,
+        compact,
         get_client=_get_redmine_client,
         handle_error=_handle_redmine_error,
     )

@@ -25,6 +25,17 @@ HandleErrorFn = Callable[
 
 _PAGE_SIZE = 100
 
+# Vietnamese weekday labels, Monday-first, for widget_data keys.
+_VI_DAY_NAMES = [
+    "Thứ 2",
+    "Thứ 3",
+    "Thứ 4",
+    "Thứ 5",
+    "Thứ 6",
+    "Thứ 7",
+    "Chủ nhật",
+]
+
 
 # --- Small date helpers ---
 
@@ -82,13 +93,32 @@ def _user_display_name(user: Any) -> str:
     return str(login) if login else f"user #{getattr(user, 'id', '?')}"
 
 
-def _issue_brief(issue: Any, base_url: str) -> Dict[str, Any]:
+def _round2(value: Any) -> float:
+    """Coerce to float rounded to 2 decimals (0.0 on garbage)."""
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _done_ratio_100(issue: Any) -> bool:
+    """Whether the issue counts as completed (done_ratio == 100)."""
+    try:
+        return int(float(getattr(issue, "done_ratio", 0) or 0)) == 100
+    except (TypeError, ValueError):
+        return False
+
+
+def _issue_brief(
+    issue: Any, base_url: str, actual_hours: float = 0.0
+) -> Dict[str, Any]:
     """Compact, UI-ready issue summary for grouped performance views."""
     project = getattr(issue, "project", None)
     status = getattr(issue, "status", None)
     updated = getattr(issue, "updated_on", None)
     issue_id = getattr(issue, "id", None)
     url = f"{base_url}/issues/{issue_id}" if base_url and issue_id else None
+    estimated = getattr(issue, "estimated_hours", None)
     return {
         "id": issue_id,
         "subject": getattr(issue, "subject", ""),
@@ -100,6 +130,8 @@ def _issue_brief(issue: Any, base_url: str) -> Dict[str, Any]:
         ),
         "due_date": (_as_date(getattr(issue, "due_date", None)) or None),
         "done_ratio": getattr(issue, "done_ratio", None),
+        "estimated_hours": (_round2(estimated) if estimated is not None else None),
+        "actual_hours": _round2(actual_hours),
         "updated_on": (
             updated.isoformat()
             if isinstance(updated, datetime)
@@ -275,11 +307,18 @@ async def get_person_work_summary_impl(
     window: str = "day",
     date_str: Optional[str] = None,
     project_ids: Optional[List[int]] = None,
+    compact: bool = False,
     *,
     get_client: Callable[[], Any],
     handle_error: HandleErrorFn,
 ) -> Dict[str, Any]:
-    """Summarize one person's performance for a day or Mon-Sun week."""
+    """Summarize one person's performance for a day or Mon-Sun week.
+
+    Besides the grouped detail (skipped when ``compact`` is True), always
+    returns ``completed`` (done_ratio == 100, updated in the window) and
+    ``widget_data`` — completed tasks bucketed per weekday with estimate vs
+    actual hours, ready to embed verbatim into the oversight widget.
+    """
     if window not in ("day", "week"):
         return {"error": f"Invalid window '{window}'. Use 'day' or 'week'."}
     day = _parse_day(date_str)
@@ -327,16 +366,23 @@ async def get_person_work_summary_impl(
         )
         hours_total = 0.0
         hours_by_project: Dict[Any, float] = {}
+        actual_by_issue: Dict[Any, float] = {}
         for entry in time_entries:
-            try:
-                hours_total += float(getattr(entry, "hours", 0) or 0)
-            except (TypeError, ValueError):
-                continue
+            entry_hours = _round2(getattr(entry, "hours", 0))
+            hours_total += entry_hours
             project = getattr(entry, "project", None)
             if project is not None and (scope is None or project.id in scope):
-                hours_by_project[project.id] = hours_by_project.get(
-                    project.id, 0.0
-                ) + float(getattr(entry, "hours", 0) or 0)
+                hours_by_project[project.id] = (
+                    hours_by_project.get(project.id, 0.0) + entry_hours
+                )
+            entry_issue = getattr(entry, "issue", None)
+            entry_issue_id = (
+                getattr(entry_issue, "id", None) if entry_issue is not None else None
+            )
+            if entry_issue_id is not None:
+                actual_by_issue[entry_issue_id] = (
+                    actual_by_issue.get(entry_issue_id, 0.0) + entry_hours
+                )
 
         # Activity: assigned issues touched in the window (any status).
         touched_raw = await _fetch_all_pages(
@@ -378,6 +424,43 @@ async def get_person_work_summary_impl(
             if _as_date(getattr(issue, "due_date", None)) is None
         ]
 
+        # Completed in the window: done_ratio == 100 (even when not closed).
+        completed = [issue for issue in touched if _done_ratio_100(issue)]
+
+        # Widget data: completed tasks bucketed per weekday, ready to embed
+        # verbatim into the oversight widget. Keys cover every date in the
+        # window (7 Vietnamese labels Mon-Sun for a week, 1 for a day).
+        day_cursor = start
+        window_days: List[date] = []
+        while day_cursor <= end:
+            window_days.append(day_cursor)
+            day_cursor += timedelta(days=1)
+        widget_data: Dict[str, List[Dict[str, Any]]] = {
+            _VI_DAY_NAMES[d.weekday()]: [] for d in window_days
+        }
+        for issue in completed:
+            updated_day = _as_date(getattr(issue, "updated_on", None))
+            if updated_day is None or updated_day < start or updated_day > end:
+                continue
+            project = getattr(issue, "project", None)
+            issue_id = getattr(issue, "id", None)
+            widget_data[_VI_DAY_NAMES[updated_day.weekday()]].append(
+                {
+                    "id": issue_id,
+                    "name": getattr(issue, "subject", ""),
+                    "project": (
+                        getattr(project, "name", "") if project is not None else ""
+                    ),
+                    "est": _round2(getattr(issue, "estimated_hours", None)),
+                    "actual": _round2(actual_by_issue.get(issue_id, 0.0)),
+                    "url": (
+                        f"{base_url}/issues/{issue_id}"
+                        if base_url and issue_id
+                        else None
+                    ),
+                }
+            )
+
         # Group everything by project for the agent-rendered UI.
         project_names: Dict[Any, str] = {}
         for issue in touched + backlog:
@@ -388,7 +471,14 @@ async def get_person_work_summary_impl(
                 )
 
         def briefs(issues: List[Any]) -> List[Dict[str, Any]]:
-            return [_issue_brief_json_safe(_issue_brief(i, base_url)) for i in issues]
+            return [
+                _issue_brief_json_safe(
+                    _issue_brief(
+                        i, base_url, actual_by_issue.get(getattr(i, "id", None), 0.0)
+                    )
+                )
+                for i in issues
+            ]
 
         per_project: List[Dict[str, Any]] = []
         touched_by_project: Dict[Any, List[Any]] = {}
@@ -456,18 +546,19 @@ async def get_person_work_summary_impl(
             "time_entries": len(time_entries),
             "touched_count": len(touched),
             "closed_count": len(closed_in_window),
+            "completed_count": len(completed),
             "open_count": len(backlog),
             "overdue_count": len(overdue),
             "no_due_date_count": len(no_due_date),
         }
-        return {
+        result: Dict[str, Any] = {
             "person": resolved,
             "window": {
                 "type": window,
                 "from": start.isoformat(),
                 "to": end.isoformat(),
             },
-            "per_project": per_project,
+            "widget_data": widget_data,
             "totals": totals,
             "evidence": {
                 "queried_at": datetime.now(timezone.utc).isoformat(),
@@ -485,5 +576,8 @@ async def get_person_work_summary_impl(
                 "totals": totals,
             },
         }
+        if not compact:
+            result["per_project"] = per_project
+        return result
     except Exception as e:
         return handle_error(e, "summarizing person workload", None)

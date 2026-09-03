@@ -461,9 +461,14 @@ block (filters used, query time, totals) for Redmine-UI cross-checks.
 | `window` | `str` | no | `'day'` (default) or `'week'` (Mon–Sun containing the date) |
 | `date_str` | `str` | no | Reference date `YYYY-MM-DD` (defaults to server today) |
 | `project_ids` | `List[int]` | no | Restrict to these projects. Omit for all accessible projects |
+| `compact` | `bool` | no | Skip per-project detail; return person, window, widget_data, totals, evidence |
 
 **Returns:** `Dict` with `person`, `window{type, from, to}`,
-`per_project[{project, activity, backlog}]`, `totals`, `evidence`.
+`widget_data` (completed tasks per weekday `Thứ 2`…`Chủ nhật`, each with
+`id`/`name`/`project`/`est`/`actual`/`url` — completed means
+`done_ratio == 100` updated in the window),
+`per_project[{project, activity, backlog}]` (omitted when `compact=true`),
+`totals`, `evidence`.
 
 ---
 
