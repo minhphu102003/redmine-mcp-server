@@ -322,11 +322,15 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 The script installs the 6 tester skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`) plus any `*.md` template files in each skill folder (e.g. `USER_STORY_TEMPLATE.md`, `member-rules-catalog.md`, `google-sheets-schema.md`). `README.md` is filtered out — only skill payload lands on disk.
 
-The installer is idempotent (re-run any time to update) and accepts an optional GitHub token to lift the 60 req/h unauthenticated rate limit:
+**Optional — pass a GitHub token to lift the unauthenticated rate limit:**
+
+By default the script uses the unauthenticated GitHub Contents API (60 requests/hour per IP). That is enough for a single install of all 6 skills. Re-run many times in the same hour and you may hit `403 rate limit exceeded`. To avoid that, set a token first (any PAT with `public_repo` scope is enough since the repo is public):
 
 ```powershell
 $env:GITHUB_TOKEN = "<your_pat>"; irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex
 ```
+
+If you skip this and hit the rate limit, just wait an hour or generate a token — the script itself does not require a token to run.
 
 To uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
