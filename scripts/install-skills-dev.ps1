@@ -1,6 +1,6 @@
-﻿# NOTE: keep this file ASCII-only (no em-dash, no smart-quote) so it parses
-# correctly via 'irm ... | iex' on Windows PowerShell 5.1, which can strip
-# BOM from raw.githubusercontent.com responses.
+# NOTE: keep this file ASCII-only with NO BOM. raw.githubusercontent.com
+# serves the BOM through to 'irm', and Windows PowerShell 5.1 then fails
+# to parse the param() block when the script is run via 'irm ... | iex'.
 param(
     [string]$Target = "",
     [string]$Repo = "minhphu102003/redmine-mcp-server",
@@ -10,8 +10,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$libPath = Join-Path $PSScriptRoot "_lib\Install-Skill.ps1"
-. $libPath
+# Load the shared helper. When piped via 'irm ... | iex' there is no script
+# file on disk ($PSScriptRoot is empty), so fetch the helper from GitHub raw.
+$libCandidate = ""
+if ($PSScriptRoot) {
+    $candidate = Join-Path $PSScriptRoot "_lib\Install-Skill.ps1"
+    if (Test-Path -LiteralPath $candidate) { $libCandidate = $candidate }
+}
+if ($libCandidate) {
+    . $libCandidate
+} else {
+    $libUrl = "https://raw.githubusercontent.com/{0}/{1}/scripts/_lib/Install-Skill.ps1" -f $Repo, $Branch
+    try {
+        $libCode = Invoke-RestMethod -Uri $libUrl -UseBasicParsing
+    } catch {
+        throw "Cannot load shared helper from $libUrl -- $_"
+    }
+    # Strip a leading BOM if the server sends one: PS 5.1 misparses it
+    # inside [scriptblock]::Create (first-line comment becomes command '?#').
+    $libCode = $libCode.TrimStart([char]0xFEFF)
+    . ([scriptblock]::Create($libCode))
+}
 
 $skills = @("redmine-init", "redmine-issue-workflow", "redmine-planning", "redmine-daily-report")
 

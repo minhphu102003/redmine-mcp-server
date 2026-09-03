@@ -1,11 +1,15 @@
-﻿# install-skills-claude-code.ps1
-# NOTE: keep this file ASCII-only (no em-dash, no smart-quote) so it parses
-# correctly via 'irm ... | iex' on Windows PowerShell 5.1, which can strip
-# BOM from raw.githubusercontent.com responses.
+# install-skills-claude-code.ps1
+# NOTE: keep this file ASCII-only with NO BOM. raw.githubusercontent.com
+# serves the BOM through to 'irm', and Windows PowerShell 5.1 then fails
+# to parse the param() block when the script is run via 'irm ... | iex'.
 # Install MCP skills to Claude Code skills directory
 # Usage: .\scripts\install-skills-claude-code.ps1
 
 $ErrorActionPreference = "Stop"
+
+if (-not $PSScriptRoot) {
+    throw "install-skills-claude-code.ps1 must be run from a local clone (it copies from .\skills\). Usage: .\scripts\install-skills-claude-code.ps1"
+}
 
 $libPath = Join-Path $PSScriptRoot "_lib\Install-Skill.ps1"
 . $libPath
