@@ -38,7 +38,7 @@ foreach ($SkillName in $SkillNames) {
         $JsonContent = $WebResponse.Content
         $Response = ConvertFrom-Json -InputObject $JsonContent
         foreach ($Item in $Response) {
-            if ($Item.type -eq "file" -and $Item.name -match "\.md$") {
+            if ($Item.type -eq "file" -and $Item.name -match "\.md$" -and $Item.name -ne "README.md") {
                 $DownloadUrl = "${RawBase}/skills/${SkillName}/$($Item.name)"
                 $DestPath = Join-Path $SkillDir $Item.name
                 try {
