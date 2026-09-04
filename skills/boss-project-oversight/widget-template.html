@@ -1,0 +1,240 @@
+<!-- boss-widget-template v1 -->
+<!--
+TEMPLATE CỐ ĐỊNH — có fallback CSS variables để hiển thị đúng cả khi mở
+độc lập ngoài trình duyệt (không có theme của Claude cấp). Khi chạy trong
+Visualizer, các biến --surface-1, --text-primary... của host sẽ tự động
+được ưu tiên dùng, fallback chỉ áp dụng khi mở file .html một mình.
+
+CHỈ ĐƯỢC SỬA 4 CHỖ:
+  1. Tiêu đề — id="widget-title"
+  2. RAMP (dải màu gradient cùng tông)
+  3. DATA (object 7 ngày, mỗi ngày là mảng task)
+  4. Dòng "Nguồn: Redmine, queried at ..." ở footer
+
+Data schema mỗi task:
+{ "id": number, "name": string, "project": string, "est": number (giờ),
+  "actual": number (giờ), "url": string }
+7 khóa ngày theo đúng thứ tự: "Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6",
+"Thứ 7","Chủ nhật".
+-->
+<style>
+#rpt-root {
+  --rpt-surface-1: var(--surface-1, #f4f3f1);
+  --rpt-surface-2: var(--surface-2, #ebe9e5);
+  --rpt-border: var(--border, #ddd9d3);
+  --rpt-border-strong: var(--border-strong, #c7c2ba);
+  --rpt-text-primary: var(--text-primary, #21201c);
+  --rpt-text-secondary: var(--text-secondary, #6b6660);
+  --rpt-text-muted: var(--text-muted, #948f87);
+  --rpt-text-accent: var(--text-accent, #2a78d6);
+  --rpt-text-danger: var(--text-danger, #c0392b);
+  --rpt-text-success: var(--text-success, #1e8a5c);
+  --rpt-radius: var(--radius, 10px);
+  --rpt-shadow-md: var(--shadow-md, 0 2px 8px rgba(0,0,0,0.12));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--rpt-text-primary);
+}
+</style>
+<div id="rpt-root">
+<h2 style="position:absolute; width:1px; height:1px; overflow:hidden;">Biểu đồ cột số task hoàn thành theo ngày, chia theo project, có hover xem chi tiết, click xem task và tổng chênh lệch</h2>
+
+<!-- 1. TIÊU ĐỀ -->
+<p style="font-size:18px; font-weight:500; margin:0 0 1rem;" id="widget-title">Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}</p>
+
+<div style="display:flex; align-items:center; gap:12px; margin-bottom: 1rem;">
+  <label style="font-size:13px; color:var(--rpt-text-secondary);">Project</label>
+  <select id="project-filter" style="min-width:160px; padding:4px 8px; border-radius:6px; border:1px solid var(--rpt-border);"></select>
+</div>
+
+<div style="display: flex; gap: 12px; margin-bottom: 1.5rem;">
+  <div style="flex:1; background: var(--rpt-surface-1); border-radius: var(--rpt-radius); padding: 1rem;">
+    <p style="font-size:13px; color:var(--rpt-text-secondary); margin:0 0 4px;">Tổng task hoàn thành</p>
+    <p style="font-size:24px; font-weight:500; margin:0;" id="total-tasks">--</p>
+  </div>
+  <div style="flex:1; background: var(--rpt-surface-1); border-radius: var(--rpt-radius); padding: 1rem;">
+    <p style="font-size:13px; color:var(--rpt-text-secondary); margin:0 0 4px;">Tỷ lệ hiệu suất</p>
+    <p style="font-size:24px; font-weight:500; margin:0;" id="eff-ratio">--</p>
+  </div>
+  <div style="flex:1; background: var(--rpt-surface-1); border-radius: var(--rpt-radius); padding: 1rem;">
+    <p style="font-size:13px; color:var(--rpt-text-secondary); margin:0 0 4px;">Tổng chênh lệch tuần</p>
+    <p style="font-size:24px; font-weight:500; margin:0;" id="week-diff">--</p>
+  </div>
+</div>
+
+<div style="position:relative;">
+  <div id="bar-chart" style="display:flex; align-items:flex-end; height:220px; padding: 0 4px; margin-bottom: 8px; border-bottom: 1px solid var(--rpt-border);"></div>
+  <div id="tooltip" style="display:none; position:absolute; pointer-events:none; background:var(--rpt-surface-2); border:1px solid var(--rpt-border-strong); border-radius:var(--rpt-radius); padding:6px 10px; font-size:12px; box-shadow: var(--rpt-shadow-md); white-space:nowrap; z-index:10;"></div>
+</div>
+<div id="day-labels" style="display:flex; padding: 0 4px; margin-bottom:1rem;"></div>
+
+<div id="legend" style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:1rem; font-size:12px; color:var(--rpt-text-secondary);"></div>
+<p style="font-size:13px; color:var(--rpt-text-muted); margin: 0 0 1rem;">Di chuột để xem nhanh, click vào cột để xem chi tiết task trong ngày đó</p>
+
+<div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
+  <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
+  <table style="width:100%; font-size:13px; border-collapse: collapse;" id="detail-table"></table>
+</div>
+
+<!-- 4. FOOTER -->
+<p style="font-size:12px; color:var(--rpt-text-muted); margin:0;">Nguồn: Redmine, queried at {evidence.queried_at}</p>
+</div>
+
+<script>
+const days = ["Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7","Chủ nhật"];
+
+// ==== 2. VÙNG MÀU — cùng 1 tông, các stop dãn cách xa nhau ====
+const RAMP = ["#85B7EB", "#378ADD", "#185FA5", "#042C53", "#B5D4F4"];
+
+// ==== 3. VÙNG DỮ LIỆU — thay bằng widget_data thật ====
+const DATA = {
+  "Thứ 2": [],
+  "Thứ 3": [],
+  "Thứ 4": [],
+  "Thứ 5": [],
+  "Thứ 6": [],
+  "Thứ 7": [],
+  "Chủ nhật": []
+};
+// ==== HẾT VÙNG DỮ LIỆU ====
+
+const projects = [...new Set(Object.values(DATA).flat().map(t => t.project))];
+const projectColors = Object.fromEntries(projects.map((p, i) => [p, RAMP[i % RAMP.length]]));
+
+const select = document.getElementById('project-filter');
+select.innerHTML = '<option value="Tất cả">Tất cả</option>' + projects.map(p => `<option value="${p}">${p}</option>`).join('');
+const tooltip = document.getElementById('tooltip');
+const chartWrap = document.getElementById('bar-chart').parentElement;
+
+function getFilteredTasks(day, projectFilter) {
+  const tasks = DATA[day] || [];
+  return projectFilter === 'Tất cả' ? tasks : tasks.filter(t => t.project === projectFilter);
+}
+function renderLegend(projectFilter) {
+  const activeProjects = projectFilter === 'Tất cả' ? projects : [projectFilter];
+  document.getElementById('legend').innerHTML = activeProjects.map(p =>
+    `<span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; border-radius:2px; background:${projectColors[p] || '#a8a79f'};"></span>${p}</span>`
+  ).join('');
+}
+function updateMetrics(projectFilter) {
+  let totalEst = 0, totalActual = 0, totalTasks = 0;
+  days.forEach(d => { getFilteredTasks(d, projectFilter).forEach(t => { totalEst += t.est; totalActual += t.actual; totalTasks++; }); });
+  document.getElementById('total-tasks').textContent = totalTasks;
+  document.getElementById('eff-ratio').textContent = totalActual > 0 ? (totalEst/totalActual*100).toFixed(1) + '%' : '—';
+  const weekDiff = totalActual - totalEst;
+  const weekDiffEl = document.getElementById('week-diff');
+  weekDiffEl.textContent = (weekDiff > 0 ? '+' : '') + weekDiff.toFixed(2) + 'h';
+  weekDiffEl.style.color = weekDiff > 0 ? 'var(--rpt-text-danger)' : (weekDiff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
+}
+function showTooltip(evt, lines) {
+  tooltip.innerHTML = lines.map((l,i) => i===0 ? `<div style="font-weight:500; margin-bottom:4px;">${l}</div>` : `<div style="color:var(--rpt-text-secondary);">${l}</div>`).join('');
+  tooltip.style.display = 'block';
+  const wrapRect = chartWrap.getBoundingClientRect();
+  const x = evt.clientX - wrapRect.left;
+  const y = evt.clientY - wrapRect.top;
+  tooltip.style.left = Math.min(x + 12, wrapRect.width - 160) + 'px';
+  tooltip.style.top = Math.max(y - 50, 0) + 'px';
+}
+function hideTooltip() { tooltip.style.display = 'none'; }
+function renderChart(projectFilter) {
+  const activeProjects = projectFilter === 'Tất cả' ? projects : [projectFilter];
+  const perDayCounts = days.map(d => {
+    const tasks = getFilteredTasks(d, 'Tất cả');
+    const byProject = {};
+    activeProjects.forEach(p => byProject[p] = tasks.filter(t => t.project === p).length);
+    return byProject;
+  });
+  const maxTotal = Math.max(1, ...perDayCounts.map(o => Object.values(o).reduce((a,b)=>a+b,0)));
+  const chartEl = document.getElementById('bar-chart');
+  chartEl.innerHTML = '';
+  days.forEach((d, i) => {
+    const slot = document.createElement('div');
+    slot.style.cssText = 'flex:1; display:flex; justify-content:center; align-items:flex-end; height:100%;';
+    const col = document.createElement('div');
+    col.style.cssText = 'width:36%; min-width:18px; display:flex; flex-direction:column-reverse; height:100%; cursor:pointer; overflow:hidden; border-radius:3px 3px 0 0;';
+    const counts = perDayCounts[i];
+    const total = Object.values(counts).reduce((a,b)=>a+b,0);
+    const nonZeroProjects = activeProjects.filter(p => counts[p] > 0);
+    if (total === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'width:100%; height:2px; background:var(--rpt-border);';
+      col.appendChild(empty);
+    } else {
+      nonZeroProjects.forEach(p => {
+        const c = counts[p];
+        const seg = document.createElement('div');
+        const heightPct = (c / maxTotal) * 100;
+        seg.style.cssText = `width:100%; height:${heightPct}%; background:${projectColors[p] || '#a8a79f'}; min-height:4px; transition:filter 0.1s; box-shadow: inset 0 1px 0 var(--rpt-surface-1);`;
+        seg.addEventListener('mouseenter', (e) => { seg.style.filter = 'brightness(0.92)'; showTooltip(e, [d, `${p}: ${c} task`]); });
+        seg.addEventListener('mousemove', (e) => showTooltip(e, [d, `${p}: ${c} task`]));
+        seg.addEventListener('mouseleave', () => { seg.style.filter = 'none'; hideTooltip(); });
+        col.appendChild(seg);
+      });
+    }
+    col.addEventListener('mouseenter', (e) => {
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      else if (total === 0) { showTooltip(e, [d, 'Không có task']); }
+    });
+    col.addEventListener('mousemove', (e) => {
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      else if (total === 0) { showTooltip(e, [d, 'Không có task']); }
+    });
+    col.addEventListener('mouseleave', hideTooltip);
+    col.addEventListener('click', () => showDetail(d, projectFilter));
+    slot.appendChild(col);
+    chartEl.appendChild(slot);
+  });
+  const labelsEl = document.getElementById('day-labels');
+  labelsEl.innerHTML = '';
+  days.forEach(d => {
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'flex:1; text-align:center; font-size:12px; color:var(--rpt-text-secondary);';
+    lbl.textContent = d;
+    labelsEl.appendChild(lbl);
+  });
+}
+function showDetail(day, projectFilter) {
+  const panel = document.getElementById('detail-panel');
+  const title = document.getElementById('detail-day');
+  const table = document.getElementById('detail-table');
+  panel.style.display = 'block';
+  title.textContent = day + ' — chi tiết task';
+  const tasks = getFilteredTasks(day, projectFilter);
+  let rows = '<tr style="border-bottom:1px solid var(--rpt-border);">' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Task</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Project</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Estimate (h)</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Thực tế (h)</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Chênh lệch</td></tr>';
+  if (tasks.length === 0) { rows += '<tr><td colspan="5" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task hoàn thành</td></tr>'; }
+  let dayEst = 0, dayActual = 0;
+  tasks.forEach(t => {
+    dayEst += t.est; dayActual += t.actual;
+    const diff = t.actual - t.est;
+    const diffColor = diff > 0 ? 'var(--rpt-text-danger)' : 'var(--rpt-text-success)';
+    const diffText = (diff > 0 ? '+' : '') + diff.toFixed(2) + 'h';
+    rows += '<tr style="border-bottom:1px solid var(--rpt-border);">' +
+      '<td style="padding:6px 4px;"><a href="' + t.url + '" style="color:var(--rpt-text-accent);">' + t.name + '</a></td>' +
+      '<td style="padding:6px 4px;">' + t.project + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + t.est.toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + t.actual.toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px; text-align:right; color:' + diffColor + ';">' + diffText + '</td></tr>';
+  });
+  if (tasks.length > 0) {
+    const dayDiff = dayActual - dayEst;
+    const dayDiffColor = dayDiff > 0 ? 'var(--rpt-text-danger)' : (dayDiff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
+    const dayDiffText = (dayDiff > 0 ? '+' : '') + dayDiff.toFixed(2) + 'h';
+    rows += '<tr>' +
+      '<td style="padding:8px 4px; font-weight:500;" colspan="2">Tổng ngày</td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayEst.toFixed(2) + '</td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayActual.toFixed(2) + '</td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500; color:' + dayDiffColor + ';">' + dayDiffText + '</td></tr>';
+  }
+  table.innerHTML = rows;
+}
+select.addEventListener('change', () => {
+  const val = select.value;
+  renderChart(val); renderLegend(val); updateMetrics(val);
+  document.getElementById('detail-panel').style.display = 'none';
+});
+renderChart('Tất cả'); renderLegend('Tất cả'); updateMetrics('Tất cả');
+</script>
