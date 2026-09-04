@@ -126,6 +126,7 @@ async def append_google_sheet_impl(
     get_sheets_service: Callable[[], Any],
     handle_error: HandleErrorFn,
     get_user_memory: Optional[Callable[[str], Any]] = None,
+    get_client: Optional[Callable[[], Any]] = None,
 ) -> Dict[str, Any]:
     """Append rows to the end of a Google Sheet.
 
@@ -189,10 +190,10 @@ async def append_google_sheet_impl(
             member_names: List[str] = []
             if get_user_memory is not None:
                 resolved = await google_sheets_manager.resolve_member_names(
-                    spreadsheet_id, get_user_memory
+                    spreadsheet_id, get_user_memory, get_client
                 )
                 if resolved:
-                    member_names = resolved
+                    member_names = resolved.get("names", [])
             google_sheets_manager.restore_sheet_formatting(
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
@@ -364,6 +365,7 @@ async def create_test_cases_on_sheet_impl(
     get_user_memory: Callable[[str], Any],
     set_user_memory: Callable[[str, Dict[str, Any]], Any],
     handle_error: HandleErrorFn,
+    get_client: Optional[Callable[[], Any]] = None,
 ) -> Dict[str, Any]:
     """Parse test cases and push to Google Sheets. Create Bugs sheet if needed."""
     logger.info(
@@ -570,6 +572,7 @@ async def create_test_cases_on_sheet_impl(
             us_header_row_index = 1 + existing_count
 
         member_names: List[str] = []
+        member_warnings: List[str] = []
         if sheet_id is not None:
             member_names = await google_sheets_manager.add_us_section_header(
                 spreadsheet_id=spreadsheet_id,
@@ -578,6 +581,56 @@ async def create_test_cases_on_sheet_impl(
                 row_index=us_header_row_index,
                 color=color,
                 get_user_memory=get_user_memory,
+            )
+
+        # Resolve TESTER names with live Redmine fallback when memory is
+        # empty. A live result is persisted back into `.redmine` memory so
+        # subsequent pushes use the cache.
+        resolution = await google_sheets_manager.resolve_member_names(
+            spreadsheet_id, get_user_memory, get_client
+        )
+        if resolution is not None:
+            member_names = resolution.get("names", [])
+            if resolution.get("source") == "live" and member_names:
+                try:
+                    redmine_mem = await get_user_memory(".redmine")
+                    if isinstance(redmine_mem, dict):
+                        rm_value = redmine_mem.get("value")
+                        if isinstance(rm_value, dict):
+                            contexts = rm_value.get("project_contexts", {}) or {}
+                            pid = resolution.get("redmine_project_id")
+                            if pid:
+                                ctx = contexts.get(pid, {})
+                                if not isinstance(ctx, dict):
+                                    ctx = {}
+                                ctx["members"] = resolution.get("entries", [])
+                                contexts[pid] = ctx
+                                rm_value["project_contexts"] = contexts
+                                await set_user_memory(".redmine", rm_value)
+                                logger.info(
+                                    "create_test_cases_on_sheet: cached %d "
+                                    "live members into .redmine memory for "
+                                    "project %s",
+                                    len(member_names),
+                                    pid,
+                                )
+                except Exception as e:
+                    logger.warning(
+                        "create_test_cases_on_sheet: persist live members "
+                        "failed (%s); continuing without cache",
+                        e,
+                    )
+        if not member_names:
+            pid_hint = resolution.get("redmine_project_id") if resolution else None
+            member_warnings.append(
+                "TESTER dropdown was skipped: no members found "
+                + (
+                    f"for project {pid_hint} "
+                    if pid_hint
+                    else "for the linked project "
+                )
+                + "(checked memory and Redmine API). Refresh project "
+                "context via redmine-init or add members to the project."
             )
 
         # Append test case rows
@@ -701,7 +754,7 @@ async def create_test_cases_on_sheet_impl(
                 logger.warning("Failed to create Bugs sheet: %s", e)
 
         updates = append_result.get("updates", {})
-        return {
+        result: Dict[str, Any] = {
             "created": len(rows),
             "sheet_name": sheet_name,
             "first_id": rows[0][0] if rows else None,
@@ -710,6 +763,9 @@ async def create_test_cases_on_sheet_impl(
             "bugs_sheet_ready": bugs_sheet_ready,
             "bugs_sheet_name": bugs_sheet_name,
         }
+        if member_warnings:
+            result["warnings"] = member_warnings
+        return result
     except Exception as e:
         return handle_error(e, f"creating test cases on Google Sheet {spreadsheet_id}")
 

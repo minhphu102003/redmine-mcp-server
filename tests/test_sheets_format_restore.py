@@ -139,7 +139,10 @@ def test_resolve_member_names_returns_names(monkeypatch):
     manager = GoogleSheetsManager()
     manager.reset()
     result = asyncio.run(manager.resolve_member_names("abc123", _member_memory()))
-    assert result == ["Alice", "Bob"]
+    assert result is not None
+    assert result["names"] == ["Alice", "Bob"]
+    assert result["source"] == "memory"
+    assert result["redmine_project_id"] == "12"
 
 
 def test_resolve_member_names_empty_when_no_project_linked(monkeypatch):
@@ -150,7 +153,91 @@ def test_resolve_member_names_empty_when_no_project_linked(monkeypatch):
         return {"value": {"projects": []}}
 
     result = asyncio.run(manager.resolve_member_names("abc123", fake_mem))
-    assert result == []
+    assert result is not None
+    assert result["names"] == []
+    assert result["source"] == "none"
+
+
+def test_resolve_member_names_live_fallback(monkeypatch):
+    """Memory links project 12 but has no members: live Redmine fetch
+    fills the names (groups skipped), source is 'live'."""
+    from types import SimpleNamespace
+
+    manager = GoogleSheetsManager()
+    manager.reset()
+
+    async def fake_mem(key: str):
+        if key == ".google-sheets":
+            return {
+                "value": {
+                    "projects": [
+                        {
+                            "spreadsheet_id": "abc123",
+                            "redmine_project_id": 12,
+                        }
+                    ]
+                }
+            }
+        return {"value": {"project_contexts": {"12": {"members": []}}}}
+
+    fake_client = MagicMock()
+    fake_client.project_membership.filter.return_value = [
+        SimpleNamespace(user=SimpleNamespace(id=1, name="Cara")),
+        SimpleNamespace(user=None, group=SimpleNamespace(id=9, name="Team")),
+        SimpleNamespace(user=SimpleNamespace(id=2, name="Dan")),
+    ]
+
+    result = asyncio.run(
+        manager.resolve_member_names("abc123", fake_mem, get_client=lambda: fake_client)
+    )
+    assert result is not None
+    assert result["names"] == ["Cara", "Dan"]
+    assert result["source"] == "live"
+    assert result["redmine_project_id"] == "12"
+    assert result["entries"] == [
+        {"user": {"id": 1, "name": "Cara"}},
+        {"user": {"id": 2, "name": "Dan"}},
+    ]
+    fake_client.project_membership.filter.assert_called_once_with(project_id="12")
+
+
+def test_resolve_member_names_memory_preferred_over_live(monkeypatch):
+    """When memory already has members, the Redmine client is untouched."""
+    manager = GoogleSheetsManager()
+    manager.reset()
+
+    def _boom():
+        raise AssertionError("client must not be called")
+
+    result = asyncio.run(
+        manager.resolve_member_names("abc123", _member_memory(), get_client=_boom)
+    )
+    assert result is not None
+    assert result["names"] == ["Alice", "Bob"]
+    assert result["source"] == "memory"
+
+
+def test_resolve_member_names_none_source_when_client_missing(monkeypatch):
+    async def fake_mem(key: str):
+        if key == ".google-sheets":
+            return {
+                "value": {
+                    "projects": [
+                        {
+                            "spreadsheet_id": "abc123",
+                            "redmine_project_id": 12,
+                        }
+                    ]
+                }
+            }
+        return {"value": {"project_contexts": {}}}
+
+    manager = GoogleSheetsManager()
+    manager.reset()
+    result = asyncio.run(manager.resolve_member_names("abc123", fake_mem))
+    assert result is not None
+    assert result["names"] == []
+    assert result["source"] == "none"
 
 
 def test_add_us_section_header_returns_members(monkeypatch):
@@ -301,6 +388,7 @@ class _RecordingService:
         append_cells: int = 10,
     ):
         self.events: List[str] = []
+        self.validation_bodies: List[List[Dict[str, Any]]] = []
         self.col_a = col_a
         self.headers = headers
         self.title = title
@@ -335,6 +423,7 @@ class _RecordingService:
                     reqs = body.get("requests", [])
                     if any("setDataValidation" in r for r in reqs):
                         outer.events.append("batch.setDataValidation")
+                        outer.validation_bodies.append(reqs)
                     elif any("copyPaste" in r for r in reqs):
                         outer.events.append("batch.copyPaste")
                     elif any(
@@ -516,3 +605,115 @@ def test_append_google_sheet_restores_format_after_append(monkeypatch):
     assert result.get("updated_rows") == 2
     events = service.events
     assert events.index("values.append") < events.index("batch.numberFormat")
+
+
+def _linked_empty_memory():
+    """Memory linking spreadsheet abc123 to project 12 with no members."""
+
+    async def fake_mem(key: str):
+        if key == ".google-sheets":
+            return {
+                "value": {
+                    "projects": [
+                        {
+                            "spreadsheet_id": "abc123",
+                            "redmine_project_id": 12,
+                        }
+                    ]
+                }
+            }
+        return {"value": {"project_contexts": {"12": {"members": []}}}}
+
+    return fake_mem
+
+
+def _live_client(names):
+    from types import SimpleNamespace
+
+    client = MagicMock()
+    client.project_membership.filter.return_value = [
+        SimpleNamespace(user=SimpleNamespace(id=i + 1, name=n))
+        for i, n in enumerate(names)
+    ]
+    return client
+
+
+def test_create_test_cases_live_members_fill_tester_dropdown(monkeypatch):
+    """Empty memory members + live Redmine users: TESTER validation uses
+    the live names, the cache is persisted, and no warnings are set."""
+    service = _RecordingService([["TEST_CASE_ID"], ["TC-099"]], TESTCASES_HEADERS)
+    monkeypatch.setattr(
+        google_sheets_manager,
+        "get_service",
+        lambda: service,
+    )
+    saved: Dict[str, Any] = {}
+
+    async def fake_set_memory(key, value):
+        saved[key] = value
+        return {"ok": True}
+
+    result = asyncio.run(
+        create_test_cases_on_sheet_impl(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            test_cases=[_sample_tc()],
+            clear_existing=False,
+            us_title="Login",
+            get_sheets_service=google_sheets_manager.get_service,
+            get_user_memory=_linked_empty_memory(),
+            set_user_memory=fake_set_memory,
+            handle_error=_handle_error,
+            get_client=lambda: _live_client(["Cara", "Dan"]),
+        )
+    )
+
+    assert result.get("created") == 1
+    assert "warnings" not in result
+    # TESTER dropdown (col 6) in the LAST restore carries live names
+    tester_values: List[str] = []
+    for reqs in service.validation_bodies:
+        for r in reqs:
+            rule = r.get("setDataValidation", {})
+            if rule.get("range", {}).get("startColumnIndex") == 6:
+                tester_values = [
+                    v["userEnteredValue"] for v in rule["rule"]["condition"]["values"]
+                ]
+    assert tester_values == ["Cara", "Dan"]
+    # Cache persisted in redmine-init shape
+    assert saved[".redmine"]["project_contexts"]["12"]["members"] == [
+        {"user": {"id": 1, "name": "Cara"}},
+        {"user": {"id": 2, "name": "Dan"}},
+    ]
+
+
+def test_create_test_cases_warns_when_tester_unresolvable(monkeypatch):
+    """No members in memory and no client: response carries warnings so
+    the AI can tell the user the TESTER dropdown was skipped."""
+    service = _RecordingService([["TEST_CASE_ID"], ["TC-099"]], TESTCASES_HEADERS)
+    monkeypatch.setattr(
+        google_sheets_manager,
+        "get_service",
+        lambda: service,
+    )
+
+    async def fake_set_memory(key, value):
+        return {"ok": True}
+
+    result = asyncio.run(
+        create_test_cases_on_sheet_impl(
+            spreadsheet_id="abc123",
+            sheet_name="TestCases",
+            test_cases=[_sample_tc()],
+            clear_existing=False,
+            us_title="Login",
+            get_sheets_service=google_sheets_manager.get_service,
+            get_user_memory=_linked_empty_memory(),
+            set_user_memory=fake_set_memory,
+            handle_error=_handle_error,
+        )
+    )
+
+    assert result.get("created") == 1
+    assert "warnings" in result
+    assert any("TESTER" in w for w in result["warnings"])
