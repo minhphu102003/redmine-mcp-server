@@ -1,16 +1,18 @@
 [project]
 name = "redmine-mcp-server"
 version = "1.1.0"
-description = "Production-ready MCP server for Redmine with security, pagination, and enterprise features"
+description = "Turn Redmine into an AI coworker: MCP server plus ready-made agent skills for managers, developers and testers. Works with Claude Desktop, Codex, VS Code and any MCP client."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-keywords = ["redmine", "mcp", "model-context-protocol", "project-management", "server"]
+keywords = ["redmine", "mcp", "model-context-protocol", "project-management", "ai-agent", "ai-workflow"]
 authors = [
-    {name = "Kevin Tan", email = "jingzheng.tan@gmail.com"}
+    {name = "Kevin Tan", email = "jingzheng.tan@gmail.com"},
+    {name = "minhphu102003", email = "minhphu01200@gmail.com"},
 ]
 maintainers = [
-    {name = "Kevin Tan", email = "jingzheng.tan@gmail.com"}
+    {name = "Kevin Tan", email = "jingzheng.tan@gmail.com"},
+    {name = "minhphu102003", email = "minhphu01200@gmail.com"},
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -21,8 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Office/Business :: Groupware",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "python-dotenv>=1.0.0",
@@ -37,10 +39,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jztan/redmine-mcp-server"
-Repository = "https://github.com/jztan/redmine-mcp-server.git"
-Issues = "https://github.com/jztan/redmine-mcp-server/issues"
-Changelog = "https://github.com/jztan/redmine-mcp-server/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/minhphu102003/redmine-mcp-server"
+Repository = "https://github.com/minhphu102003/redmine-mcp-server.git"
+Issues = "https://github.com/minhphu102003/redmine-mcp-server/issues"
+Changelog = "https://github.com/minhphu102003/redmine-mcp-server/blob/develop/CHANGELOG.md"
 
 [project.scripts]
 redmine-mcp-server = "redmine_mcp_server.main:main"
@@ -71,4 +73,10 @@ build-backend = "hatchling.build"
 exclude_lines = [
     "if __name__ == .__main__.:",
     "pragma: no cover",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
 ]
