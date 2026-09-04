@@ -103,6 +103,21 @@ def _rich_text_runs(text: str) -> List[Dict[str, Any]]:
     return parse_markdown_to_rich_text(text)
 
 
+def _parse_append_start_row(updated_range: str) -> Optional[int]:
+    """Parse the 1-based start row from a values.append updatedRange.
+
+    E.g. ``"TestCases!A14:J24"`` → 14, ``"'My Sheet'!B2:C5"`` → 2.
+    Returns ``None`` when the range cannot be parsed.
+    """
+    match = re.search(r"![^!]*?[A-Z]+(\d+)", updated_range or "")
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
 async def append_google_sheet_impl(
     spreadsheet_id: str,
     sheet_name: str,
@@ -110,13 +125,21 @@ async def append_google_sheet_impl(
     *,
     get_sheets_service: Callable[[], Any],
     handle_error: HandleErrorFn,
+    get_user_memory: Optional[Callable[[str], Any]] = None,
 ) -> Dict[str, Any]:
     """Append rows to the end of a Google Sheet.
 
     Cells containing markdown (bold/italic/code/hyperlink) in the first
     5 columns are automatically formatted as rich text after writing.
+
+    Because ``values.append`` with ``INSERT_ROWS`` creates brand-new
+    rows without data validation or number formats, standard sheet
+    formatting is restored afterwards (all sheets, driven by the live
+    header row + known validation maps).
     """
     try:
+        from ...google_sheets_client import google_sheets_manager
+
         service = get_sheets_service()
         body = {"values": values}
         range_name = f"{sheet_name}!A:Z"
@@ -145,6 +168,35 @@ async def append_google_sheet_impl(
                 start_row=1,  # rows appended from row 1 onward
                 row_count=updated_rows,
                 markdown_col_indices={3, 4, 5},  # D, E, F
+            )
+
+        # Post-append format restore (ALL sheets): the INSERT_ROWS above
+        # created brand-new rows without validation/number formats.
+        # Copy formatting from the nearest older data row first (covers
+        # sheet-specific formats the tool does not know about), then
+        # re-apply the standard validations + date/wrap formats.
+        if updated_rows > 0:
+            first_new_row = _parse_append_start_row(table_range)
+            num_columns = max((len(r) for r in values), default=0)
+            if first_new_row is not None and num_columns > 0:
+                google_sheets_manager.copy_format_to_new_rows(
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=sheet_name,
+                    first_new_row=first_new_row,
+                    row_count=updated_rows,
+                    num_columns=num_columns,
+                )
+            member_names: List[str] = []
+            if get_user_memory is not None:
+                resolved = await google_sheets_manager.resolve_member_names(
+                    spreadsheet_id, get_user_memory
+                )
+                if resolved:
+                    member_names = resolved
+            google_sheets_manager.restore_sheet_formatting(
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                member_names=member_names,
             )
 
         return {
@@ -517,8 +569,9 @@ async def create_test_cases_on_sheet_impl(
         else:
             us_header_row_index = 1 + existing_count
 
+        member_names: List[str] = []
         if sheet_id is not None:
-            await google_sheets_manager.add_us_section_header(
+            member_names = await google_sheets_manager.add_us_section_header(
                 spreadsheet_id=spreadsheet_id,
                 sheet_name=sheet_name,
                 us_title=us_title_cell,
@@ -586,10 +639,32 @@ async def create_test_cases_on_sheet_impl(
                     sheet_name=sheet_name,
                     num_columns=len(TESTCASES_HEADERS),
                 )
+
+                # Post-append format restore: the INSERT_ROWS above created
+                # brand-new rows without data validation or number formats,
+                # AFTER the pre-append re-apply inside add_us_section_header.
+                # Copy formatting from the nearest older data row first
+                # (covers sheet-specific formats), then re-apply the
+                # standard validations + date/wrap formats. This MUST run
+                # after every row-mutating operation in this flow.
+                first_new_tc_row = us_header_row_index + 2
+                google_sheets_manager.copy_format_to_new_rows(
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=sheet_name,
+                    first_new_row=first_new_tc_row,
+                    row_count=len(rows),
+                    num_columns=len(TESTCASES_HEADERS),
+                )
+                google_sheets_manager.restore_sheet_formatting(
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=sheet_name,
+                    member_names=member_names,
+                )
             else:
                 logger.warning(
                     "create_test_cases_on_sheet: sheet_id is None, "
-                    "skipping reset_all_tc_blocks_formatting"
+                    "skipping reset_all_tc_blocks_formatting and "
+                    "post-append format restore"
                 )
 
         # Create Bugs sheet if it doesn't exist

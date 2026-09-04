@@ -2225,6 +2225,7 @@ async def append_google_sheet(
         values,
         get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
+        get_user_memory=get_user_memory,
     )
 
 

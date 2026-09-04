@@ -376,9 +376,8 @@ class GoogleSheetsManager:
         us_title: str,
         row_index: int,
         color: str,
-        *,
         get_user_memory: Optional[Any] = None,
-    ) -> None:
+    ) -> List[str]:
         """Insert a US section header row (merged, colored) above test case rows.
 
         Adds a single merged row with background color and bold white text
@@ -405,6 +404,11 @@ class GoogleSheetsManager:
                 associated with this spreadsheet and reads its member names
                 from ``.redmine.project_contexts[<project_id>].members`` so
                 the TESTER dropdown has the correct options.
+        Returns:
+            List of resolved Redmine member names (may be empty when
+            memory is unavailable or no members are found). Callers
+            reuse this for post-append format restoration so the
+            memory lookup is not repeated.
         """
         service = self.get_service()
 
@@ -521,12 +525,48 @@ class GoogleSheetsManager:
             logger.warning("add_us_section_header batchUpdate failed: %s", e)
             return
 
+        member_names = await self.resolve_member_names(spreadsheet_id, get_user_memory)
+        if member_names is None:
+            return []
+
+        try:
+            self.reapply_sheet_validations(
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                member_names=member_names,
+            )
+        except Exception as e:
+            logger.warning(
+                "add_us_section_header: reapply_sheet_validations failed: %s", e
+            )
+
+        return member_names
+
+    async def resolve_member_names(
+        self,
+        spreadsheet_id: str,
+        get_user_memory: Optional[Any],
+    ) -> Optional[List[str]]:
+        """Resolve Redmine member names for a spreadsheet.
+
+        Looks up the Redmine project linked to ``spreadsheet_id`` in
+        ``.google-sheets`` memory, then reads its member names from
+        ``.redmine.project_contexts[<project_id>].members``.
+
+        Returns:
+            ``None`` when memory is unavailable (``get_user_memory`` is
+            ``None`` or the fetch fails) — callers should skip the
+            dynamic-dropdown re-apply in that case. Otherwise the member
+            name list, possibly empty when no project is linked or no
+            members are found (dynamic columns are then skipped, static
+            validations still apply).
+        """
         if get_user_memory is None:
             logger.info(
-                "add_us_section_header: no get_user_memory provided, "
-                "skipping re-apply of data validation (backward-compat mode)"
+                "resolve_member_names: no get_user_memory provided "
+                "(backward-compat mode)"
             )
-            return
+            return None
 
         member_names: List[str] = []
         try:
@@ -534,11 +574,11 @@ class GoogleSheetsManager:
             redmine_memory = await get_user_memory(".redmine")
         except Exception as e:
             logger.warning(
-                "add_us_section_header: memory fetch failed (%s); "
+                "resolve_member_names: memory fetch failed (%s); "
                 "skipping re-apply of data validation",
                 e,
             )
-            return
+            return None
 
         try:
             projects = []
@@ -557,7 +597,7 @@ class GoogleSheetsManager:
 
             if redmine_project_id is None:
                 logger.warning(
-                    "add_us_section_header: no redmine_project_id found for "
+                    "resolve_member_names: no redmine_project_id found for "
                     "spreadsheet_id=%s in .google-sheets memory; "
                     "skipping re-apply of TESTER dropdown",
                     spreadsheet_id,
@@ -582,14 +622,14 @@ class GoogleSheetsManager:
 
                 if member_names:
                     logger.info(
-                        "add_us_section_header: fetched %d member names for "
+                        "resolve_member_names: fetched %d member names for "
                         "redmine_project_id=%s; re-applying validation",
                         len(member_names),
                         redmine_project_id,
                     )
                 else:
                     logger.warning(
-                        "add_us_section_header: no members found in "
+                        "resolve_member_names: no members found in "
                         ".redmine.project_contexts[%s] for spreadsheet_id=%s; "
                         "TESTER dropdown will be skipped",
                         redmine_project_id,
@@ -597,21 +637,12 @@ class GoogleSheetsManager:
                     )
         except Exception as e:
             logger.warning(
-                "add_us_section_header: failed to resolve member names (%s); "
+                "resolve_member_names: failed to resolve member names (%s); "
                 "skipping re-apply of TESTER dropdown",
                 e,
             )
 
-        try:
-            self.reapply_sheet_validations(
-                spreadsheet_id=spreadsheet_id,
-                sheet_name=sheet_name,
-                member_names=member_names,
-            )
-        except Exception as e:
-            logger.warning(
-                "add_us_section_header: reapply_sheet_validations failed: %s", e
-            )
+        return member_names
 
     def reset_all_tc_blocks_formatting(
         self,
@@ -1588,6 +1619,285 @@ class GoogleSheetsManager:
                 sheet_name,
                 e,
             )
+
+    def reapply_column_formats(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+    ) -> None:
+        """Re-apply date number formats and text-wrap alignment for a sheet.
+
+        Reads the live header row so the mapping works for ANY sheet
+        (TestCases, Bugs, or user-created sheets): only columns whose
+        header is in ``HEADER_DATE_COLUMNS`` / ``HEADER_WRAP_COLUMNS``
+        are touched, using narrow ``fields`` masks so special formats
+        on other columns (currency, custom colors, ...) are preserved.
+
+        Scopes to the full column (no row restriction) so newly
+        inserted rows are covered as well.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name.
+        """
+        logger.info(
+            "reapply_column_formats ENTRY spreadsheet_id=%s sheet_name=%s",
+            spreadsheet_id,
+            sheet_name,
+        )
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets.properties(sheetId,title)",
+                )
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                if s["properties"]["title"] == sheet_name:
+                    sheet_id = s["properties"]["sheetId"]
+                    break
+        except Exception as e:
+            logger.warning("reapply_column_formats: get meta failed: %s", e)
+            return
+
+        if sheet_id is None:
+            logger.warning("reapply_column_formats: sheet not found (%s)", sheet_name)
+            return
+
+        try:
+            header_result = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A1:Z1")
+                .execute()
+            )
+            header_values = header_result.get("values", [])
+            headers: List[str] = header_values[0] if header_values else []
+        except Exception as e:
+            logger.warning("reapply_column_formats: read header failed: %s", e)
+            return
+
+        if not headers:
+            logger.info("reapply_column_formats: empty header, nothing to do")
+            return
+
+        requests = _build_column_format_requests(sheet_id, headers)
+        if not requests:
+            logger.info(
+                "reapply_column_formats: no date/wrap columns in sheet=%s",
+                sheet_name,
+            )
+            return
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": requests}
+            ).execute()
+            logger.info(
+                "reapply_column_formats: emitted %d requests sheet=%s",
+                len(requests),
+                sheet_name,
+            )
+        except Exception as e:
+            logger.warning(
+                "reapply_column_formats: batchUpdate failed sheet=%s err=%s",
+                sheet_name,
+                e,
+            )
+
+    def copy_format_to_new_rows(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        first_new_row: int,
+        row_count: int,
+        num_columns: int,
+    ) -> None:
+        """Copy cell formatting from the nearest older data row to newly
+        inserted rows, so sheet-specific ("special") formats the tool
+        does not know about (currency, custom colors, extra dropdowns,
+        ...) also propagate to the new rows.
+
+        The source row is found by scanning column A upward from the
+        new block: US section header rows (``[US-N] ...``) and the
+        header row are skipped. When no suitable source exists (e.g.
+        first push ever, or values were just cleared), the copy is
+        skipped — the explicit template re-apply still covers the
+        standard columns.
+
+        Uses ``copyPaste`` with ``PASTE_FORMAT`` (values are never
+        touched). Never raises: all failures are logged and skipped so
+        the calling tool response is not broken.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name.
+            first_new_row: 1-based index of the first newly inserted row.
+            row_count: Number of newly inserted rows.
+            num_columns: Number of columns to copy.
+        """
+        logger.info(
+            "copy_format_to_new_rows ENTRY spreadsheet_id=%s sheet_name=%s "
+            "first_new_row=%d row_count=%d num_columns=%d",
+            spreadsheet_id,
+            sheet_name,
+            first_new_row,
+            row_count,
+            num_columns,
+        )
+        if row_count <= 0 or num_columns <= 0 or first_new_row <= 2:
+            # first_new_row <= 2 means there is no data row above that
+            # could serve as a format source (only the header row).
+            logger.info("copy_format_to_new_rows: skip (no rows or no source)")
+            return
+
+        service = self.get_service()
+
+        sheet_id: Optional[int] = None
+        try:
+            meta = (
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets.properties(sheetId,title)",
+                )
+                .execute()
+            )
+            for s in meta.get("sheets", []):
+                if s["properties"]["title"] == sheet_name:
+                    sheet_id = s["properties"]["sheetId"]
+                    break
+        except Exception as e:
+            logger.warning("copy_format_to_new_rows: get meta failed: %s", e)
+            return
+
+        if sheet_id is None:
+            logger.warning("copy_format_to_new_rows: sheet not found (%s)", sheet_name)
+            return
+
+        # Read column A from the header down to the row above the block.
+        try:
+            col_a = (
+                service.spreadsheets()
+                .values()
+                .get(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{sheet_name}!A1:A{first_new_row - 1}",
+                )
+                .execute()
+            )
+            col_values = col_a.get("values", [])
+        except Exception as e:
+            logger.warning("copy_format_to_new_rows: read col A failed: %s", e)
+            return
+
+        # Walk upward (skipping the header at index 0) for the first
+        # row that is NOT a US section header — that is our source.
+        source_row: Optional[int] = None  # 1-based
+        for idx in range(len(col_values) - 1, 0, -1):
+            cell_value = (
+                col_values[idx][0].strip()
+                if col_values[idx] and col_values[idx][0]
+                else ""
+            )
+            if cell_value.startswith("[US-") and "]" in cell_value:
+                continue
+            source_row = idx + 1  # values list is 0-based; rows are 1-based
+            break
+
+        if source_row is None:
+            logger.info("copy_format_to_new_rows: no source row found, skipping")
+            return
+
+        logger.info(
+            "copy_format_to_new_rows: copying format from row %d to rows %d-%d",
+            source_row,
+            first_new_row,
+            first_new_row + row_count - 1,
+        )
+        requests: List[Dict[str, Any]] = [
+            {
+                "copyPaste": {
+                    "source": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": source_row - 1,
+                        "endRowIndex": source_row,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": num_columns,
+                    },
+                    "destination": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": dest - 1,
+                        "endRowIndex": dest,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": num_columns,
+                    },
+                    "pasteType": "PASTE_FORMAT",
+                }
+            }
+            for dest in range(first_new_row, first_new_row + row_count)
+        ]
+
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id, body={"requests": requests}
+            ).execute()
+            logger.info(
+                "copy_format_to_new_rows: emitted %d copyPaste requests",
+                len(requests),
+            )
+        except Exception as e:
+            logger.warning("copy_format_to_new_rows: batchUpdate failed: %s", e)
+
+    def restore_sheet_formatting(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        member_names: Optional[List[str]] = None,
+    ) -> None:
+        """Restore standard formatting after rows were inserted.
+
+        MUST be called AFTER the last row-mutating operation
+        (``insertDimension`` / ``values.append`` with ``INSERT_ROWS``)
+        in a flow, because newly inserted rows are born without data
+        validation or number formats. Re-applies, over the fresh grid:
+
+        - data validation + conditional colors
+          (:meth:`reapply_sheet_validations`; TestCases/Bugs only,
+          dynamic member columns skipped when ``member_names`` empty),
+        - date number formats + text wrap
+          (:meth:`reapply_column_formats`; any sheet, driven by the
+          live header row).
+
+        Never raises: failures are logged inside the callees.
+
+        Args:
+            spreadsheet_id: Google Spreadsheet ID.
+            sheet_name: Sheet tab name.
+            member_names: Redmine member names for dynamic dropdown
+                columns (TESTER / ASSIGNED_TO).
+        """
+        logger.info(
+            "restore_sheet_formatting ENTRY spreadsheet_id=%s sheet_name=%s "
+            "member_count=%d",
+            spreadsheet_id,
+            sheet_name,
+            len(member_names) if member_names else 0,
+        )
+        self.reapply_sheet_validations(
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            member_names=member_names,
+        )
+        self.reapply_column_formats(
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+        )
 
 
 google_sheets_manager = GoogleSheetsManager()
