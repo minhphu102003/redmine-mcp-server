@@ -48,14 +48,12 @@ A well-defined User Story (US) template that gives enough information for the `t
 
 ```markdown
 # US-XXX: <Title>
+**Module**: <name exactly as in the Module / Screen catalog (§0)>
 
 ## User Story
 **As a** [specific role — must match a role in Project Context]
 **I want** [capability — what the user does, in UI terms]
 **So that** [real business value — why it matters]
-
-## Test Level
-- UI black-box only (no API testing, no backend/DB/log verification)
 
 ## UI Map
 - Screens involved: [exact screen names from the catalog, in visit order]
@@ -73,8 +71,8 @@ Rules: max ~5 ACs. At least one happy path AND at least one negative case.
 - [ ] **AC1**: <happy path — Given screen/state, When user action, Then what is SEEN on screen>
 - [ ] **AC2**: <negative case 1 — invalid input: what error is SHOWN, where>
 - [ ] **AC3**: <negative case 2 — empty/boundary: what is SHOWN or DISABLED>
-- [ ] **AC4**: <business rule — what MUST be visible/true for acceptance>
-- [ ] **AC5**: <state-dependent — if behavior depends on starting state, both states described by what the user sees>
+- [ ] **AC4**: <business rule — what MUST be visible/true for acceptance (detail it in Business Rules below, don't repeat here)>
+- [ ] **AC5**: <state-dependent — name the starting state; detail states/transitions in State / Lifecycle below, don't repeat here>
 
 ## Business Rules (only rules visible or enforceable on the UI)
 - Rule 1: <e.g. "Login button stays disabled until both fields are non-empty">
@@ -135,7 +133,6 @@ Rules: max ~5 ACs. At least one happy path AND at least one negative case.
 |---------|---------------------|
 | Project Context (§0) | Which app/module/screen anything belongs to — cures project blindness |
 | User Story | Test scenarios — what the user does and why |
-| Test Level | Scope lock — UI-only, so no API/backend test cases are invented |
 | UI Map | Exact screens, element labels, navigation → executable steps without guessing names |
 | Acceptance Criteria | **Direct mapping to test cases** — each AC → at least 1 test case |
 | Business Rules | Negative test cases, permission tests, validation tests (UI-visible only) |
@@ -192,7 +189,7 @@ If the US file lacks info, the agent asks these **specific questions** (one batc
 > "Acceptance criteria đang <thiếu/mơ hồ/không kiểm chứng được trên UI>. Bạn có thể:
 > - Mô tả flow chính + case lỗi bằng ngôn ngữ nhìn thấy được (vd: 'hiển thị lỗi X dưới ô email' thay vì 'trả về 400')
 > - Hoặc paste thêm spec/requirements
-> - Hoặc để mình viết nháp từ As a/I want/So that, bạn review sau"
+> - Hoặc để mình viết nháp từ As a/I want/So that (đánh dấu DRAFT chưa verify — bạn phải duyệt từng AC trước khi generate, mình không dùng nháp chưa duyệt để sinh TC)"
 
 ### 4. Negative cases missing
 > "US chưa có negative case nào. Thêm ít nhất 1 nhé (vd: nhập sai, bỏ trống, quá giới hạn → màn hình phải hiện gì?). Nếu thật sự không có, nói mình biết để mình không tự bịa."
@@ -237,14 +234,12 @@ These are the "don't auto-assume" rules. If the agent does any of these, it's ma
 
 ```markdown
 # US-042: User Login with Email
+**Module**: Auth
 
 ## User Story
 **As a** registered student
 **I want** to log in with my email and password
 **So that** I can access my personal dashboard
-
-## Test Level
-- UI black-box only
 
 ## UI Map
 - Screens: Login → Dashboard (on success) / stays on Login (on failure)
@@ -316,13 +311,3 @@ From this US, the agent can extract:
 
 Total: ~10-15 test cases, all traceable to specific ACs or Business Rules, each backed by a systematic test design technique. Every step names real screens and exact on-screen labels — no invented element names, nothing verified below the UI.
 ```
-
----
-
-## Trả lời câu hỏi của bạn: US có cần "depends on" / phụ thuộc module-service ngoài không?
-
-**Có, nhưng viết theo kiểu "hiệu ứng visible + setup", không viết theo kiểu hợp đồng API.** Lý do:
-
-1. **Phụ thuộc cùng project (module khác):** US nào cũng đứng trên vai module khác (login đứng trên register, chat đứng trên auth). Tester cần biết để setup (muốn test chat phải login được trước) và để khi TC fail thì biết fail lan từ đâu. Trong template, chỗ này nằm ở **Preconditions** (setup làm được bằng UI) + **UI Map → Navigation/entry** (đi từ màn hình nào tới).
-2. **Phụ thuộc service ngoài:** chỉ ghi cái nào **lòi ra ngoài UI hoặc bắt tester chuẩn bị** (mailbox, tài khoản Google, email đến trễ). Cái này nằm ở **Dependencies & Integration (visible effects only)** như bản trên. Hợp đồng API/status/timeout/retry — không ghi, vì tester của bạn không kiểm chứng được, ghi vào chỉ khiến AI sinh TC sai phạm vi.
-3. **Nguyên tắc 1 dòng:** nếu sự phụ thuộc không đổi được thứ tester nhìn thấy hoặc thứ tester phải chuẩn bị → đừng ghi vào US (ghi vào chỉ gây nhiễu cho AI).
