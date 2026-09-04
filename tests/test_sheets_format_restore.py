@@ -68,18 +68,12 @@ def _service_with_sequences(
                 return MagicMock(execute=MagicMock(return_value=result))
         return MagicMock(execute=MagicMock(return_value={"values": []}))
 
-    service.spreadsheets.return_value.values.return_value.get.side_effect = (
-        _values_get
-    )
-    append_mock = (
-        service.spreadsheets.return_value.values.return_value.append
-    )
+    service.spreadsheets.return_value.values.return_value.get.side_effect = _values_get
+    append_mock = service.spreadsheets.return_value.values.return_value.append
     append_mock.return_value.execute.return_value = {
         "updates": {"updatedRange": "TestCases!A3:J3"}
     }
-    update_mock = (
-        service.spreadsheets.return_value.values.return_value.update
-    )
+    update_mock = service.spreadsheets.return_value.values.return_value.update
     update_mock.return_value.execute.return_value = {}
     batch_mock = service.spreadsheets.return_value.batchUpdate
     batch_mock.return_value.execute.return_value = {}
@@ -349,6 +343,17 @@ class _RecordingService:
                         for r in reqs
                     ):
                         outer.events.append("batch.numberFormat")
+                    elif any(
+                        "repeatCell" in r
+                        and r["repeatCell"]
+                        .get("cell", {})
+                        .get("userEnteredFormat", {})
+                        .get("backgroundColor")
+                        == {"red": 1.0, "green": 1.0, "blue": 1.0}
+                        for r in reqs
+                    ):
+                        # white-background reset (TC default style)
+                        outer.events.append("batch.resetWhite")
                     else:
                         outer.events.append("batch.other")
                     return {}
@@ -431,8 +436,13 @@ def _sample_tc() -> Dict[str, str]:
 
 def test_create_test_cases_restores_format_after_append(monkeypatch):
     """setDataValidation + date numberFormat batchUpdates must be emitted
-    AFTER values.append (the regression: they used to run only before)."""
-    service = _RecordingService([["TEST_CASE_ID"]], TESTCASES_HEADERS)
+    AFTER values.append (the regression: they used to run only before).
+
+    The format copy must run after the append but BEFORE the white
+    background/black text reset, so TC rows always end up white/black
+    and never keep a copied cell/text color.
+    """
+    service = _RecordingService([["TEST_CASE_ID"], ["TC-099"]], TESTCASES_HEADERS)
     monkeypatch.setattr(
         google_sheets_manager,
         "get_service",
@@ -459,18 +469,23 @@ def test_create_test_cases_restores_format_after_append(monkeypatch):
     assert result.get("created") == 1
     events = service.events
     assert "values.append" in events
+    assert "batch.copyPaste" in events
+    assert "batch.resetWhite" in events
     assert "batch.setDataValidation" in events
     assert "batch.numberFormat" in events
-    # The LAST validation/format restore must run after the append
-    # (a pre-append re-apply from add_us_section_header is expected too).
+    # append -> copy formats -> white/black reset -> restores.
+    # (A pre-append re-apply from add_us_section_header is expected too,
+    # so validation/format use their LAST occurrence.)
+    assert events.index("values.append") < events.index("batch.copyPaste")
+    assert events.index("batch.copyPaste") < events.index("batch.resetWhite")
     last_validation = max(
         i for i, e in enumerate(events) if e == "batch.setDataValidation"
     )
     last_number_format = max(
         i for i, e in enumerate(events) if e == "batch.numberFormat"
     )
-    assert events.index("values.append") < last_validation
-    assert events.index("values.append") < last_number_format
+    assert events.index("batch.resetWhite") < last_validation
+    assert events.index("batch.resetWhite") < last_number_format
 
 
 def test_append_google_sheet_restores_format_after_append(monkeypatch):

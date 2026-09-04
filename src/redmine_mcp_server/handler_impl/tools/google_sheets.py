@@ -598,12 +598,32 @@ async def create_test_cases_on_sheet_impl(
 
         # Post-process: apply rich text to markdown columns
         # (precondition D, steps E, expected_result F)
+        #
+        # Order of the post-append steps is load-bearing:
+        #   1. copy_format_to_new_rows — paste formats from the nearest
+        #      older data row (covers sheet-specific formats). Runs FIRST
+        #      so nothing it pastes (e.g. a stray background/text color)
+        #      can override the steps below.
+        #   2. _apply_markdown_rich_text — textFormatRuns on D/E/F.
+        #   3. reset_all_tc_blocks_formatting — forces white background +
+        #      black text on ALL TC rows, so TC rows never keep a copied
+        #      or inherited cell/text color (header blue, US title color).
+        #   4. restore_sheet_formatting — re-apply validations + date/wrap
+        #      formats. Runs LAST, after every row-mutating operation.
         if rows:
             # TC rows are appended after the US section header row inserted above.
             # us_header_row_index is 0-based; the US title row occupies
             # us_header_row_index (0-based) = us_header_row_index + 1 (1-based),
             # so the first TC row is at us_header_row_index + 2 (1-based).
             first_new_row = us_header_row_index + 2
+            if sheet_id is not None:
+                google_sheets_manager.copy_format_to_new_rows(
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_name=sheet_name,
+                    first_new_row=first_new_row,
+                    row_count=len(rows),
+                    num_columns=len(TESTCASES_HEADERS),
+                )
             _apply_markdown_rich_text(
                 service=service,
                 spreadsheet_id=spreadsheet_id,
@@ -643,18 +663,7 @@ async def create_test_cases_on_sheet_impl(
                 # Post-append format restore: the INSERT_ROWS above created
                 # brand-new rows without data validation or number formats,
                 # AFTER the pre-append re-apply inside add_us_section_header.
-                # Copy formatting from the nearest older data row first
-                # (covers sheet-specific formats), then re-apply the
-                # standard validations + date/wrap formats. This MUST run
-                # after every row-mutating operation in this flow.
-                first_new_tc_row = us_header_row_index + 2
-                google_sheets_manager.copy_format_to_new_rows(
-                    spreadsheet_id=spreadsheet_id,
-                    sheet_name=sheet_name,
-                    first_new_row=first_new_tc_row,
-                    row_count=len(rows),
-                    num_columns=len(TESTCASES_HEADERS),
-                )
+                # This MUST run after every row-mutating operation in flow.
                 google_sheets_manager.restore_sheet_formatting(
                     spreadsheet_id=spreadsheet_id,
                     sheet_name=sheet_name,
