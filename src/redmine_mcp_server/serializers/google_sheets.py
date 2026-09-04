@@ -148,9 +148,6 @@ HEADER_WRAP_COLUMNS = frozenset(
 
 # --- Markdown-to-rich-text conversion ---
 
-import re
-from typing import List
-
 
 def parse_markdown_to_rich_text(text: str) -> List[Dict[str, Any]]:
     """Parse markdown and return a list of textFormatRuns for Google Sheets rich text.

@@ -54,7 +54,6 @@ if not _env_loaded:
 
 from redminelib import Redmine  # noqa: E402
 from redminelib.exceptions import (  # noqa: E402
-    ResourceNotFoundError,
     VersionMismatchError,
     ValidationError,
 )
@@ -2260,7 +2259,8 @@ async def create_test_cases_on_sheet(
     us_title: Annotated[
         str,
         Field(
-            description="User story title used for the US section header row, e.g. 'Login Feature'"
+            description="User story title for the US section header row, "
+            "e.g. 'Login Feature'"
         ),
     ],
     clear_existing: Annotated[

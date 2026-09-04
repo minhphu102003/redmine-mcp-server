@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from typing import Any, Callable, Dict, List, Optional
 
@@ -82,8 +83,6 @@ async def write_google_sheet_impl(
 
 # --- Tool 3: append_google_sheet ---
 
-
-import re
 
 # Markdown detection compiled pattern (shared by append and create_test_cases)
 _MARKDOWN_RE = re.compile(r"\*\*|\*|`|\[.+\]\(")
@@ -329,7 +328,6 @@ async def create_test_cases_on_sheet_impl(
             TESTCASES_HEADERS,
             BUGS_HEADERS,
             build_test_case_id,
-            parse_markdown_to_rich_text,
             validate_test_case,
         )
 
@@ -500,24 +498,6 @@ async def create_test_cases_on_sheet_impl(
                 sheet_id = s["properties"]["sheetId"]
                 break
 
-        total_rows_in_sheet = 1
-        if sheet_id is not None:
-            try:
-                dim_meta = (
-                    service.spreadsheets()
-                    .get(
-                        spreadsheetId=spreadsheet_id,
-                        fields=f"sheets.properties.sheetId,sheets.properties.gridProperties.rowCount",
-                    )
-                    .execute()
-                )
-                for s in dim_meta.get("sheets", []):
-                    if s["properties"].get("sheetId") == sheet_id:
-                        total_rows_in_sheet = s["properties"].get("rowCount", 1)
-                        break
-            except Exception:
-                pass
-
         existing_count = 0
         try:
             count_result = (
@@ -563,7 +543,8 @@ async def create_test_cases_on_sheet_impl(
         )
         logger.info("create_test_cases_on_sheet: append result = %s", append_result)
 
-        # Post-process: apply rich text to markdown columns (precondition D, steps E, expected_result F)
+        # Post-process: apply rich text to markdown columns
+        # (precondition D, steps E, expected_result F)
         if rows:
             # TC rows are appended after the US section header row inserted above.
             # us_header_row_index is 0-based; the US title row occupies

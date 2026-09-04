@@ -161,7 +161,10 @@ def apply_markdown_format(
     """
     try:
         end_row = start_row + row_count
-        read_range = f"{sheet_name}!{chr(65 + col_index)}{start_row}:{chr(65 + col_index)}{end_row}"
+        read_range = (
+            f"{sheet_name}!{chr(65 + col_index)}{start_row}:"
+            f"{chr(65 + col_index)}{end_row}"
+        )
         result = (
             service.spreadsheets()
             .values()
@@ -474,7 +477,10 @@ class GoogleSheetsManager:
                             "verticalAlignment": "MIDDLE",
                         }
                     },
-                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)",
+                    "fields": (
+                        "userEnteredFormat(backgroundColor,textFormat,"
+                        "horizontalAlignment,verticalAlignment)"
+                    ),
                 }
             },
             {
@@ -734,7 +740,7 @@ class GoogleSheetsManager:
             return
 
         logger.info(
-            "reset_all_tc_blocks_formatting: TC ranges to reset (0-based end-exclusive): %s",
+            "reset_all_tc_blocks_formatting: TC ranges (0-based): %s",
             tc_ranges,
         )
 
@@ -773,7 +779,7 @@ class GoogleSheetsManager:
 
         # DEBUG: log every range and the full request bodies before sending
         logger.info(
-            "reset_all_tc_blocks_formatting: DEBUG tc_ranges (0-based end-exclusive) = %s",
+            "reset_all_tc_blocks_formatting: DEBUG tc_ranges = %s",
             tc_ranges,
         )
         logger.info(
@@ -905,14 +911,10 @@ class GoogleSheetsManager:
             )
             # Verify by reading back the first TC row's format
             try:
-                verify = (
-                    service.spreadsheets()
-                    .get(
-                        spreadsheetId=spreadsheet_id,
-                        fields=f"sheets.properties.sheetId",
-                    )
-                    .execute()
-                )
+                service.spreadsheets().get(
+                    spreadsheetId=spreadsheet_id,
+                    fields="sheets.properties.sheetId",
+                ).execute()
                 logger.info(
                     "apply_tc_rows_default_formatting: verify sheet_id=%s", sheet_id
                 )
@@ -1095,7 +1097,11 @@ class GoogleSheetsManager:
             service.spreadsheets()
             .get(
                 spreadsheetId=spreadsheet_id,
-                fields="spreadsheetId,spreadsheetUrl,sheets(properties(sheetId,title,gridProperties/rowCount))",
+                fields=(
+                    "spreadsheetId,spreadsheetUrl,"
+                    "sheets(properties(sheetId,title,"
+                    "gridProperties/rowCount))"
+                ),
             )
             .execute()
         )
