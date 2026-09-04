@@ -13,6 +13,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./credentials/service-account.json:/etc/secrets/service-account.json:ro
       - ./credentials:/app/credentials:ro
     restart: unless-stopped
     networks:
