@@ -40,6 +40,24 @@ def setup_test_environment():
         del os.environ["TESTING"]
 
 
+@pytest.fixture(autouse=True)
+def reset_redmine_client_cache():
+    """Reset module-level Redmine client singletons between tests.
+
+    _get_redmine_client() caches the legacy client in a module global;
+    without a reset, a client cached by one test leaks into the next and
+    breaks tests that assert the no-client error path (e.g. the
+    test_*_no_client tests in test_global_search.py).
+    """
+    from redmine_mcp_server import redmine_handler
+
+    redmine_handler._legacy_client = None
+    redmine_handler.redmine = None
+    yield
+    redmine_handler._legacy_client = None
+    redmine_handler.redmine = None
+
+
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Fixture to mock environment variables for testing."""

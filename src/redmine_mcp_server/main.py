@@ -202,7 +202,6 @@ def register_oauth_routes(target_app):
 from fastmcp.server.http import create_sse_app, create_streamable_http_app  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
-from starlette.responses import JSONResponse  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 
 
@@ -252,7 +251,8 @@ if REDMINE_AUTH_MODE == "oauth":
     app.add_middleware(RedmineOAuthMiddleware)
     register_oauth_routes(app)
 elif REDMINE_AUTH_MODE == "dynamic":
-    # Apply dynamic auth middleware - extracts X-Redmine-URL and X-Redmine-API-Key headers
+    # Apply dynamic auth middleware - extracts X-Redmine-URL and
+    # X-Redmine-API-Key headers
     # Multi-tenant: each client provides their own credentials via headers
     app.add_middleware(RedmineDynamicAuthMiddleware)
     logger.info("Dynamic auth mode: extracting credentials from request headers")
