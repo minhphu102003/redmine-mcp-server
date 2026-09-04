@@ -308,6 +308,9 @@ async def test_function_error():
 ### Documentation Files:
 
 - `README.md` - Keep concise with references to detailed docs
+- `README.vi.md`, `README.ko.md`, `README.ja.md`, `README.zh.md` - Translated mirrors of `README.md`.
+  When you change `README.md` structure or user-facing wording, sync all four translations
+  in the same PR (same headings, tables, commands, links; only prose translated).
 - `docs/tool-reference.md` - Tool usage details
 - `docs/troubleshooting.md` - Common issues and solutions
 - `docs/contributing.md` - This file

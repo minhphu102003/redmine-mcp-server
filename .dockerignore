@@ -21,3 +21,6 @@ __pycache__/
 .env.*
 !.env.example
 !.env.docker.vps.example
+# Google service account keys must never enter the image (mounted at runtime)
+credentials/
+**/service-account.json

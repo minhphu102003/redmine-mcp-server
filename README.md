@@ -1,5 +1,7 @@
 # Redmine MCP Server
 
+> 🌐 Tiếng Việt: [README.vi.md](./README.vi.md) · 한국어: [README.ko.md](./README.ko.md) · 日本語: [README.ja.md](./README.ja.md) · 中文: [README.zh.md](./README.zh.md)
+
 Your AI agent works with Redmine so you don't have to. Connect once, install a skill, then just talk — *"create a Redmine issue for this commit"*, *"is An on track this week?"*, *"generate test cases for this story"* — and confirm each step. The agent does the rest.
 
 ## Who are you? Pick your lane
