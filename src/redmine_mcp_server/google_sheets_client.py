@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .serializers.google_sheets import (
     BUGS_COLORS,
@@ -525,9 +526,10 @@ class GoogleSheetsManager:
             logger.warning("add_us_section_header batchUpdate failed: %s", e)
             return
 
-        member_names = await self.resolve_member_names(spreadsheet_id, get_user_memory)
-        if member_names is None:
+        resolution = await self.resolve_member_names(spreadsheet_id, get_user_memory)
+        if resolution is None:
             return []
+        member_names: List[str] = resolution.get("names", [])
 
         try:
             self.reapply_sheet_validations(
@@ -546,20 +548,34 @@ class GoogleSheetsManager:
         self,
         spreadsheet_id: str,
         get_user_memory: Optional[Any],
-    ) -> Optional[List[str]]:
+        get_client: Optional[Callable[[], Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Resolve Redmine member names for a spreadsheet.
 
         Looks up the Redmine project linked to ``spreadsheet_id`` in
         ``.google-sheets`` memory, then reads its member names from
         ``.redmine.project_contexts[<project_id>].members``.
 
+        When memory has no members but the project is known and
+        ``get_client`` is provided, falls back to a live Redmine API
+        call (``project_membership.filter``). Group memberships are
+        skipped — only real users land in the TESTER dropdown.
+
         Returns:
             ``None`` when memory is unavailable (``get_user_memory`` is
             ``None`` or the fetch fails) — callers should skip the
-            dynamic-dropdown re-apply in that case. Otherwise the member
-            name list, possibly empty when no project is linked or no
-            members are found (dynamic columns are then skipped, static
-            validations still apply).
+            dynamic-dropdown re-apply in that case. Otherwise a dict::
+
+                {
+                    "names": [...],           # possibly empty
+                    "redmine_project_id": str | None,
+                    "source": "memory"|"live"|"none",
+                    "entries": [...],         # memory-shape member entries
+                }
+
+            ``entries`` uses the same ``{"user": {"id", "name"}}`` shape
+            that ``redmine-init`` saves, so callers can persist a live
+            result back into ``.redmine`` memory.
         """
         if get_user_memory is None:
             logger.info(
@@ -568,7 +584,6 @@ class GoogleSheetsManager:
             )
             return None
 
-        member_names: List[str] = []
         try:
             sheets_memory = await get_user_memory(".google-sheets")
             redmine_memory = await get_user_memory(".redmine")
@@ -580,6 +595,7 @@ class GoogleSheetsManager:
             )
             return None
 
+        redmine_project_id: Optional[str] = None
         try:
             projects = []
             if isinstance(sheets_memory, dict):
@@ -587,7 +603,6 @@ class GoogleSheetsManager:
                 if isinstance(value, dict):
                     projects = value.get("projects", []) or []
 
-            redmine_project_id: Optional[str] = None
             for p in projects:
                 if isinstance(p, dict) and p.get("spreadsheet_id") == spreadsheet_id:
                     raw_pid = p.get("redmine_project_id")
@@ -602,47 +617,116 @@ class GoogleSheetsManager:
                     "skipping re-apply of TESTER dropdown",
                     spreadsheet_id,
                 )
-            else:
-                project_contexts: Dict[str, Any] = {}
-                if isinstance(redmine_memory, dict):
-                    rm_value = redmine_memory.get("value")
-                    if isinstance(rm_value, dict):
-                        project_contexts = rm_value.get("project_contexts", {}) or {}
+                return {
+                    "names": [],
+                    "redmine_project_id": None,
+                    "source": "none",
+                    "entries": [],
+                }
 
-                context = project_contexts.get(redmine_project_id, {})
-                if not isinstance(context, dict):
-                    context = {}
+            project_contexts: Dict[str, Any] = {}
+            if isinstance(redmine_memory, dict):
+                rm_value = redmine_memory.get("value")
+                if isinstance(rm_value, dict):
+                    project_contexts = rm_value.get("project_contexts", {}) or {}
 
-                members = context.get("members", []) or []
-                for m in members:
-                    if isinstance(m, dict):
-                        user = m.get("user")
-                        if isinstance(user, dict) and user.get("name"):
-                            member_names.append(str(user["name"]))
+            context = project_contexts.get(redmine_project_id, {})
+            if not isinstance(context, dict):
+                context = {}
 
-                if member_names:
-                    logger.info(
-                        "resolve_member_names: fetched %d member names for "
-                        "redmine_project_id=%s; re-applying validation",
-                        len(member_names),
-                        redmine_project_id,
-                    )
-                else:
-                    logger.warning(
-                        "resolve_member_names: no members found in "
-                        ".redmine.project_contexts[%s] for spreadsheet_id=%s; "
-                        "TESTER dropdown will be skipped",
-                        redmine_project_id,
-                        spreadsheet_id,
-                    )
+            member_names: List[str] = []
+            entries: List[Dict[str, Any]] = []
+            members = context.get("members", []) or []
+            for m in members:
+                if isinstance(m, dict):
+                    user = m.get("user")
+                    if isinstance(user, dict) and user.get("name"):
+                        member_names.append(str(user["name"]))
+                        entries.append(m)
+
+            if member_names:
+                logger.info(
+                    "resolve_member_names: fetched %d member names from "
+                    "memory for redmine_project_id=%s",
+                    len(member_names),
+                    redmine_project_id,
+                )
+                return {
+                    "names": member_names,
+                    "redmine_project_id": redmine_project_id,
+                    "source": "memory",
+                    "entries": entries,
+                }
+
+            logger.warning(
+                "resolve_member_names: no members found in "
+                ".redmine.project_contexts[%s] for spreadsheet_id=%s",
+                redmine_project_id,
+                spreadsheet_id,
+            )
         except Exception as e:
             logger.warning(
-                "resolve_member_names: failed to resolve member names (%s); "
-                "skipping re-apply of TESTER dropdown",
+                "resolve_member_names: failed to resolve member names (%s)",
                 e,
             )
 
-        return member_names
+        # Live fallback: memory knows the project but has no members.
+        if get_client is not None and redmine_project_id is not None:
+            try:
+                client = get_client()
+                if client is not None:
+                    memberships = await asyncio.to_thread(
+                        client.project_membership.filter,
+                        project_id=redmine_project_id,
+                    )
+                    live_names: List[str] = []
+                    live_entries: List[Dict[str, Any]] = []
+                    for ms in memberships or []:
+                        user = getattr(ms, "user", None)
+                        if user is None:
+                            continue  # skip group memberships
+                        name = getattr(user, "name", "")
+                        if name:
+                            live_names.append(str(name))
+                            live_entries.append(
+                                {
+                                    "user": {
+                                        "id": getattr(user, "id", None),
+                                        "name": str(name),
+                                    }
+                                }
+                            )
+                    if live_names:
+                        logger.info(
+                            "resolve_member_names: fetched %d member names "
+                            "live from Redmine for project %s",
+                            len(live_names),
+                            redmine_project_id,
+                        )
+                        return {
+                            "names": live_names,
+                            "redmine_project_id": redmine_project_id,
+                            "source": "live",
+                            "entries": live_entries,
+                        }
+                    logger.warning(
+                        "resolve_member_names: live fetch returned no users "
+                        "for project %s; TESTER dropdown will be skipped",
+                        redmine_project_id,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "resolve_member_names: live member fetch failed (%s); "
+                    "TESTER dropdown will be skipped",
+                    e,
+                )
+
+        return {
+            "names": [],
+            "redmine_project_id": redmine_project_id,
+            "source": "none",
+            "entries": [],
+        }
 
     def reset_all_tc_blocks_formatting(
         self,

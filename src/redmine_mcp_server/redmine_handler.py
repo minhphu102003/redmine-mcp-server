@@ -2226,6 +2226,7 @@ async def append_google_sheet(
         get_sheets_service=google_sheets_manager.get_service,
         handle_error=_handle_google_sheets_error,
         get_user_memory=get_user_memory,
+        get_client=_get_redmine_client,
     )
 
 
@@ -2280,6 +2281,7 @@ async def create_test_cases_on_sheet(
         get_user_memory=get_user_memory,
         set_user_memory=set_user_memory,
         handle_error=_handle_google_sheets_error,
+        get_client=_get_redmine_client,
     )
 
 
