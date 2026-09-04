@@ -90,12 +90,13 @@ If the source is a Redmine issue, use the issue's description, acceptance criter
 | **User Story** (As a / I want / So that) | Block |
 | **Acceptance Criteria** (≥1) | Block |
 | **Module/Feature** | Block |
-| **Business Rules** | Ask — don't auto-invent |
+| **UI Map** (screens + exact labels + navigation) | Block — never invent element names |
+| **Business Rules** | Ask — don't auto-invent (UI-visible only) |
 | **Preconditions** | Ask — don't auto-invent |
 | **Test Data** | Synthesize from AC — don't ask |
-| **Out of Scope** | Ask — default to narrow scope |
+| **Out of Scope** | Ask — default to narrow scope (UI-only) |
 | **Edge cases** | Ask — offer standard set |
-| **Integration concerns** | Ask — offer happy path + error handling |
+| **Integration concerns** | Ask — visible effects + setup needs only (no API/timeout/500) |
 
 ### 4 anti-patterns (NEVER do)
 
@@ -310,7 +311,7 @@ Generated: <YYYY-MM-DD>
 - **US Title**: <us_title>          ← thêm vào outline
 - **Do**: Submit login form with password shorter than 8 chars
 - **With**: email='user@example.com', password='abc'
-- **Expect**: Show error "Password must be at least 8 characters", no API call made
+- **Expect**: Show error "Password must be at least 8 characters" below the password field, user stays on the form
 
 ## TC-13: <title> (outline)
 - **Source**: AC5 + State Transition
