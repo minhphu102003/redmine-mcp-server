@@ -18,6 +18,7 @@ $OutputDir = "claude-desktop-skills"
 $SkillNames = @(
     "redmine-init",
     "testcase-generation",
+    "user-story-writing",
     "bug-reporting",
     "bug-to-redmine",
     "status-sync",

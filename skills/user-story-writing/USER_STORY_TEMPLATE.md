@@ -1,3 +1,6 @@
+> Vendored from `../testcase-generation/USER_STORY_TEMPLATE.md` — the original is the single source of truth. When the original changes, copy it over this file.
+>
+
 # User Story Template (for UI Black-Box Test Case Generation)
 
 A well-defined User Story (US) template that gives enough information for the `testcase-generation` skill to create test cases without guessing business logic.
