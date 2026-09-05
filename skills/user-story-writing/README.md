@@ -2,7 +2,7 @@
 
 A user-facing agent skill that interviews you to turn a rough idea or an incomplete user story into a template-ready US — validated against the `testcase-generation` US template and ready to feed test case generation.
 
-> Agent (LLM) instruction file: [`SKILL.md`](./SKILL.md). This README is for **humans** — installation, usage and troubleshooting. The US structure itself lives in [`../testcase-generation/USER_STORY_TEMPLATE.md`](../testcase-generation/USER_STORY_TEMPLATE.md) (single source of truth).
+> Agent (LLM) instruction file: [`SKILL.md`](./SKILL.md). This README is for **humans** — installation, usage and troubleshooting. The US structure itself lives in [`./USER_STORY_TEMPLATE.md`](./USER_STORY_TEMPLATE.md) (vendored copy of [`../testcase-generation/USER_STORY_TEMPLATE.md`](../testcase-generation/USER_STORY_TEMPLATE.md); the original is the single source of truth).
 
 ---
 
@@ -12,35 +12,33 @@ A user-facing agent skill that interviews you to turn a rough idea or an incompl
 |---|---|
 | 1 | **Capture** — you describe the idea, paste a rough US, or give a Redmine issue ID |
 | 2 | **Gap analysis** — agent compares your input against the US template checklist |
-| 3 | **Interview** — agent asks batched questions (max 4 per round), never invents answers |
-| 4 | **Draft** — full US written to `/mnt/user-data/outputs/user-story-draft.md` for review |
+| 3 | **Propose + interview** — agent drafts 6–7 ACs (happy + edge it infers) with concrete options, asks batched follow-ups (max 4 per round) only for gaps drafts can't cover |
+| 4 | **Draft** — full US written to `/mnt/user-data/outputs/user-story-draft.md` and shown as a preview card for review (one-way sync: describe changes in chat, draft is regenerated and re-presented) |
 | 5 | **Refine** — you request changes in chat, agent rewrites and re-presents |
 | 6 | **Approve + hand off** — you say "chốt" → validation gate → handoff to `testcase-generation` |
 
-Key rules: **Project Context is asked once per project, then reused.** Unverified points stay marked `[?]` — approval requires zero open `[?]` on Must-have fields. Default scope is UI black-box testing.
+Key rules: **Project Context is asked once per project per conversation, then reused.** The agent proposes 6–7 DRAFT ACs + edge cases first — you keep/edit/drop in chat, and only approved items enter the draft file (never unreviewed proposals). Unverified points stay marked `[?]` — approval requires zero open `[?]` on Must-have fields plus an explicit "chốt" reply (a bare "ok" does not count). Default scope is UI black-box testing.
 
 ---
 
-## 2. Installation
+## 2. Installation (Claude Desktop)
 
-### One-liner installer (recommended)
+### ZIP installer (recommended)
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills.ps1 | iex
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
 ```
 
-### Manual copy
+This creates `claude-desktop-skills/user-story-writing.zip` (includes `SKILL.md` + vendored `USER_STORY_TEMPLATE.md` so the ZIP stays standalone).
 
-| Location | Works with |
-|---|---|
-| `.agents/skills/user-story-writing/` (inside your repo) | opencode + Agent SDK |
-| `.opencode/skills/user-story-writing/` (inside your repo) | opencode |
+Then import:
 
-```bash
-cp -r <path-to-this-repo>/skills/user-story-writing .agents/skills/
-```
+1. Open Claude Desktop
+2. Go to Settings > Customize > Skills
+3. Click 'Add Skill' > Upload ZIP file
+4. Select `claude-desktop-skills/user-story-writing.zip`
 
-Then **restart your agent**.
+Then **restart Claude Desktop once after first install**.
 
 ---
 
@@ -54,14 +52,14 @@ Then **restart your agent**.
 
 ### Workflow
 
-1. Agent interviews you (batched questions, plain language)
-2. Draft US appears as a file preview — review it
-3. Request changes in chat until satisfied → say "chốt"
+1. Agent proposes 6–7 ACs (happy + edge cases it infers) plus a vagueness table — in chat first
+2. You review each proposal (keep/edit/drop) — only approved items enter the draft file, the rest stay `[?]` or are dropped
+3. Request changes in chat until satisfied → confirm the zero-`[?]` summary → reply "chốt" (a bare "ok" does not count)
 4. Agent hands off: US Title + Module + file path for `testcase-generation`
 
 ### Result
 
-- Draft file `/mnt/user-data/outputs/user-story-draft.md` with the complete US
+- Draft file `/mnt/user-data/outputs/user-story-draft.md` with the complete US (shown as a preview card; edits come via chat, then the draft is regenerated and re-presented)
 - Handoff message to continue with test case generation
 
 ---
@@ -79,9 +77,10 @@ Then **restart your agent**.
 
 ## 5. Keeping the skill up to date
 
-```bash
+```powershell
 git pull --rebase
-# re-run installer
+# re-run the Claude Desktop installer, then re-upload the new ZIP
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
 ```
 
-Restart agent after update.
+Restart Claude Desktop after update.
