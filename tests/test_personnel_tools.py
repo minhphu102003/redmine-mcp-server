@@ -171,6 +171,7 @@ class TestPersonWorkSummary:
             mock.issue_status.all.return_value = [
                 _mock_status(1, "New"),
                 _mock_status(2, "In Progress"),
+                _mock_status(3, "Done"),
                 _mock_status(5, "Closed", is_closed=True),
             ]
             mock.user.get.side_effect = lambda uid: _mock_user(uid)
@@ -187,7 +188,7 @@ class TestPersonWorkSummary:
 
     @pytest.mark.asyncio
     async def test_overdue_boundaries(self, mock_redmine):
-        """Due today is NOT overdue; closed+past-due is NOT; None is separate."""
+        """Due today is NOT overdue; closed/Done + past-due is NOT; None separate."""
         today = date.today()
         issues = [
             _mock_issue(1, due=today),  # due today -> in progress, not overdue
@@ -196,6 +197,13 @@ class TestPersonWorkSummary:
             ),
             _mock_issue(3, due=today - timedelta(1)),  # overdue
             _mock_issue(4, due=None),  # no due date -> separate bucket
+            _mock_issue(  # Done + 100% + past due -> completed, not overdue
+                5,
+                status_id=3,
+                status_name="Done",
+                done_ratio=100,
+                due=today - timedelta(10),
+            ),
         ]
         self._setup_backlog(mock_redmine, issues)
 
@@ -207,8 +215,10 @@ class TestPersonWorkSummary:
         assert proj["overdue"][0]["id"] == 3
         assert proj["no_due_date_count"] == 1
         assert proj["no_due_date"][0]["id"] == 4
+        assert proj["completed_count"] == 2  # Closed id=2 + Done id=5
         assert result["totals"]["overdue_count"] == 1
-        assert result["totals"]["open_count"] == 4
+        assert result["totals"]["completed_total"] == 2
+        assert result["totals"]["open_count"] == 3
 
     @pytest.mark.asyncio
     async def test_day_window_bounds(self, mock_redmine):
@@ -347,19 +357,24 @@ class TestPersonWorkSummary:
         assert evidence["totals"]["open_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_completed_rule_done100_even_when_open(self, mock_redmine):
-        """done_ratio 100 counts as completed even with an open status."""
+    async def test_completed_rule_done100_and_done_status(self, mock_redmine):
+        """100% needs Done status (or closed) to count as completed."""
         done = _mock_issue(
             1,
+            status_id=3,
+            status_name="Done",
             done_ratio=100,
             estimated_hours=3.0,
             updated_on=datetime(2026, 9, 2, 9, 0, 0),
         )
-        almost = _mock_issue(2, done_ratio=90, updated_on=datetime(2026, 9, 2, 9, 0, 0))
+        ratio_only = _mock_issue(
+            2, done_ratio=100, updated_on=datetime(2026, 9, 2, 9, 0, 0)
+        )  # In Progress -> open, flagged
+        almost = _mock_issue(3, done_ratio=90, updated_on=datetime(2026, 9, 2, 9, 0, 0))
 
         def issue_filter(**kwargs):
             if kwargs.get("status_id") == "*":
-                return [done, almost]
+                return [done, ratio_only, almost]
             return []
 
         mock_redmine.issue.filter.side_effect = issue_filter
@@ -374,11 +389,16 @@ class TestPersonWorkSummary:
         assert wed[0]["est"] == 3.0
         assert wed[0]["hours"] == 0.0
         assert wed[0]["completed"] is True
+        flags = {f["issue"]["id"]: f["reason"] for f in result["data_quality_flags"]}
+        assert 2 in flags
+        assert 1 not in flags and 3 not in flags
 
     @pytest.mark.asyncio
     async def test_hours_split_per_day_with_completion_flag(self, mock_redmine):
         done = _mock_issue(
             1,
+            status_id=3,
+            status_name="Done",
             done_ratio=100,
             estimated_hours=4.0,
             updated_on=datetime(2026, 9, 1, 9, 0, 0),
@@ -460,6 +480,8 @@ class TestPersonWorkSummary:
     async def test_hours_rounded_to_2dp(self, mock_redmine):
         done = _mock_issue(
             1,
+            status_id=3,
+            status_name="Done",
             done_ratio=100,
             estimated_hours=2.126,
             updated_on=datetime(2026, 9, 2, 9, 0, 0),
@@ -546,6 +568,8 @@ class TestPersonWorkSummary:
         """Multi-day task: completed=true on the updated day only."""
         done = _mock_issue(
             1,
+            status_id=3,
+            status_name="Done",
             done_ratio=100,
             estimated_hours=5.0,
             updated_on=datetime(2026, 9, 2, 17, 0, 0),
@@ -578,3 +602,95 @@ class TestPersonWorkSummary:
         hours_by_day = {day: t["hours"] for day, t in rows}
         assert hours_by_day == {"Thứ 3": 2.0, "Thứ 4": 1.0, "Thứ 5": 0.5}
         assert result["totals"]["hours"] == 3.5
+
+    @pytest.mark.asyncio
+    async def test_backlog_splits_completed_from_open(self, mock_redmine):
+        """Done+100% leaves the open backlog; counts stay consistent."""
+        today = date.today()
+        issues = [
+            _mock_issue(
+                1,
+                status_id=3,
+                status_name="Done",
+                done_ratio=100,
+                due=today - timedelta(10),
+            ),
+            _mock_issue(
+                2,
+                status_id=1,
+                status_name="New",
+                done_ratio=100,
+                due=today - timedelta(5),
+            ),
+            _mock_issue(3, done_ratio=40, due=today - timedelta(2)),
+            _mock_issue(4, done_ratio=30, due=today + timedelta(5)),
+        ]
+        self._setup_backlog(mock_redmine, issues)
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["completed_total"] == 1
+        assert result["totals"]["open_count"] == 3
+        assert result["totals"]["overdue_count"] == 2  # ids 2 and 3
+        assert result["totals"]["completed_count"] == 0  # nothing touched
+        overdue_ids = [
+            t["id"] for p in result["per_project"] for t in p["backlog"]["overdue"]
+        ]
+        assert sorted(overdue_ids) == [2, 3]
+        flags = {f["issue"]["id"] for f in result["data_quality_flags"]}
+        assert flags == {2}
+
+    @pytest.mark.asyncio
+    async def test_closed_status_counts_completed(self, mock_redmine):
+        """A closed status is completed even when done_ratio is below 100."""
+        issues = [
+            _mock_issue(
+                1,
+                status_id=5,
+                status_name="Closed",
+                done_ratio=80,
+                due=date.today() - timedelta(4),
+            ),
+        ]
+        self._setup_backlog(mock_redmine, issues)
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["completed_total"] == 1
+        assert result["totals"]["open_count"] == 0
+        assert result["totals"]["overdue_count"] == 0
+        assert result["data_quality_flags"] == []
+
+    @pytest.mark.asyncio
+    async def test_done_below_100_is_flagged_and_open(self, mock_redmine):
+        """Done status with ratio below 100 stays open and gets flagged."""
+        issues = [
+            _mock_issue(7, status_id=3, status_name="Done", done_ratio=0, due=None),
+        ]
+        self._setup_backlog(mock_redmine, issues)
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["completed_total"] == 0
+        assert result["totals"]["open_count"] == 1
+        assert result["totals"]["no_due_date_count"] == 1
+        assert len(result["data_quality_flags"]) == 1
+        assert result["data_quality_flags"][0]["issue"]["id"] == 7
+        assert "below 100" in result["data_quality_flags"][0]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_hours_scope_block_is_window_only(self, mock_redmine):
+        """Evidence states hours cover only this user's logs in the window."""
+        self._setup_backlog(mock_redmine, [])
+
+        day = await get_person_work_summary(7, date_str="2026-09-02")
+        scope = day["evidence"]["hours_scope"]
+        assert scope["scope"] == "window_only"
+        assert scope["user_id"] == 7
+        assert scope["from"] == "2026-09-02"
+        assert scope["to"] == "2026-09-02"
+        assert "0.0" in scope["note"]
+
+        week = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+        assert week["evidence"]["hours_scope"]["from"] == "2026-08-31"
+        assert week["evidence"]["hours_scope"]["to"] == "2026-09-06"

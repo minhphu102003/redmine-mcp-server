@@ -2166,8 +2166,9 @@ async def get_person_work_summary(
         Field(
             description=(
                 "When true, skip the per-project detail and return only"
-                " person, window, widget_data, totals and evidence"
-                " (smaller payload for the oversight widget)."
+                " person, window, widget_data, totals,"
+                " data_quality_flags and evidence (smaller payload for"
+                " the oversight widget)."
             )
         ),
     ] = False,
@@ -2181,10 +2182,13 @@ async def get_person_work_summary(
     completed=true on exactly one day, in-progress logged days carry
     completed=false; keys always cover Mon-Sun)
     plus per-project activity (hours logged, issues touched and closed in the
-    window), the current backlog (open, overdue where due_date is past and
-    status is open, no-due-date listed separately) and an evidence block
-    (filters used, query time, totals) so every answer can be cross-checked
-    in the Redmine UI. Read-only.
+    window), the current backlog (genuinely open issues only: completed
+    issues are split out into completed_total; overdue where due_date is
+    past and the issue is still outstanding, no-due-date listed
+    separately), data_quality_flags (contradictory status/done_ratio
+    records needing Redmine cleanup) and an evidence block (filters used,
+    hours_scope noting hours are window-only, query time, totals) so every
+    answer can be cross-checked in the Redmine UI. Read-only.
     """
     return await get_person_work_summary_impl(
         person,
