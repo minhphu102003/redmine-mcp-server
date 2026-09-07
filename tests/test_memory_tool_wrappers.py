@@ -47,8 +47,11 @@ def _load_wrapper(name: str):
     # Find: @mcp.tool()\nasync def NAME(... -> T): ... and capture body.
     # The signature may span many lines (Annotated[ ... Field( ... )] style)
     # and end with `-> ReturnType:`, so we explicitly require that.
+    # Extra decorators (e.g. @log_tool_call) may sit between @mcp.tool()
+    # and the def line — skip them, the reconstructed wrapper is undecorated.
     pattern = re.compile(
         r"@mcp\.tool\(\)\s*\n"
+        r"(?:@[^\n]*\n)*"
         r"async def " + re.escape(name) + r"\("
         r"[\s\S]*?"
         r"\)\s*->\s*[^:]+:\s*\n"
