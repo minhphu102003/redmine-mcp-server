@@ -2177,10 +2177,11 @@ async def get_person_work_summary(
 
     Use as step 3 of the boss workflow after the boss picks a person and a
     day/week window. Always returns widget_data (per-day time-log entries
-    per weekday with estimate vs same-day hours plus a completion flag,
-    ready to embed into the oversight widget: completed tasks carry
-    completed=true on exactly one day, in-progress logged days carry
-    completed=false; keys always cover Mon-Sun)
+    per weekday with estimate vs same-day hours, a lifetime total per
+    issue, plus a completion flag, ready to embed into the oversight
+    widget: completed tasks carry completed=true on exactly one day,
+    in-progress logged days carry completed=false; keys always cover
+    Mon-Sun)
     plus per-project activity (hours logged, issues touched and closed in the
     window), the current backlog (genuinely open issues only: completed
     issues are split out into completed_total; overdue where due_date is
@@ -2188,9 +2189,11 @@ async def get_person_work_summary(
     separately), task_context (completed issues plus in-progress issues
     with hours logged in the window, each with a truncated description
     so the agent can write a grounded weekly note — returned even when
-    compact is true), data_quality_flags (contradictory status/done_ratio
-    records needing Redmine cleanup) and an evidence block (filters used,
-    hours_scope noting hours are window-only, query time, totals) so every
+    compact is true; week_hours is window-only while lifetime_hours and
+    prior_hours span all weeks so overrun is judged on lifetime),
+    data_quality_flags (contradictory status/done_ratio records needing
+    Redmine cleanup) and an evidence block (filters used, hours_scope
+    noting window hours are window-only, query time, totals) so every
     answer can be cross-checked in the Redmine UI. Read-only.
     """
     return await get_person_work_summary_impl(

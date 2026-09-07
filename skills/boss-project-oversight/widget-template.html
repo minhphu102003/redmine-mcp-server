@@ -1,8 +1,10 @@
-<!-- boss-widget-template v2 -->
+<!-- boss-widget-template v3 -->
 <!--
 TEMPLATE CỐ ĐỊNH — hỗ trợ task trải nhiều ngày (log giờ ở nhiều ngày, chỉ
-"hoàn thành" ở đúng 1 ngày). Có fallback CSS variables để hiển thị đúng cả
-khi mở độc lập ngoài trình duyệt. KHÔNG dùng CDN — hoạt động offline hoàn toàn.
+"hoàn thành" ở đúng 1 ngày) và task dàn trải nhiều tuần (giờ log ngoài tuần
+đang xem vẫn được tính chênh lệch qua field "total"). Có fallback CSS
+variables để hiển thị đúng cả khi mở độc lập ngoài trình duyệt. KHÔNG dùng
+CDN — hoạt động offline hoàn toàn.
 
 CHỈ ĐƯỢC SỬA 4 CHỖ, đánh dấu rõ bằng comment:
   1. Tiêu đề — id="widget-title"
@@ -17,15 +19,18 @@ Data schema mỗi entry (1 dòng = 1 lần log giờ trong 1 ngày cho 1 task):
   "project": string,
   "est": number,           // giờ estimate của CẢ task (giữ nguyên giá trị ở mọi dòng cùng id)
   "hours": number,         // giờ log RIÊNG trong ngày đó (không phải tổng cả task)
+  "total": number,         // giờ đã log MỌI tuần của đúng user cho task này (để tính chênh lệch)
   "url": string,
   "completed": boolean     // true CHỈ ở đúng 1 ngày — ngày task được đánh dấu hoàn thành
 }
 
 Quy tắc quan trọng — KHÔNG được đổi logic này:
 - Cột biểu đồ chỉ đếm entry có completed=true (tránh đếm trùng task nhiều ngày).
-- "Chênh lệch" của 1 task = (TỔNG hours của mọi entry cùng id, bất kể ngày nào)
-  trừ est — được hệ thống tự tính (hàm totalHoursByTaskId), KHÔNG tính từ
-  hours của riêng 1 ngày.
+- "Chênh lệch" của 1 task hoàn thành = field "total" (giờ mọi tuần) trừ est —
+  KHÔNG tính từ "hours" của riêng 1 ngày hay tổng hours trong tuần. Entry cũ
+  thiếu "total" thì fallback = tổng hours của mọi entry cùng id trong tuần.
+- Các số mang nghĩa "tuần/ngày" (3 cards, "Giờ log ngày này", "Tổng ngày")
+  vẫn chỉ tính từ "hours" trong tuần đang xem — KHÔNG dùng "total".
 - Task chưa hoàn thành (completed=false) hiện Estimate và Chênh lệch là "—".
 - 7 khóa ngày theo đúng thứ tự: "Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6",
   "Thứ 7","Chủ nhật".
@@ -89,7 +94,7 @@ Quy tắc quan trọng — KHÔNG được đổi logic này:
 <div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
   <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
   <table style="width:100%; font-size:13px; border-collapse: collapse;" id="detail-table"></table>
-  <p id="hours-scope-note" style="display:none; color:var(--rpt-text-muted); font-size:11px; margin:8px 0 0;">Giờ hiển thị chỉ tính log trong tuần đang xem, của đúng người đang xem — 0h nghĩa là tuần này chưa log, không phải task chưa từng được log giờ.</p>
+  <p id="hours-scope-note" style="display:none; color:var(--rpt-text-muted); font-size:11px; margin:8px 0 0;">Giờ ngày/tuần chỉ tính log trong tuần đang xem, của đúng người đang xem — 0h nghĩa là tuần này chưa log, không phải task chưa từng được log giờ. Cột "Tổng đã log" gồm mọi tuần; "Chênh lệch" so với Estimate tính trên tổng mọi tuần.</p>
 </div>
 
 <!-- 4. FOOTER -->
@@ -134,6 +139,18 @@ function totalHoursByTaskId(projectFilter) {
     totals[t.id] = (totals[t.id] || 0) + t.hours;
   });
   return totals;
+}
+// Giờ lifetime (mọi tuần) của 1 task: ưu tiên field "total" từ backend;
+// entry cũ thiếu "total" thì fallback = tổng hours trong tuần.
+function lifetimeByTaskId(projectFilter) {
+  const windowTotals = totalHoursByTaskId(projectFilter);
+  const lifetimes = {};
+  allEntries.forEach(t => {
+    if (projectFilter !== 'Tất cả' && t.project !== projectFilter) return;
+    const lt = (typeof t.total === 'number') ? t.total : windowTotals[t.id];
+    lifetimes[t.id] = Math.max(lifetimes[t.id] || 0, lt);
+  });
+  return lifetimes;
 }
 
 function renderLegend(projectFilter) {
@@ -243,7 +260,7 @@ function showDetail(day, projectFilter) {
   title.textContent = day + ' — chi tiết task';
 
   const entries = getDayEntries(day, projectFilter);
-  const totalActualById = totalHoursByTaskId(projectFilter);
+  const lifetimeById = lifetimeByTaskId(projectFilter);
 
   let rows = '<tr style="border-bottom:1px solid var(--rpt-border);">' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Task</td>' +
@@ -251,10 +268,11 @@ function showDetail(day, projectFilter) {
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Trạng thái</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Estimate (h)</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Giờ log ngày này</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Tổng đã log</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Chênh lệch</td></tr>';
 
   if (entries.length === 0) {
-    rows += '<tr><td colspan="6" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task nào</td></tr>';
+    rows += '<tr><td colspan="7" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task nào</td></tr>';
   }
 
   let dayHoursLogged = 0, dayEstCompleted = 0, dayDiffCompleted = 0;
@@ -263,10 +281,10 @@ function showDetail(day, projectFilter) {
     const statusBadge = t.completed
       ? '<span class="rpt-badge rpt-badge-done">Hoàn thành</span>'
       : '<span class="rpt-badge rpt-badge-progress">Đang làm</span>';
+    const lifetime = lifetimeById[t.id];
     let estCell = '—', diffCell = '—';
     if (t.completed) {
-      const totalActual = totalActualById[t.id];
-      const diff = totalActual - t.est;
+      const diff = lifetime - t.est;
       const diffColor = diff > 0 ? 'var(--rpt-text-danger)' : (diff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
       estCell = t.est.toFixed(2);
       diffCell = `<span style="color:${diffColor};">` + (diff > 0 ? '+' : '') + diff.toFixed(2) + 'h</span>';
@@ -279,6 +297,7 @@ function showDetail(day, projectFilter) {
       '<td style="padding:6px 4px;">' + statusBadge + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + estCell + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + t.hours.toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + lifetime.toFixed(2) + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + diffCell + '</td></tr>';
   });
 

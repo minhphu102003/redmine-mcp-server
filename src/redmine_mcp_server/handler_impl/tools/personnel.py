@@ -166,7 +166,12 @@ def _truncate_description(value: Any, limit: int = _TASK_CONTEXT_DESC_LIMIT) -> 
 
 
 def _task_context_entry(
-    issue: Any, base_url: str, week_hours: float, completed_flag: bool
+    issue: Any,
+    base_url: str,
+    week_hours: float,
+    completed_flag: bool,
+    lifetime_hours: float = 0.0,
+    prior_hours: float = 0.0,
 ) -> Dict[str, Any]:
     """One task's weekly-note material: what it is + what it says.
 
@@ -174,6 +179,12 @@ def _task_context_entry(
     hours logged in the window. The description is truncated and wrapped
     as insecure content (same convention as the issue serializers), so
     agents must strip the wrapper tags before quoting it.
+
+    ``week_hours`` counts this user's logs inside the viewed window
+    only; ``lifetime_hours`` counts all their logs on the issue across
+    every week, and ``prior_hours`` is the out-of-window part
+    (lifetime minus window). Overrun judgments must use lifetime, not
+    the window slice.
     """
     project = getattr(issue, "project", None)
     status = getattr(issue, "status", None)
@@ -189,11 +200,29 @@ def _task_context_entry(
         "status": getattr(status, "name", "") or "",
         "completed": completed_flag,
         "week_hours": _round2(week_hours),
+        "lifetime_hours": _round2(lifetime_hours),
+        "prior_hours": _round2(prior_hours),
         "description": wrap_insecure_content(
             _truncate_description(getattr(issue, "description", ""))
         ),
         "url": (f"{base_url}/issues/{issue_id}" if base_url and issue_id else None),
     }
+
+
+def _lifetime_split(
+    issue_id: Any,
+    window_by_issue: Dict[Any, float],
+    lifetime_by_issue: Dict[Any, float],
+) -> tuple:
+    """(lifetime, prior) hours for one issue, both rounded.
+
+    Lifetime is clamped to at least the window total so a partial
+    lifetime fetch can never report less than the viewed week. Prior
+    (out-of-window) is lifetime minus window, never negative.
+    """
+    window = window_by_issue.get(issue_id, 0.0)
+    lifetime = max(lifetime_by_issue.get(issue_id, 0.0), window)
+    return _round2(lifetime), _round2(lifetime - window)
 
 
 def _issue_brief(
@@ -410,9 +439,9 @@ async def get_person_work_summary_impl(
     in-progress issues with hours logged in the window, each with a
     truncated description for the agent-written weekly note — also
     returned when ``compact`` is True) and ``widget_data`` — per-day time-log
-    entries bucketed per weekday with estimate vs same-day hours plus a
-    completion flag, ready to embed verbatim into the oversight widget.
-    Keys always cover Mon-Sun.
+    entries bucketed per weekday with estimate vs same-day hours, a
+    lifetime ``total`` per issue, plus a completion flag, ready to embed
+    verbatim into the oversight widget. Keys always cover Mon-Sun.
 
     Hours scope: ``actual_hours`` per issue and ``totals.hours`` count
     ONLY time logged by this user inside the viewed window (see
@@ -468,7 +497,7 @@ async def get_person_work_summary_impl(
         hours_by_project: Dict[Any, float] = {}
         actual_by_issue: Dict[Any, float] = {}
         # Per-day hours per issue: (issue_id, spent_on ISO date) -> hours.
-        # Drives the widget v2 "hours" field (hours logged on that day only).
+        # Drives the widget "hours" field (hours logged on that day only).
         hours_by_issue_day: Dict[tuple, float] = {}
         for entry in time_entries:
             entry_hours = _round2(getattr(entry, "hours", 0))
@@ -492,6 +521,25 @@ async def get_person_work_summary_impl(
                     hours_by_issue_day[day_key] = (
                         hours_by_issue_day.get(day_key, 0.0) + entry_hours
                     )
+
+        # Lifetime hours per issue for this user (all weeks, no date
+        # bounds). Drives the widget v3 "total" field and the
+        # task_context lifetime/prior hours so week-spanning issues
+        # report the true overrun (est vs lifetime) instead of the
+        # window slice only. One extra paginated call per summary.
+        lifetime_by_issue: Dict[Any, float] = {}
+        for entry in await _fetch_all_pages(
+            client.time_entry.filter,
+            user_id=uid,
+        ):
+            entry_issue = getattr(entry, "issue", None)
+            entry_issue_id = (
+                getattr(entry_issue, "id", None) if entry_issue is not None else None
+            )
+            if entry_issue_id is not None:
+                lifetime_by_issue[entry_issue_id] = lifetime_by_issue.get(
+                    entry_issue_id, 0.0
+                ) + _round2(getattr(entry, "hours", 0))
 
         # Activity: assigned issues touched in the window (any status).
         touched_raw = await _fetch_all_pages(
@@ -568,15 +616,18 @@ async def get_person_work_summary_impl(
                     }
                 )
 
-        # Widget data v2: per-day time-log entries, ready to embed verbatim
+        # Widget data v3: per-day time-log entries, ready to embed verbatim
         # into the oversight widget. Keys ALWAYS cover Mon-Sun (7 Vietnamese
         # labels) for both day and week windows — days outside a day window
         # stay empty. Completed tasks appear with completed=true on exactly
         # one day (their updated_on day, hours = logged that day only, 0.0
         # when nothing was logged that day). Every other logged day of any
-        # task appears as completed=false (in-progress row). Entries whose
-        # issue is unknown (e.g. project-level logs, reassigned issues) stay
-        # in totals but cannot be placed on a named task row.
+        # task appears as completed=false (in-progress row). Each entry
+        # also carries "total" (this user's lifetime hours on the issue,
+        # all weeks) so the widget computes overrun as total - est instead
+        # of the window slice. Entries whose issue is unknown (e.g.
+        # project-level logs, reassigned issues) stay in totals but cannot
+        # be placed on a named task row.
         widget_data: Dict[str, List[Dict[str, Any]]] = {
             name: [] for name in _VI_DAY_NAMES
         }
@@ -586,6 +637,9 @@ async def get_person_work_summary_impl(
         ) -> Dict[str, Any]:
             project = getattr(issue, "project", None)
             issue_id = getattr(issue, "id", None)
+            lifetime, _prior = _lifetime_split(
+                issue_id, actual_by_issue, lifetime_by_issue
+            )
             return {
                 "id": issue_id,
                 "name": getattr(issue, "subject", ""),
@@ -594,6 +648,7 @@ async def get_person_work_summary_impl(
                 ),
                 "est": _round2(getattr(issue, "estimated_hours", None)),
                 "hours": _round2(day_hours),
+                "total": lifetime,
                 "url": (
                     f"{base_url}/issues/{issue_id}" if base_url and issue_id else None
                 ),
@@ -638,6 +693,8 @@ async def get_person_work_summary_impl(
         # window. Untouched backlog is excluded. Always returned, even
         # when compact is True, so the skill can summarize what the
         # person actually worked on with grounded descriptions.
+        # week_hours is window-only; lifetime_hours/prior_hours cover all
+        # weeks so overrun is judged on lifetime, not the window slice.
         task_context: List[Dict[str, Any]] = []
         context_seen_ids: set = set()
         for issue in completed:
@@ -645,12 +702,17 @@ async def get_person_work_summary_impl(
             if issue_id is None or issue_id in context_seen_ids:
                 continue
             context_seen_ids.add(issue_id)
+            lifetime, prior = _lifetime_split(
+                issue_id, actual_by_issue, lifetime_by_issue
+            )
             task_context.append(
                 _task_context_entry(
                     issue,
                     base_url,
                     actual_by_issue.get(issue_id, 0.0),
                     True,
+                    lifetime,
+                    prior,
                 )
             )
         for issue_id, _spent_iso in sorted(
@@ -664,9 +726,17 @@ async def get_person_work_summary_impl(
                 continue
             if _is_completed(issue, closed_ids):
                 continue
+            lifetime, prior = _lifetime_split(
+                issue_id, actual_by_issue, lifetime_by_issue
+            )
             task_context.append(
                 _task_context_entry(
-                    issue, base_url, actual_by_issue.get(issue_id, 0.0), False
+                    issue,
+                    base_url,
+                    actual_by_issue.get(issue_id, 0.0),
+                    False,
+                    lifetime,
+                    prior,
                 )
             )
 
