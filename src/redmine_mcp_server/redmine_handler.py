@@ -2148,8 +2148,11 @@ async def get_person_work_summary(
     """Summarize one person's performance for a day or week, grouped by project.
 
     Use as step 3 of the boss workflow after the boss picks a person and a
-    day/week window. Always returns widget_data (completed tasks per weekday
-    with estimate vs actual hours, ready to embed into the oversight widget)
+    day/week window. Always returns widget_data (per-day time-log entries
+    per weekday with estimate vs same-day hours plus a completion flag,
+    ready to embed into the oversight widget: completed tasks carry
+    completed=true on exactly one day, in-progress logged days carry
+    completed=false; keys always cover Mon-Sun)
     plus per-project activity (hours logged, issues touched and closed in the
     window), the current backlog (open, overdue where due_date is past and
     status is open, no-due-date listed separately) and an evidence block

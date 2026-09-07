@@ -76,11 +76,12 @@ def _mock_status(sid, name, is_closed=False):
     return _named_mock(id=sid, name=name, is_closed=is_closed)
 
 
-def _mock_entry(hours, project_id=1, project_name="Proj", issue_id=None):
+def _mock_entry(hours, project_id=1, project_name="Proj", issue_id=None, spent_on=None):
     e = Mock()
     e.hours = hours
     e.project = _named_mock(id=project_id, name=project_name)
     e.issue = _named_mock(id=issue_id) if issue_id is not None else None
+    e.spent_on = spent_on
     return e
 
 
@@ -371,10 +372,11 @@ class TestPersonWorkSummary:
         wed = result["widget_data"]["Thứ 4"]
         assert [t["id"] for t in wed] == [1]
         assert wed[0]["est"] == 3.0
-        assert wed[0]["actual"] == 0.0
+        assert wed[0]["hours"] == 0.0
+        assert wed[0]["completed"] is True
 
     @pytest.mark.asyncio
-    async def test_actual_hours_joined_per_issue(self, mock_redmine):
+    async def test_hours_split_per_day_with_completion_flag(self, mock_redmine):
         done = _mock_issue(
             1,
             done_ratio=100,
@@ -389,8 +391,8 @@ class TestPersonWorkSummary:
 
         mock_redmine.issue.filter.side_effect = issue_filter
         mock_redmine.time_entry.filter.return_value = [
-            _mock_entry(1.5, issue_id=1),
-            _mock_entry(1.0, issue_id=1),
+            _mock_entry(1.5, issue_id=1, spent_on=date(2026, 9, 1)),
+            _mock_entry(1.0, issue_id=1, spent_on=date(2026, 9, 2)),
             _mock_entry(2.0, issue_id=None),  # project-level: hours only
         ]
 
@@ -398,7 +400,13 @@ class TestPersonWorkSummary:
 
         assert result["totals"]["hours"] == 4.5
         tue = result["widget_data"]["Thứ 3"]
-        assert tue[0]["actual"] == 2.5
+        assert [(t["id"], t["completed"]) for t in tue] == [(1, True)]
+        assert tue[0]["hours"] == 1.5
+        assert tue[0]["est"] == 4.0
+        wed = result["widget_data"]["Thứ 4"]
+        assert [(t["id"], t["completed"]) for t in wed] == [(1, False)]
+        assert wed[0]["hours"] == 1.0
+        assert wed[0]["est"] == 4.0
 
     @pytest.mark.asyncio
     async def test_widget_data_week_keys_in_order(self, mock_redmine):
@@ -418,12 +426,21 @@ class TestPersonWorkSummary:
         assert all(days == [] for days in result["widget_data"].values())
 
     @pytest.mark.asyncio
-    async def test_day_window_single_widget_key(self, mock_redmine):
+    async def test_day_window_returns_seven_keys(self, mock_redmine):
         self._setup_backlog(mock_redmine, [])
 
         result = await get_person_work_summary(7, date_str="2026-09-06")
 
-        assert list(result["widget_data"].keys()) == ["Chủ nhật"]
+        assert list(result["widget_data"].keys()) == [
+            "Thứ 2",
+            "Thứ 3",
+            "Thứ 4",
+            "Thứ 5",
+            "Thứ 6",
+            "Thứ 7",
+            "Chủ nhật",
+        ]
+        assert all(days == [] for days in result["widget_data"].values())
 
     @pytest.mark.asyncio
     async def test_compact_omits_per_project(self, mock_redmine):
@@ -454,11 +471,110 @@ class TestPersonWorkSummary:
             return []
 
         mock_redmine.issue.filter.side_effect = issue_filter
-        mock_redmine.time_entry.filter.return_value = [_mock_entry(1.126, issue_id=1)]
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(1.126, issue_id=1, spent_on=date(2026, 9, 2))
+        ]
 
         result = await get_person_work_summary(7, date_str="2026-09-02")
 
         task = result["widget_data"]["Thứ 4"][0]
         assert task["est"] == 2.13
-        assert task["actual"] == 1.13
+        assert task["hours"] == 1.13
+        assert task["completed"] is True
         assert task["url"] == "https://redmine.example.com/issues/1"
+
+    @pytest.mark.asyncio
+    async def test_in_progress_logged_days_appear_not_completed(self, mock_redmine):
+        """Open task with logs shows completed=false rows on logged days only."""
+        working = _mock_issue(
+            1,
+            done_ratio=30,
+            estimated_hours=5.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [working])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(2.0, issue_id=1, spent_on=date(2026, 9, 1)),
+            _mock_entry(1.5, issue_id=1, spent_on=date(2026, 9, 2)),
+        ]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        tue = result["widget_data"]["Thứ 3"]
+        wed = result["widget_data"]["Thứ 4"]
+        assert [(t["id"], t["completed"]) for t in tue] == [(1, False)]
+        assert tue[0]["hours"] == 2.0
+        assert [(t["id"], t["completed"]) for t in wed] == [(1, False)]
+        assert wed[0]["hours"] == 1.5
+        assert tue[0]["est"] == wed[0]["est"] == 5.0
+        assert result["widget_data"]["Thứ 5"] == []
+        assert result["totals"]["completed_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_in_progress_without_logs_absent(self, mock_redmine):
+        """Open task with no time logs gets no widget row at all."""
+        working = _mock_issue(
+            1,
+            done_ratio=30,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [working])
+        mock_redmine.time_entry.filter.return_value = []
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        assert all(days == [] for days in result["widget_data"].values())
+        assert result["totals"]["open_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_issue_logs_stay_in_totals_only(self, mock_redmine):
+        """Logs for an unknown issue count in totals but get no DATA row."""
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(3.0, issue_id=99, spent_on=date(2026, 9, 2)),
+        ]
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["hours"] == 3.0
+        assert result["totals"]["time_entries"] == 1
+        all_ids = [t["id"] for days in result["widget_data"].values() for t in days]
+        assert 99 not in all_ids
+
+    @pytest.mark.asyncio
+    async def test_completed_true_exactly_once_across_week(self, mock_redmine):
+        """Multi-day task: completed=true on the updated day only."""
+        done = _mock_issue(
+            1,
+            done_ratio=100,
+            estimated_hours=5.0,
+            updated_on=datetime(2026, 9, 2, 17, 0, 0),
+        )
+
+        def issue_filter(**kwargs):
+            if kwargs.get("status_id") == "*":
+                return [done]
+            return []
+
+        mock_redmine.issue.filter.side_effect = issue_filter
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(2.0, issue_id=1, spent_on=date(2026, 9, 1)),
+            _mock_entry(1.0, issue_id=1, spent_on=date(2026, 9, 2)),
+            _mock_entry(0.5, issue_id=1, spent_on=date(2026, 9, 3)),
+        ]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        rows = [
+            (day, t)
+            for day, days in result["widget_data"].items()
+            for t in days
+            if t["id"] == 1
+        ]
+        assert len(rows) == 3
+        assert [t["est"] for _, t in rows] == [5.0, 5.0, 5.0]
+        completed_days = [day for day, t in rows if t["completed"] is True]
+        assert completed_days == ["Thứ 4"]
+        hours_by_day = {day: t["hours"] for day, t in rows}
+        assert hours_by_day == {"Thứ 3": 2.0, "Thứ 4": 1.0, "Thứ 5": 0.5}
+        assert result["totals"]["hours"] == 3.5

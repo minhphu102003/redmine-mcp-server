@@ -18,7 +18,7 @@ Answer the boss's questions about **one employee at a time** using live Redmine 
 3. **One person per run**: if the boss asks about the whole team ("team làm sao rồi"), decline — *"Tôi xem từng người một cho chính xác — boss muốn xem ai trước?"* — then run the flow for that person.
 4. **Live data first, never invent**: every line traces to a tool result. Empty data → say "no tracked activity" and stop. Never fabricate hours, statuses, or blockers.
 5. **Overdue definition (fixed)**: `status is open (not closed) AND due_date < today (server date)`. Due today is NOT overdue. Closed issues are NEVER overdue. Issues with no `due_date` are listed separately and NEVER counted as overdue.
-6. **Completed definition (fixed, drives the widget)**: `done_ratio == 100 AND updated in the viewed window` — even when the status is still open. The tool computes this as `completed`/`widget_data`; the widget counts exactly these tasks.
+6. **Completed definition (fixed, drives the widget)**: `done_ratio == 100 AND updated in the viewed window` — even when the status is still open. The completion day is the `updated_on` day: the tool emits `completed=true` on exactly that day. The widget counts exactly these entries.
 7. **Cite everything (evidence rule)**: every answer ends with an evidence footer — the filters used, the query time, `total_count` from the tool, and `issues/<id>` links that open in the Redmine UI for manual cross-check.
 8. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names you reuse.
 
@@ -58,9 +58,9 @@ After the boss picks a person (by number or name), ask before calling anything:
 
 The skill ships with a reference template, `widget-template.html`, in the **same folder as this SKILL.md** (the installer copies it next to `SKILL.md` — boss skill only). **Read that file first, in full, before calling `get_person_work_summary`.** It is the single source of truth for layout, element IDs, CSS classes, palette, and Vietnamese labels. The spec in §4.1–4.3 below mirrors that file and is only the fallback for when the file is missing.
 
-### 4.1 Template contract (v1 — `widget-template.html` in this folder)
+### 4.1 Template contract (v2 — `widget-template.html` in this folder)
 
-Version pin: `<!-- boss-widget-template v1 -->` at the top of the file.
+Version pin: `<!-- boss-widget-template v2 -->` at the top of the file.
 If the pin differs, STOP and tell the boss to update the skill — never render
 against a mismatched template.
 
@@ -71,25 +71,36 @@ Visualizer). **Only these 4 slots may change per run:**
 
 1. **Title** — `#widget-title`: `Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}`.
 2. **RAMP** — `const RAMP = ["#85B7EB", "#378ADD", "#185FA5", "#042C53", "#B5D4F4"]`
-   (single blue tone, stops spaced apart). `projectColors` assigns in
-   first-appearance order, wraps with `% RAMP.length`.
+   (single blue tone, stops spaced apart — never switch color families).
+   `projectColors` assigns in first-appearance order, wraps with `% RAMP.length`.
 3. **DATA** — `const DATA = {...}` embedded verbatim from the tool's
-   `widget_data`. Schema per task:
-   `{ "id": number, "name": string, "project": string, "est": number, "actual": number, "url": string }`.
-   7 day keys in fixed order: `"Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7","Chủ nhật"`.
+   `widget_data`. One row = one time log on one day for one task; the same
+   task id repeats across days, `completed=true` on exactly one day.
+   Schema per entry:
+   `{ "id": number, "name": string, "project": string, "est": number, "hours": number, "url": string, "completed": boolean }`
+   where `est` = estimate of the WHOLE task (same value on every row with
+   that id) and `hours` = hours logged on THAT day only (not the task total).
+   7 day keys in fixed order, always present even for a day window
+   (out-of-window days are `[]`):
+   `"Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7","Chủ nhật"`.
 4. **Footer** — `Nguồn: Redmine, queried at {evidence.queried_at}`.
 
 Fixed element IDs (never rename): `rpt-root`, `widget-title`,
 `project-filter`, `total-tasks`, `eff-ratio`, `week-diff`, `bar-chart`,
 `tooltip`, `day-labels`, `legend`, `detail-panel`, `detail-day`, `detail-table`.
 Fixed behaviors: dropdown `Tất cả` + one option per project (first-appearance
-order); 3 metric cards (`total-tasks` = count, `eff-ratio` = Σest/Σactual×100
-1 decimal + `%` or `—` when Σactual is 0, `week-diff` = Σactual−Σest 2 decimals
-with `+` prefix when > 0, red when > 0 / green when < 0); stacked count bars
-Thứ 2 → Chủ nhật with per-segment hover tooltip and empty-day `2px` tick;
-click-a-column `showDetail(day, projectFilter)` with hyperlink via `url`,
-variance = actual − est (2 decimals, red > 0 else green) plus `Tổng ngày` row;
-`Không có task hoàn thành` when empty. Offline single file: keep inline
+order); 3 metric cards (`total-tasks` = completed-task count deduped by id,
+`eff-ratio` = Σest/Σactual×100 with 1 decimal + `%` or `—` when Σactual is 0,
+`week-diff` = Σactual−Σest with 2 decimals and `+` prefix when > 0,
+red when > 0 / green when < 0); stacked count bars Thứ 2 → Chủ nhật counting
+ONLY `completed=true` entries (never double-count multi-day tasks), with
+per-segment hover tooltip and empty-day `2px` tick; click-a-column
+`showDetail(day, projectFilter)` showing in-progress rows too (badge
+`Đang làm` vs `Hoàn thành`, hyperlink via `url`, `hours` = that day's log,
+Estimate/variance = `—` for in-progress rows, variance for completed rows =
+total hours of ALL rows with that id − est, 2 decimals, red > 0 else green)
+plus a `Tổng ngày` row (variance counts only tasks completed that day);
+`Không có task nào` when a day is empty. Offline single file: keep inline
 `<style>` + `<script>`, no CDN, no external requests.
 
 ### 4.2 Fill and emit
@@ -97,21 +108,25 @@ variance = actual − est (2 decimals, red > 0 else green) plus `Tổng ngày` r
 1. Call `get_person_work_summary(person=<id from step 1>, window=<day|week>, date_str=<date>, compact=true)`. `ambiguous` error → present candidates, never guess.
 2. Fill the 4 template slots with the live result (`widget_data` → DATA slot verbatim, person + window → title slot, `evidence.queried_at` → footer slot, RAMP stays as pinned).
 3. Run the pre-emit checklist, then emit **one HTML artifact**:
-   - [ ] 7 weekday columns in order Thứ 2 → Chủ nhật, DATA keys match exactly.
+   - [ ] 7 weekday columns in order Thứ 2 → Chủ nhật, DATA keys match exactly (day window too — other days `[]`).
+   - [ ] `completed=true` on exactly one day per task id; every other logged day of that id is `completed=false`.
+   - [ ] `est` identical on all rows sharing an id; `hours` = that day's log only.
+   - [ ] In-progress rows present exactly on days with logged hours (badge `Đang làm`, Estimate/variance `—`); no unlogged open task appears.
    - [ ] `#project-filter` options = `Tất cả` + projects present in DATA (first-appearance order).
-   - [ ] `total-tasks` / `eff-ratio` / `week-diff` computed from the active filter only.
-   - [ ] Variance (detail rows + `Tổng ngày` + `week-diff`) red when actual − est > 0, green when < 0.
+   - [ ] `total-tasks` / `eff-ratio` / `week-diff` computed from the active filter only, tasks deduped by id.
+   - [ ] Variance (detail rows + `Tổng ngày` + `week-diff`) red when total − est > 0, green when < 0.
    - [ ] Task names link via each task's `url`; evidence footer present with `queried_at`.
+   - [ ] Known gap (say it if asked): project-level logs with no issue, or issues the tool could not resolve, stay in `totals.hours` but have no DATA row — cross-check via `totals.time_entries`.
 
-### 4.3 Fallback when the template file is missing (mirrors v1)
+### 4.3 Fallback when the template file is missing (mirrors v2)
 
 If `widget-template.html` is absent (old install), build one self-contained HTML artifact (inline `<style>` + `<script>`, no CDN) from `widget_data` embedded verbatim as `const DATA = {...}`:
 
 1. **Title** (`#widget-title`): `Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}`.
 2. **Project dropdown** (`#project-filter`, top): `Tất cả` + one option per project in DATA (first-appearance order). Default `Tất cả`.
-3. **Three metric cards** from the active filter: completed-task count (`#total-tasks`); Σest/Σactual × 100 with one decimal + `%` (`—` when Σactual is 0) (`#eff-ratio`); week diff Σactual−Σest with 2 decimals, `+` prefix when > 0, red > 0 / green < 0 (`#week-diff`).
-4. **Stacked bar chart** (`#bar-chart` + `#day-labels` + `#tooltip` + `#legend`) Thứ 2 → Chủ nhật: per-project stacked counts (`Tất cả`) or single-project data; legend with name + color swatch. Palette: `["#85B7EB", "#378ADD", "#185FA5", "#042C53", "#B5D4F4"]` (wrap past 5).
-5. **Detail table** (`#detail-panel` / `#detail-day` / `#detail-table`) on bar click (day AND active project filter): Tên task (hyperlink via `url`), Project, estimate, actual, variance = actual − est (2 decimals, red > 0, green ≤ 0) + `Tổng ngày` row. Empty day → `Không có task hoàn thành`.
+3. **Three metric cards** from the active filter, tasks deduped by id: completed-task count (`#total-tasks`); Σest/Σactual × 100 with one decimal + `%` (`—` when Σactual is 0) (`#eff-ratio`), where Σactual per task = total `hours` of all rows with that id; week diff Σactual−Σest with 2 decimals, `+` prefix when > 0, red > 0 / green < 0 (`#week-diff`).
+4. **Stacked bar chart** (`#bar-chart` + `#day-labels` + `#tooltip` + `#legend`) Thứ 2 → Chủ nhật: per-project stacked counts of `completed=true` entries ONLY (`Tất cả`) or single-project data; legend with name + color swatch. Palette: `["#85B7EB", "#378ADD", "#185FA5", "#042C53", "#B5D4F4"]` (wrap past 5).
+5. **Detail table** (`#detail-panel` / `#detail-day` / `#detail-table`) on bar click (day AND active project filter): Tên task (hyperlink via `url`), Project, Trạng thái badge (`Hoàn thành` / `Đang làm`), Estimate (`—` when in progress), Giờ log ngày này (`hours`), Chênh lệch (completed rows: total hours of that id − est, 2 decimals, red > 0, green ≤ 0; in-progress rows: `—`) + `Tổng ngày` row (variance counts only tasks completed that day). Empty day → `Không có task nào`.
 6. **Footer**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
 7. Behavior: one state `{projectFilter, selectedDay}`, re-render chart + legend + metrics on filter change, hide detail on change, hover tooltips, click toggles day detail.
 

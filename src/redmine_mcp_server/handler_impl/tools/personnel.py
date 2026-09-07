@@ -316,8 +316,9 @@ async def get_person_work_summary_impl(
 
     Besides the grouped detail (skipped when ``compact`` is True), always
     returns ``completed`` (done_ratio == 100, updated in the window) and
-    ``widget_data`` — completed tasks bucketed per weekday with estimate vs
-    actual hours, ready to embed verbatim into the oversight widget.
+    ``widget_data`` — per-day time-log entries bucketed per weekday with
+    estimate vs same-day hours plus a completion flag, ready to embed
+    verbatim into the oversight widget. Keys always cover Mon-Sun.
     """
     if window not in ("day", "week"):
         return {"error": f"Invalid window '{window}'. Use 'day' or 'week'."}
@@ -367,6 +368,9 @@ async def get_person_work_summary_impl(
         hours_total = 0.0
         hours_by_project: Dict[Any, float] = {}
         actual_by_issue: Dict[Any, float] = {}
+        # Per-day hours per issue: (issue_id, spent_on ISO date) -> hours.
+        # Drives the widget v2 "hours" field (hours logged on that day only).
+        hours_by_issue_day: Dict[tuple, float] = {}
         for entry in time_entries:
             entry_hours = _round2(getattr(entry, "hours", 0))
             hours_total += entry_hours
@@ -383,6 +387,12 @@ async def get_person_work_summary_impl(
                 actual_by_issue[entry_issue_id] = (
                     actual_by_issue.get(entry_issue_id, 0.0) + entry_hours
                 )
+                spent_day = _as_date(getattr(entry, "spent_on", None))
+                if spent_day is not None and start <= spent_day <= end:
+                    day_key = (entry_issue_id, spent_day.isoformat())
+                    hours_by_issue_day[day_key] = (
+                        hours_by_issue_day.get(day_key, 0.0) + entry_hours
+                    )
 
         # Activity: assigned issues touched in the window (any status).
         touched_raw = await _fetch_all_pages(
@@ -427,38 +437,69 @@ async def get_person_work_summary_impl(
         # Completed in the window: done_ratio == 100 (even when not closed).
         completed = [issue for issue in touched if _done_ratio_100(issue)]
 
-        # Widget data: completed tasks bucketed per weekday, ready to embed
-        # verbatim into the oversight widget. Keys cover every date in the
-        # window (7 Vietnamese labels Mon-Sun for a week, 1 for a day).
-        day_cursor = start
-        window_days: List[date] = []
-        while day_cursor <= end:
-            window_days.append(day_cursor)
-            day_cursor += timedelta(days=1)
+        # Widget data v2: per-day time-log entries, ready to embed verbatim
+        # into the oversight widget. Keys ALWAYS cover Mon-Sun (7 Vietnamese
+        # labels) for both day and week windows — days outside a day window
+        # stay empty. Completed tasks appear with completed=true on exactly
+        # one day (their updated_on day, hours = logged that day only, 0.0
+        # when nothing was logged that day). Every other logged day of any
+        # task appears as completed=false (in-progress row). Entries whose
+        # issue is unknown (e.g. project-level logs, reassigned issues) stay
+        # in totals but cannot be placed on a named task row.
         widget_data: Dict[str, List[Dict[str, Any]]] = {
-            _VI_DAY_NAMES[d.weekday()]: [] for d in window_days
+            name: [] for name in _VI_DAY_NAMES
         }
+
+        def _widget_entry(
+            issue: Any, day_hours: float, is_completed: bool
+        ) -> Dict[str, Any]:
+            project = getattr(issue, "project", None)
+            issue_id = getattr(issue, "id", None)
+            return {
+                "id": issue_id,
+                "name": getattr(issue, "subject", ""),
+                "project": (
+                    getattr(project, "name", "") if project is not None else ""
+                ),
+                "est": _round2(getattr(issue, "estimated_hours", None)),
+                "hours": _round2(day_hours),
+                "url": (
+                    f"{base_url}/issues/{issue_id}" if base_url and issue_id else None
+                ),
+                "completed": is_completed,
+            }
+
+        emitted_days: set = set()
         for issue in completed:
             updated_day = _as_date(getattr(issue, "updated_on", None))
             if updated_day is None or updated_day < start or updated_day > end:
                 continue
-            project = getattr(issue, "project", None)
+            if not in_scope(issue):
+                continue
             issue_id = getattr(issue, "id", None)
+            day_hours = hours_by_issue_day.get((issue_id, updated_day.isoformat()), 0.0)
             widget_data[_VI_DAY_NAMES[updated_day.weekday()]].append(
-                {
-                    "id": issue_id,
-                    "name": getattr(issue, "subject", ""),
-                    "project": (
-                        getattr(project, "name", "") if project is not None else ""
-                    ),
-                    "est": _round2(getattr(issue, "estimated_hours", None)),
-                    "actual": _round2(actual_by_issue.get(issue_id, 0.0)),
-                    "url": (
-                        f"{base_url}/issues/{issue_id}"
-                        if base_url and issue_id
-                        else None
-                    ),
-                }
+                _widget_entry(issue, day_hours, True)
+            )
+            emitted_days.add((issue_id, updated_day.isoformat()))
+
+        known_issues: Dict[Any, Any] = {}
+        for issue in touched + backlog:
+            issue_id = getattr(issue, "id", None)
+            if issue_id is not None and issue_id not in known_issues:
+                known_issues[issue_id] = issue
+
+        for (issue_id, spent_iso), day_hours in sorted(
+            hours_by_issue_day.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])
+        ):
+            if (issue_id, spent_iso) in emitted_days:
+                continue
+            issue = known_issues.get(issue_id)
+            if issue is None or not in_scope(issue):
+                continue
+            spent_day = date.fromisoformat(spent_iso)
+            widget_data[_VI_DAY_NAMES[spent_day.weekday()]].append(
+                _widget_entry(issue, day_hours, False)
             )
 
         # Group everything by project for the agent-rendered UI.
