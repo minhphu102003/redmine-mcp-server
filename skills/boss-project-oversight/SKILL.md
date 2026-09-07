@@ -22,6 +22,7 @@ Answer the boss's questions about **one employee at a time** using live Redmine 
 6b. **Hours scope (fixed interpretation)**: `hours`, `actual_hours` and `totals.hours` count ONLY time logged by this exact user INSIDE the viewed window (see `evidence.hours_scope`). `hours == 0` → always say **"tuần {from}–{to} chưa log giờ"**, NEVER "chưa từng log / chưa làm gì". Quote `evidence.hours_scope.note` as the basis when asked.
 7. **Cite everything (evidence rule)**: every answer ends with an evidence footer — the filters used, the query time, `total_count` from the tool, and `issues/<id>` links that open in the Redmine UI for manual cross-check.
 8. **Strip `<insecure-content-...>` wrapper tags** from any Redmine-sourced names you reuse.
+9. **Inline widget, never a file**: Step 1/2/3 output always renders inline in the chat as an interactive widget — never a downloadable file, never via file-creation/present-file tools. Use the host's inline-visualization/widget mechanism (some hosts call that mechanism "artifact" too — fine, as long as it renders inline in the chat, not as a file).
 
 ---
 
@@ -58,12 +59,12 @@ to Step 2 with no further "ai?" question; hosts without `sendPrompt` show a
 copy-into-chat fallback box instead. Offline single file: keep inline
 `<style>` + `<script>`, no CDN, no external requests.
 
-### 2.2 Fill and emit
+### 2.2 Fill and render
 
 1. Call `list_personnel` (omit `project_ids` = all accessible projects).
    Tool returns `{"error": ...}` → show the error to the boss and stop (never render an empty picker).
-2. Fill the PEOPLE slot verbatim, then emit **one HTML artifact** built from the template.
-3. Add ONE chat line under the artifact: *"Bấm vào tên để xem ngay — hoặc trả lời số thứ tự / tên trong chat."* Nothing else — no bare "xem ai?" question.
+2. Fill the PEOPLE slot verbatim, then render the filled template inline in the chat (rule 9 — widget, not a file).
+3. Add ONE chat line under the widget: *"Bấm vào tên để xem ngay — hoặc trả lời số thứ tự / tên trong chat."* Nothing else — no bare "xem ai?" question.
 4. If the list is empty → say so and stop.
 5. Chat fallback: if the boss replies with a number or a name instead of clicking, resolve it against the rendered list (number = position in the full unfiltered list — numbering survives search filters). A name matching multiple people → list those candidates with their numbers and let the boss pick a number, never guess.
 
@@ -75,7 +76,7 @@ After the boss picks a person (picker click → `sendPrompt('Xem báo cáo hiệ
 
 ### 3.0 Read the template BEFORE rendering
 
-The skill ships with a week picker template, `week-picker-template.html`, in the **same folder as this SKILL.md**. **Read that file first, in full, before emitting the calendar.**
+The skill ships with a week picker template, `week-picker-template.html`, in the **same folder as this SKILL.md**. **Read that file first, in full, before rendering the calendar.**
 
 ### 3.1 Template contract (v1 — `week-picker-template.html` in this folder)
 
@@ -98,9 +99,9 @@ are locked (dimmed + unclickable); a confirm button
 the picked week; hosts without `sendPrompt` show a copy-into-chat fallback
 box instead. Offline single file: keep inline `<style>` + `<script>`, no CDN.
 
-### 3.2 Fill and emit
+### 3.2 Fill and render
 
-1. Fill PERSON_NAME + TODAY, then emit **one HTML artifact** built from the template.
+1. Fill PERSON_NAME + TODAY, then render the filled template inline in the chat (rule 9 — widget, not a file).
 2. Add ONE chat line: *"Bấm vào một ngày trong tuần boss muốn xem, rồi bấm nút Xem tuần để xác nhận (tuần tương lai đã bị khóa)."*
 3. Chat fallback: "tuần này" = current Mon–Sun week; a typed date (DD/MM/YYYY) = the week containing it. Either way, continue to Step 3 with `window=week` and `date_str` = the Monday of that week (YYYY-MM-DD).
 4. Shortcut: if the boss already named a person AND a week ("xem An tuần này", "xem An tuần chứa 20/09") in one message, skip both pickers and go straight to Step 3.
@@ -157,11 +158,11 @@ plus a `Tổng ngày` row (variance counts only tasks completed that day);
 `Không có task nào` when a day is empty. Offline single file: keep inline
 `<style>` + `<script>`, no CDN, no external requests.
 
-### 4.2 Fill and emit
+### 4.2 Fill and render
 
 1. Call `get_person_work_summary(person=<id from step 1>, window=week, date_str=<Monday YYYY-MM-DD from the Step-2 confirm message, passed verbatim>, compact=true)`. That `tuần YYYY-MM-DD` string IS the Monday — never re-parse or shift it. `ambiguous` error → present candidates, never guess.
 2. Fill the 4 template slots with the live result (`widget_data` → DATA slot verbatim, person + window → title slot, `evidence.queried_at` → footer slot, RAMP stays as pinned).
-3. Run the pre-emit checklist, then emit **one HTML artifact**:
+3. Run the pre-render checklist, then render one inline HTML widget in the chat (rule 9 — widget, not a file):
    - [ ] 7 weekday columns in order Thứ 2 → Chủ nhật, DATA keys match exactly.
    - [ ] `completed=true` on exactly one day per task id; every other logged day of that id is `completed=false`.
    - [ ] `est` identical on all rows sharing an id; `hours` = that day's log only.
@@ -174,7 +175,7 @@ plus a `Tổng ngày` row (variance counts only tasks completed that day);
 
 ### 4.3 Fallback when the template file is missing (mirrors v2)
 
-If `widget-template.html` is absent (old install), build one self-contained HTML artifact (inline `<style>` + `<script>`, no CDN) from `widget_data` embedded verbatim as `const DATA = {...}`:
+If `widget-template.html` is absent (old install), build one self-contained inline HTML widget (inline `<style>` + `<script>`, no CDN, rule 9 — widget, not a file) from `widget_data` embedded verbatim as `const DATA = {...}`:
 
 1. **Title** (`#widget-title`): `Hiệu suất — {Tên} — Tuần T2 DD/MM – CN DD/MM`.
 2. **Project dropdown** (`#project-filter`, top): `Tất cả` + one option per project in DATA (first-appearance order). Default `Tất cả`.
@@ -184,7 +185,7 @@ If `widget-template.html` is absent (old install), build one self-contained HTML
 6. **Footer**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
 7. Behavior: one state `{projectFilter, selectedDay}`, re-render chart + legend + metrics on filter change, hide detail on change, hover tooltips, click toggles day detail.
 
-### 4.4 After the artifact (chat message, concise)
+### 4.4 After the widget (chat message, concise)
 
 - One verdict line per person (`on-track` / `at-risk` / `overdue-heavy`) ONLY as a summary of the widget numbers — no new claims.
 - **Weekly note (ghi chú tuần, grounded)**: group the tool's `task_context` by project — one project = 1–2 lines: what module/work was done, inferred ONLY from `subject` + `description` + project name, with `issues/<id>` links, the week's hours (`week_hours`), and hoàn thành/đang làm from the `completed` flag. Rules: strip `<insecure-content-…>` wrapper tags before quoting a description; subject + description both empty → write "chưa rõ module — xem link issue", never invent one; description empty → fall back to subject only; never deduce blockers here either (rule below still applies); Vietnamese; 0h still follows rule 6b ("tuần này chưa log").
