@@ -30,7 +30,7 @@ _PAGE_SIZE = 100
 # Max characters of an issue description kept in task_context (weekly
 # note material). Long enough to name the module, short enough to keep
 # the compact payload small.
-_TASK_CONTEXT_DESC_LIMIT = 500
+_TASK_CONTEXT_DESC_LIMIT = 1500
 
 # Vietnamese weekday labels, Monday-first, for widget_data keys.
 _VI_DAY_NAMES = [

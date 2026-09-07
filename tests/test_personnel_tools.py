@@ -713,7 +713,7 @@ class TestPersonWorkSummary:
             subject="Màn hình báo cáo",
             done_ratio=30,
             updated_on=datetime(2026, 9, 3, 10, 0, 0),
-            description="x" * 600,
+            description="x" * 1600,
         )
         untouched = _mock_issue(
             3,
@@ -758,7 +758,7 @@ class TestPersonWorkSummary:
 
     @pytest.mark.asyncio
     async def test_task_context_truncates_long_description(self, mock_redmine):
-        """600-char description is cut to 500 + ellipsis (inside wrap tags)."""
+        """1600-char description is cut to 1500 + ellipsis (inside wrap tags)."""
         self._setup_week_context(mock_redmine)
 
         result = await get_person_work_summary(
@@ -767,7 +767,7 @@ class TestPersonWorkSummary:
 
         desc = next(t for t in result["task_context"] if t["id"] == 2)["description"]
         assert "…" in desc
-        assert desc.count("x") == 500
+        assert desc.count("x") == 1500
 
     @pytest.mark.asyncio
     async def test_task_context_missing_description_is_empty(self, mock_redmine):
