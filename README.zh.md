@@ -111,19 +111,28 @@ QA skill 通过 service account 在 Google Sheets 中跟踪测试用例和 bug�
 
 ### Claude Desktop 用户（测试 & 老板：不需要 repo）
 
-Claude Desktop 以 ZIP 文件导入 skill — 适合不在仓库里工作的场景。构建方法：
+Claude Desktop 以 ZIP 文件导入 skill — 适合不在仓库里工作的场景。有两个包：用 `-Lane` 构建属于你的包：
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+# 测试（6 个 ZIP）
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane tester
+```
+
+```powershell
+# 老板（2 个 ZIP）
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane boss
 ```
 
 然后 **Settings → Customize → Skills → Add Skill → Upload ZIP**（每个 skill 重复一次）：
 
-| ZIP | 通道 |
-|---|---|
-| `redmine-init` | 💻 Dev 入门 |
-| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 测试 |
-| `boss-project-oversight` | 👔 老板 |
+| ZIP | 包 | 附带文件 |
+|---|---|---|
+| `redmine-init` | 🧪 测试（+ 💻 Dev 入门，共用） | `SKILL.md`、`google-sheets-schema.md`、`member-rules-catalog.md` |
+| `testcase-generation`、`bug-reporting`、`bug-to-redmine`、`status-sync`、`reopen-bug` | 🧪 测试 | `SKILL.md`（`testcase-generation` 另含 `USER_STORY_TEMPLATE.md`） |
+| `user-story-writing` | 👔 老板 | `SKILL.md` + 内置的 `USER_STORY_TEMPLATE.md` |
+| `boss-project-oversight` | 👔 老板 | `SKILL.md` + `widget-template.html` |
+
+省略 `-Lane`（或使用 `-Lane all`）可一次性构建全部 8 个 ZIP。
 
 ### User 级安装（opencode global / ChatGPT desktop）
 

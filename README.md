@@ -111,19 +111,28 @@ The QA skills track test cases and bugs in Google Sheets via a service account:
 
 ### For Claude Desktop users (testers & boss: no repo needed)
 
-Claude Desktop imports skills as ZIP files — ideal when you don't work inside a repository. Build them with:
+Claude Desktop imports skills as ZIP files — ideal when you don't work inside a repository. There are two bundles: pick yours and build it with `-Lane`:
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+# Testers (6 ZIPs)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane tester
+```
+
+```powershell
+# Boss (2 ZIPs)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane boss
 ```
 
 Then **Settings → Customize → Skills → Add Skill → Upload ZIP** (repeat per skill):
 
-| ZIP | Lane |
-|---|---|
-| `redmine-init` | 💻 Dev starter |
-| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester |
-| `boss-project-oversight` | 👔 Boss |
+| ZIP | Bundle | Bundled files |
+|---|---|---|
+| `redmine-init` | 🧪 Tester (+ 💻 Dev starter, shared) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
+| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester | `SKILL.md` (+ `USER_STORY_TEMPLATE.md` for `testcase-generation`) |
+| `user-story-writing` | 👔 Boss | `SKILL.md` + vendored `USER_STORY_TEMPLATE.md` |
+| `boss-project-oversight` | 👔 Boss | `SKILL.md` + `widget-template.html` |
+
+Omit `-Lane` (or use `-Lane all`) to build all 8 ZIPs at once.
 
 ### For user-level install (opencode global / ChatGPT desktop)
 

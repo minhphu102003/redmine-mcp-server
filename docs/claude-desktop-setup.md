@@ -113,7 +113,11 @@ Mở file `claude_desktop_config.json` và thêm nội dung sau vào object `mcp
 
 ## Bước 4: Import Skills (QA testers)
 
-Nếu bạn là tester và muốn dùng QA skills (testcase-generation, bug-reporting, ...):
+Nếu bạn là tester và muốn dùng QA skills, build gói tester rồi import từng ZIP:
+
+```powershell
+.\install-skills-claude-desktop.ps1 -Lane tester
+```
 
 1. Tải ZIP files từ: `dist/claude-desktop-skills/`
 2. Mở Claude Desktop → **Settings** → **Customize** → **Skills**
@@ -121,20 +125,35 @@ Nếu bạn là tester và muốn dùng QA skills (testcase-generation, bug-repo
 4. Chọn skill ZIP cần import (ví dụ: `testcase-generation.zip`)
 5. Repeat cho các skill khác
 
-**Danh sách skills:**
+**Gói tester (`-Lane tester`, 6 ZIP):**
 
 | Skill | Mô tả |
 |-------|-------|
+| `redmine-init` | Khởi tạo project mapping (dùng chung cho cả dev) |
 | `testcase-generation` | Tạo test case từ user story |
 | `bug-reporting` | Ghi bug lên Google Sheet |
 | `bug-to-redmine` | Tạo Redmine issue từ bug trên sheet |
 | `status-sync` | Đồng bộ trạng thái Redmine → Sheet |
 | `reopen-bug` | Mở lại bug đã fix |
-| `redmine-init` | Khởi tạo project mapping |
-| `redmine-daily-report` | Báo cáo daily |
-| `redmine-issue-workflow` | Workflow issue |
-| `redmine-planning` | Lập kế hoạch |
+
+## Bước 4b: Import Skills (Boss)
+
+Nếu bạn là boss, build gói boss rồi import từng ZIP:
+
+```powershell
+.\install-skills-claude-desktop.ps1 -Lane boss
+```
+
+Các bước upload giống Bước 4.
+
+**Gói boss (`-Lane boss`, 2 ZIP):**
+
+| Skill | Mô tả |
+|-------|-------|
+| `user-story-writing` | Viết user story theo chuẩn qua phỏng vấn |
 | `boss-project-oversight` | Giám sát nhân sự cho boss (1 người/lần, theo ngày/tuần, cần API key admin) |
+
+> Các skill dev (`redmine-daily-report`, `redmine-issue-workflow`, `redmine-planning`) không có ZIP — cài qua script trong repo. Bỏ `-Lane` (hoặc `-Lane all`) để build cả 8 ZIP một lúc.
 
 ---
 
