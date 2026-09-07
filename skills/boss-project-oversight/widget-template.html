@@ -1,21 +1,34 @@
-<!-- boss-widget-template v1 -->
+<!-- boss-widget-template v2 -->
 <!--
-TEMPLATE CỐ ĐỊNH — có fallback CSS variables để hiển thị đúng cả khi mở
-độc lập ngoài trình duyệt (không có theme của Claude cấp). Khi chạy trong
-Visualizer, các biến --surface-1, --text-primary... của host sẽ tự động
-được ưu tiên dùng, fallback chỉ áp dụng khi mở file .html một mình.
+TEMPLATE CỐ ĐỊNH — hỗ trợ task trải nhiều ngày (log giờ ở nhiều ngày, chỉ
+"hoàn thành" ở đúng 1 ngày). Có fallback CSS variables để hiển thị đúng cả
+khi mở độc lập ngoài trình duyệt. KHÔNG dùng CDN — hoạt động offline hoàn toàn.
 
-CHỈ ĐƯỢC SỬA 4 CHỖ:
+CHỈ ĐƯỢC SỬA 4 CHỖ, đánh dấu rõ bằng comment:
   1. Tiêu đề — id="widget-title"
-  2. RAMP (dải màu gradient cùng tông)
-  3. DATA (object 7 ngày, mỗi ngày là mảng task)
+  2. RAMP (dải màu gradient cùng tông, KHÔNG đổi sang hệ màu khác)
+  3. DATA (object 7 ngày, mỗi ngày là mảng entry LOG GIỜ trong ngày đó)
   4. Dòng "Nguồn: Redmine, queried at ..." ở footer
 
-Data schema mỗi task:
-{ "id": number, "name": string, "project": string, "est": number (giờ),
-  "actual": number (giờ), "url": string }
-7 khóa ngày theo đúng thứ tự: "Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6",
-"Thứ 7","Chủ nhật".
+Data schema mỗi entry (1 dòng = 1 lần log giờ trong 1 ngày cho 1 task):
+{
+  "id": number,           // id task, TRÙNG nhau nếu cùng 1 task xuất hiện nhiều ngày
+  "name": string,
+  "project": string,
+  "est": number,           // giờ estimate của CẢ task (giữ nguyên giá trị ở mọi dòng cùng id)
+  "hours": number,         // giờ log RIÊNG trong ngày đó (không phải tổng cả task)
+  "url": string,
+  "completed": boolean     // true CHỈ ở đúng 1 ngày — ngày task được đánh dấu hoàn thành
+}
+
+Quy tắc quan trọng — KHÔNG được đổi logic này:
+- Cột biểu đồ chỉ đếm entry có completed=true (tránh đếm trùng task nhiều ngày).
+- "Chênh lệch" của 1 task = (TỔNG hours của mọi entry cùng id, bất kể ngày nào)
+  trừ est — được hệ thống tự tính (hàm totalHoursByTaskId), KHÔNG tính từ
+  hours của riêng 1 ngày.
+- Task chưa hoàn thành (completed=false) hiện Estimate và Chênh lệch là "—".
+- 7 khóa ngày theo đúng thứ tự: "Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6",
+  "Thứ 7","Chủ nhật".
 -->
 <style>
 #rpt-root {
@@ -34,9 +47,12 @@ Data schema mỗi task:
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--rpt-text-primary);
 }
+.rpt-badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:500; }
+.rpt-badge-done { background: rgba(30,138,92,0.14); color: var(--rpt-text-success); }
+.rpt-badge-progress { background: rgba(107,102,96,0.14); color: var(--rpt-text-secondary); }
 </style>
 <div id="rpt-root">
-<h2 style="position:absolute; width:1px; height:1px; overflow:hidden;">Biểu đồ cột số task hoàn thành theo ngày, chia theo project, có hover xem chi tiết, click xem task và tổng chênh lệch</h2>
+<h2 style="position:absolute; width:1px; height:1px; overflow:hidden;">Biểu đồ cột số task hoàn thành theo ngày, có task trải nhiều ngày, hover xem chi tiết, click xem task</h2>
 
 <!-- 1. TIÊU ĐỀ -->
 <p style="font-size:18px; font-weight:500; margin:0 0 1rem;" id="widget-title">Hiệu suất — {Tên} — {Ngày DD/MM | Tuần T2 DD/MM – CN DD/MM}</p>
@@ -68,7 +84,7 @@ Data schema mỗi task:
 <div id="day-labels" style="display:flex; padding: 0 4px; margin-bottom:1rem;"></div>
 
 <div id="legend" style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:1rem; font-size:12px; color:var(--rpt-text-secondary);"></div>
-<p style="font-size:13px; color:var(--rpt-text-muted); margin: 0 0 1rem;">Di chuột để xem nhanh, click vào cột để xem chi tiết task trong ngày đó</p>
+<p style="font-size:13px; color:var(--rpt-text-muted); margin: 0 0 1rem;">Cột chỉ đếm task <b>hoàn thành</b> trong ngày. Bảng chi tiết hiện cả task đang làm dở (chưa hoàn thành). Click vào cột để xem.</p>
 
 <div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
   <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
@@ -97,7 +113,8 @@ const DATA = {
 };
 // ==== HẾT VÙNG DỮ LIỆU ====
 
-const projects = [...new Set(Object.values(DATA).flat().map(t => t.project))];
+const allEntries = Object.entries(DATA).flatMap(([d, arr]) => arr.map(t => ({...t, day: d})));
+const projects = [...new Set(allEntries.map(t => t.project))];
 const projectColors = Object.fromEntries(projects.map((p, i) => [p, RAMP[i % RAMP.length]]));
 
 const select = document.getElementById('project-filter');
@@ -105,19 +122,39 @@ select.innerHTML = '<option value="Tất cả">Tất cả</option>' + projects.m
 const tooltip = document.getElementById('tooltip');
 const chartWrap = document.getElementById('bar-chart').parentElement;
 
-function getFilteredTasks(day, projectFilter) {
+function getDayEntries(day, projectFilter) {
   const tasks = DATA[day] || [];
   return projectFilter === 'Tất cả' ? tasks : tasks.filter(t => t.project === projectFilter);
 }
+function totalHoursByTaskId(projectFilter) {
+  const totals = {};
+  allEntries.forEach(t => {
+    if (projectFilter !== 'Tất cả' && t.project !== projectFilter) return;
+    totals[t.id] = (totals[t.id] || 0) + t.hours;
+  });
+  return totals;
+}
+
 function renderLegend(projectFilter) {
   const activeProjects = projectFilter === 'Tất cả' ? projects : [projectFilter];
   document.getElementById('legend').innerHTML = activeProjects.map(p =>
     `<span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; border-radius:2px; background:${projectColors[p] || '#a8a79f'};"></span>${p}</span>`
   ).join('');
 }
+
 function updateMetrics(projectFilter) {
+  const totalActualById = totalHoursByTaskId(projectFilter);
   let totalEst = 0, totalActual = 0, totalTasks = 0;
-  days.forEach(d => { getFilteredTasks(d, projectFilter).forEach(t => { totalEst += t.est; totalActual += t.actual; totalTasks++; }); });
+  const seen = new Set();
+  allEntries.forEach(t => {
+    if (projectFilter !== 'Tất cả' && t.project !== projectFilter) return;
+    if (t.completed && !seen.has(t.id)) {
+      seen.add(t.id);
+      totalEst += t.est;
+      totalActual += totalActualById[t.id];
+      totalTasks++;
+    }
+  });
   document.getElementById('total-tasks').textContent = totalTasks;
   document.getElementById('eff-ratio').textContent = totalActual > 0 ? (totalEst/totalActual*100).toFixed(1) + '%' : '—';
   const weekDiff = totalActual - totalEst;
@@ -125,6 +162,7 @@ function updateMetrics(projectFilter) {
   weekDiffEl.textContent = (weekDiff > 0 ? '+' : '') + weekDiff.toFixed(2) + 'h';
   weekDiffEl.style.color = weekDiff > 0 ? 'var(--rpt-text-danger)' : (weekDiff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
 }
+
 function showTooltip(evt, lines) {
   tooltip.innerHTML = lines.map((l,i) => i===0 ? `<div style="font-weight:500; margin-bottom:4px;">${l}</div>` : `<div style="color:var(--rpt-text-secondary);">${l}</div>`).join('');
   tooltip.style.display = 'block';
@@ -135,15 +173,17 @@ function showTooltip(evt, lines) {
   tooltip.style.top = Math.max(y - 50, 0) + 'px';
 }
 function hideTooltip() { tooltip.style.display = 'none'; }
+
 function renderChart(projectFilter) {
   const activeProjects = projectFilter === 'Tất cả' ? projects : [projectFilter];
   const perDayCounts = days.map(d => {
-    const tasks = getFilteredTasks(d, 'Tất cả');
+    const completedTasks = getDayEntries(d, 'Tất cả').filter(t => t.completed);
     const byProject = {};
-    activeProjects.forEach(p => byProject[p] = tasks.filter(t => t.project === p).length);
+    activeProjects.forEach(p => byProject[p] = completedTasks.filter(t => t.project === p).length);
     return byProject;
   });
   const maxTotal = Math.max(1, ...perDayCounts.map(o => Object.values(o).reduce((a,b)=>a+b,0)));
+
   const chartEl = document.getElementById('bar-chart');
   chartEl.innerHTML = '';
   days.forEach((d, i) => {
@@ -164,25 +204,26 @@ function renderChart(projectFilter) {
         const seg = document.createElement('div');
         const heightPct = (c / maxTotal) * 100;
         seg.style.cssText = `width:100%; height:${heightPct}%; background:${projectColors[p] || '#a8a79f'}; min-height:4px; transition:filter 0.1s; box-shadow: inset 0 1px 0 var(--rpt-surface-1);`;
-        seg.addEventListener('mouseenter', (e) => { seg.style.filter = 'brightness(0.92)'; showTooltip(e, [d, `${p}: ${c} task`]); });
-        seg.addEventListener('mousemove', (e) => showTooltip(e, [d, `${p}: ${c} task`]));
+        seg.addEventListener('mouseenter', (e) => { seg.style.filter = 'brightness(0.92)'; showTooltip(e, [d, `${p}: ${c} task hoàn thành`]); });
+        seg.addEventListener('mousemove', (e) => showTooltip(e, [d, `${p}: ${c} task hoàn thành`]));
         seg.addEventListener('mouseleave', () => { seg.style.filter = 'none'; hideTooltip(); });
         col.appendChild(seg);
       });
     }
     col.addEventListener('mouseenter', (e) => {
-      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
-      else if (total === 0) { showTooltip(e, [d, 'Không có task']); }
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task hoàn thành`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      else if (total === 0) { showTooltip(e, [d, 'Không có task hoàn thành']); }
     });
     col.addEventListener('mousemove', (e) => {
-      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
-      else if (total === 0) { showTooltip(e, [d, 'Không có task']); }
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task hoàn thành`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      else if (total === 0) { showTooltip(e, [d, 'Không có task hoàn thành']); }
     });
     col.addEventListener('mouseleave', hideTooltip);
     col.addEventListener('click', () => showDetail(d, projectFilter));
     slot.appendChild(col);
     chartEl.appendChild(slot);
   });
+
   const labelsEl = document.getElementById('day-labels');
   labelsEl.innerHTML = '';
   days.forEach(d => {
@@ -192,45 +233,66 @@ function renderChart(projectFilter) {
     labelsEl.appendChild(lbl);
   });
 }
+
 function showDetail(day, projectFilter) {
   const panel = document.getElementById('detail-panel');
   const title = document.getElementById('detail-day');
   const table = document.getElementById('detail-table');
   panel.style.display = 'block';
   title.textContent = day + ' — chi tiết task';
-  const tasks = getFilteredTasks(day, projectFilter);
+
+  const entries = getDayEntries(day, projectFilter);
+  const totalActualById = totalHoursByTaskId(projectFilter);
+
   let rows = '<tr style="border-bottom:1px solid var(--rpt-border);">' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Task</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Project</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Trạng thái</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Estimate (h)</td>' +
-    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Thực tế (h)</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Giờ log ngày này</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Chênh lệch</td></tr>';
-  if (tasks.length === 0) { rows += '<tr><td colspan="5" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task hoàn thành</td></tr>'; }
-  let dayEst = 0, dayActual = 0;
-  tasks.forEach(t => {
-    dayEst += t.est; dayActual += t.actual;
-    const diff = t.actual - t.est;
-    const diffColor = diff > 0 ? 'var(--rpt-text-danger)' : 'var(--rpt-text-success)';
-    const diffText = (diff > 0 ? '+' : '') + diff.toFixed(2) + 'h';
+
+  if (entries.length === 0) {
+    rows += '<tr><td colspan="6" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task nào</td></tr>';
+  }
+
+  let dayHoursLogged = 0, dayEstCompleted = 0, dayDiffCompleted = 0;
+  entries.forEach(t => {
+    dayHoursLogged += t.hours;
+    const statusBadge = t.completed
+      ? '<span class="rpt-badge rpt-badge-done">Hoàn thành</span>'
+      : '<span class="rpt-badge rpt-badge-progress">Đang làm</span>';
+    let estCell = '—', diffCell = '—';
+    if (t.completed) {
+      const totalActual = totalActualById[t.id];
+      const diff = totalActual - t.est;
+      const diffColor = diff > 0 ? 'var(--rpt-text-danger)' : (diff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
+      estCell = t.est.toFixed(2);
+      diffCell = `<span style="color:${diffColor};">` + (diff > 0 ? '+' : '') + diff.toFixed(2) + 'h</span>';
+      dayEstCompleted += t.est;
+      dayDiffCompleted += diff;
+    }
     rows += '<tr style="border-bottom:1px solid var(--rpt-border);">' +
       '<td style="padding:6px 4px;"><a href="' + t.url + '" style="color:var(--rpt-text-accent);">' + t.name + '</a></td>' +
       '<td style="padding:6px 4px;">' + t.project + '</td>' +
-      '<td style="padding:6px 4px; text-align:right;">' + t.est.toFixed(2) + '</td>' +
-      '<td style="padding:6px 4px; text-align:right;">' + t.actual.toFixed(2) + '</td>' +
-      '<td style="padding:6px 4px; text-align:right; color:' + diffColor + ';">' + diffText + '</td></tr>';
+      '<td style="padding:6px 4px;">' + statusBadge + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + estCell + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + t.hours.toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + diffCell + '</td></tr>';
   });
-  if (tasks.length > 0) {
-    const dayDiff = dayActual - dayEst;
-    const dayDiffColor = dayDiff > 0 ? 'var(--rpt-text-danger)' : (dayDiff < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
-    const dayDiffText = (dayDiff > 0 ? '+' : '') + dayDiff.toFixed(2) + 'h';
+
+  if (entries.length > 0) {
+    const dayDiffColor = dayDiffCompleted > 0 ? 'var(--rpt-text-danger)' : (dayDiffCompleted < 0 ? 'var(--rpt-text-success)' : 'var(--rpt-text-primary)');
+    const dayDiffText = (dayDiffCompleted > 0 ? '+' : '') + dayDiffCompleted.toFixed(2) + 'h';
     rows += '<tr>' +
-      '<td style="padding:8px 4px; font-weight:500;" colspan="2">Tổng ngày</td>' +
-      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayEst.toFixed(2) + '</td>' +
-      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayActual.toFixed(2) + '</td>' +
+      '<td style="padding:8px 4px; font-weight:500;" colspan="3">Tổng ngày <span style="font-weight:400; color:var(--rpt-text-muted); font-size:11px;">(chênh lệch chỉ tính task hoàn thành hôm nay)</span></td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayEstCompleted.toFixed(2) + '</td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayHoursLogged.toFixed(2) + '</td>' +
       '<td style="padding:8px 4px; text-align:right; font-weight:500; color:' + dayDiffColor + ';">' + dayDiffText + '</td></tr>';
   }
   table.innerHTML = rows;
 }
+
 select.addEventListener('change', () => {
   const val = select.value;
   renderChart(val); renderLegend(val); updateMetrics(val);
