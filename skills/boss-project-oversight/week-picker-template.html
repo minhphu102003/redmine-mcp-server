@@ -1,0 +1,163 @@
+<!-- boss-week-picker-template v1 -->
+<!--
+TEMPLATE CỐ ĐỊNH — lịch chọn tuần (boss skill Step 2, week-only). Có fallback
+CSS variables để hiển thị đúng cả khi mở độc lập ngoài trình duyệt. KHÔNG
+dùng CDN — hoạt động offline hoàn toàn.
+
+CHỈ ĐƯỢC SỬA 2 CHỖ, đánh dấu rõ bằng comment:
+  1. PERSON_NAME (tên nhân viên đã chọn ở Step 1)
+  2. TODAY (ngày hiện tại YYYY-MM-DD theo server date — để trống "" thì
+     dùng ngày của máy xem; dùng để khóa các tuần tương lai)
+
+Quy tắc quan trọng — KHÔNG được đổi logic này:
+- Lưới lịch bắt đầu từ Thứ 2 (Mon-first), đầu dòng T2 → cuối dòng CN.
+- Bấm vào một ngày = chọn CẢ TUẦN Thứ 2–Chủ nhật chứa ngày đó, cả dòng
+  được highlight. Bấm "Xem tuần ..." để xác nhận.
+- Các tuần tương lai (sau tuần chứa TODAY) BỊ KHÓA — mờ + không bấm được.
+  Nút "tháng sau" cũng khóa khi đang ở tháng hiện tại.
+- Xác nhận gọi sendPrompt('Xem hiệu suất của {tên} tuần {YYYY-MM-DD}')
+  với YYYY-MM-DD là ngày Thứ 2 của tuần đã chọn. Host nào không có
+  sendPrompt thì hiện hộp text để boss copy/paste vào chat (fallback).
+-->
+<style>
+#rpt-root {
+  --rpt-surface-1: var(--surface-1, #f4f3f1);
+  --rpt-surface-2: var(--surface-2, #ebe9e5);
+  --rpt-border: var(--border, #ddd9d3);
+  --rpt-border-strong: var(--border-strong, #c7c2ba);
+  --rpt-text-primary: var(--text-primary, #21201c);
+  --rpt-text-secondary: var(--text-secondary, #6b6660);
+  --rpt-text-accent: var(--text-accent, #2a78d6);
+  --rpt-bg-accent: var(--bg-accent, rgba(42,120,214,0.12));
+  --rpt-radius: var(--radius, 10px);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--rpt-text-primary);
+  max-width: 420px;
+}
+#rpt-root .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+#rpt-root button { font-family: inherit; background: var(--rpt-surface-1); color: var(--rpt-text-primary); border: 1px solid var(--rpt-border); border-radius: 6px; cursor: pointer; }
+#rpt-root button:disabled { cursor: default; }
+#rpt-root #confirm-week { background: var(--rpt-text-accent); border-color: var(--rpt-text-accent); color: #fff; font-size: 14px; font-weight: 600; padding: 10px 0; }
+#rpt-root .wk-fallback { display: none; margin-top: 12px; font-size: 13px; padding: 10px 12px; border: 1px dashed var(--rpt-border-strong); border-radius: var(--rpt-radius); }
+#rpt-root .wk-fallback code { color: var(--rpt-text-accent); }
+</style>
+<div id="rpt-root">
+<h2 class="sr-only">Lịch chọn tuần để xem báo cáo hiệu suất, chọn một ngày sẽ chọn cả tuần chứa ngày đó, các tuần tương lai bị khóa</h2>
+<p style="font-size:13px; color:var(--rpt-text-secondary); margin:0 0 4px;" id="wk-sub">Bấm vào một ngày — cả tuần Thứ 2 → Chủ nhật chứa ngày đó sẽ được chọn.</p>
+<div style="padding-top:1.5rem;">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+  <button id="prev-month" aria-label="Tháng trước">‹</button>
+  <span id="cal-title" style="font-weight:500;font-size:15px;"></span>
+  <button id="next-month" aria-label="Tháng sau">›</button>
+</div>
+<div id="dow-row" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;font-size:12px;color:var(--rpt-text-secondary);text-align:center;"></div>
+<div id="cal-grid" style="display:flex;flex-direction:column;gap:4px;"></div>
+<div id="confirm-wrap" style="margin-top:16px;display:none;">
+  <button id="confirm-week" style="width:100%;"></button>
+</div>
+<div class="wk-fallback" id="wk-fallback"></div>
+</div>
+<script>
+// 1. PERSON_NAME — fill with the Step-1 person name.
+// 2. TODAY — fill with the server date (YYYY-MM-DD); "" = use viewer clock.
+const PERSON_NAME = "";
+const TODAY = "";
+
+const DOW = ['T2','T3','T4','T5','T6','T7','CN'];
+let viewYear, viewMonth, todayDate, selectedDate = null;
+
+function parseISO(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function mondayOf(d) { const day = (d.getDay() + 6) % 7; const m = new Date(d); m.setDate(d.getDate() - day); return m; }
+function fmtShort(d) { return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0'); }
+function sameDay(a,b) { return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function sameWeek(a,b) { return toISO(mondayOf(a)) === toISO(mondayOf(b)); }
+function isFutureWeek(d) { return mondayOf(d).getTime() > mondayOf(todayDate).getTime(); }
+
+function wkFallback(text) {
+  const fb = document.getElementById('wk-fallback');
+  fb.style.display = 'block';
+  fb.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = 'Trình xem này không tự gửi được — copy câu sau vào chat: ';
+  const code = document.createElement('code');
+  code.textContent = text;
+  fb.appendChild(span);
+  fb.appendChild(code);
+}
+
+function init() {
+  todayDate = TODAY ? parseISO(TODAY) : new Date();
+  viewYear = todayDate.getFullYear();
+  viewMonth = todayDate.getMonth();
+  const dowRow = document.getElementById('dow-row');
+  DOW.forEach(d => { const s = document.createElement('span'); s.textContent = d; dowRow.appendChild(s); });
+  document.getElementById('wk-sub').textContent = 'Chọn tuần xem báo cáo của ' + PERSON_NAME + ' — bấm vào một ngày, cả tuần T2–CN chứa ngày đó sẽ được chọn.';
+  render();
+}
+
+function render() {
+  document.getElementById('cal-title').textContent = 'Tháng ' + (viewMonth+1) + ' / ' + viewYear;
+  const isCurrentMonth = viewYear === todayDate.getFullYear() && viewMonth === todayDate.getMonth();
+  document.getElementById('next-month').disabled = isCurrentMonth;
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+  const gridStart = mondayOf(firstOfMonth);
+  for (let w = 0; w < 6; w++) {
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = 'repeat(7,1fr)';
+    row.style.gap = '4px';
+    let rowHasCurrentMonth = false;
+    for (let i = 0; i < 7; i++) {
+      const cellDate = new Date(gridStart);
+      cellDate.setDate(gridStart.getDate() + w*7 + i);
+      if (cellDate.getMonth() === viewMonth) rowHasCurrentMonth = true;
+      const btn = document.createElement('button');
+      btn.textContent = cellDate.getDate();
+      btn.style.padding = '8px 0';
+      btn.style.fontSize = '13px';
+      const future = isFutureWeek(cellDate);
+      btn.style.opacity = future ? '0.25' : (cellDate.getMonth() === viewMonth ? '1' : '0.35');
+      if (sameDay(cellDate, todayDate)) btn.style.fontWeight = '500';
+      if (selectedDate && sameWeek(cellDate, selectedDate)) {
+        btn.style.background = 'var(--rpt-bg-accent)';
+        btn.style.color = 'var(--rpt-text-accent)';
+      }
+      if (future) {
+        btn.disabled = true;
+      } else {
+        btn.onclick = () => { selectedDate = cellDate; render(); showConfirm(); };
+      }
+      row.appendChild(btn);
+    }
+    if (rowHasCurrentMonth || w < 5) grid.appendChild(row);
+  }
+}
+
+function showConfirm() {
+  const mon = mondayOf(selectedDate);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const wrap = document.getElementById('confirm-wrap');
+  const btn = document.getElementById('confirm-week');
+  btn.textContent = 'Xem tuần ' + fmtShort(mon) + ' – ' + fmtShort(sun);
+  wrap.style.display = 'block';
+  const text = 'Xem hiệu suất của ' + PERSON_NAME + ' tuần ' + toISO(mon);
+  btn.onclick = () => {
+    if (typeof sendPrompt === 'function') { sendPrompt(text); }
+    else { wkFallback(text); }
+  };
+}
+
+document.getElementById('prev-month').addEventListener('click', () => {
+  viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render();
+});
+document.getElementById('next-month').addEventListener('click', () => {
+  if (viewYear === todayDate.getFullYear() && viewMonth === todayDate.getMonth()) return;
+  viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render();
+});
+
+init();
+</script>
+</div>

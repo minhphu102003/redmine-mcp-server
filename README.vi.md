@@ -8,7 +8,7 @@ Agent AI của bạn làm việc với Redmine thay cho bạn. Kết nối một
 
 | 👔 Sếp / Quản lý | 💻 Developer | 🧪 Tester |
 |---|---|---|
-| Hỏi về từng nhân viên một — *"An đang làm gì?"*, *"có task nào trễ hạn không?"* — rồi nhận widget hiệu suất ngày/tuần theo từng dự án. Chỉ đọc, không thể vô tình làm đổi dữ liệu. | Commit và PR tự thành Redmine issue: đặt tên, mô tả, kiểm chứng ID, changelog, log giờ. Bạn chỉ việc xác nhận. | User story thành test case, bug luân chuyển giữa Google Sheets và Redmine, trạng thái đồng bộ ngược lại. Bạn xem xét và phê duyệt. |
+| Hỏi về từng nhân viên một — *"An đang làm gì?"*, *"có task nào trễ hạn không?"* — rồi nhận widget hiệu suất tuần theo từng dự án. Chỉ đọc, không thể vô tình làm đổi dữ liệu. | Commit và PR tự thành Redmine issue: đặt tên, mô tả, kiểm chứng ID, changelog, log giờ. Bạn chỉ việc xác nhận. | User story thành test case, bug luân chuyển giữa Google Sheets và Redmine, trạng thái đồng bộ ngược lại. Bạn xem xét và phê duyệt. |
 
 Mỗi làn được dẫn dắt bởi một agent skill bên dưới. Nói với agent một câu bạn thuộc làn nào, việc còn lại cứ để nó lo.
 
@@ -130,7 +130,7 @@ Rồi **Settings → Customize → Skills → Add Skill → Upload ZIP** (lặp 
 | `redmine-init` | 🧪 Tester (+ 💻 Dev khởi đầu, dùng chung) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
 | `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester | `SKILL.md` (+ `USER_STORY_TEMPLATE.md` cho `testcase-generation`) |
 | `user-story-writing` | 👔 Sếp | `SKILL.md` + `USER_STORY_TEMPLATE.md` vendored |
-| `boss-project-oversight` | 👔 Sếp | `SKILL.md` + `widget-template.html` |
+| `boss-project-oversight` | 👔 Sếp | `SKILL.md` + `picker-template.html` + `week-picker-template.html` + `widget-template.html` |
 
 Bỏ `-Lane` (hoặc dùng `-Lane all`) để build cả 8 ZIP một lúc.
 
@@ -153,7 +153,7 @@ Video walkthrough ngắn — xem trước rồi làm theo các bước trên. (L
 | 🧪 Tester | Setup: app desktop + kết nối server + cài skill QA | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
 | 🧪 Tester | Usage: chạy end-to-end đầu tiên (story → test case → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
 | 👔 Sếp | Setup: app desktop + kết nối chỉ đọc + skill giám sát | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → widget hiệu suất ngày/tuần | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → chọn tuần trên lịch → widget hiệu suất | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
 
 ## Bên trong hoạt động thế nào
 

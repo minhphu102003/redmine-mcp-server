@@ -151,7 +151,7 @@ Các bước upload giống Bước 4.
 | Skill | Mô tả |
 |-------|-------|
 | `user-story-writing` | Viết user story theo chuẩn qua phỏng vấn |
-| `boss-project-oversight` | Giám sát nhân sự cho boss (1 người/lần, theo ngày/tuần, cần API key admin) |
+| `boss-project-oversight` | Giám sát nhân sự cho boss (1 người + 1 tuần/lần, cần API key admin) |
 
 > Các skill dev (`redmine-daily-report`, `redmine-issue-workflow`, `redmine-planning`) không có ZIP — cài qua script trong repo. Bỏ `-Lane` (hoặc `-Lane all`) để build cả 8 ZIP một lúc.
 

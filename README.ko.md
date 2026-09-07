@@ -8,7 +8,7 @@ AI 에이전트가 Redmine 작업을 대신 처리합니다. 한 번 연결하�
 
 | 👔 보스 / 매니저 | 💻 개발자 | 🧪 테스터 |
 |---|---|---|
-| 한 번에 한 직원씩 질문하세요 — *"An은 지금 뭐 하고 있지?"*, *"기한이 지난 작업이 있나?"* — 프로젝트별로 묶은 일/주 단위 성과 위젯을 받습니다. 읽기 전용이라 실수로 변경될 일이 없습니다. | 커밋과 PR이 자동으로 Redmine 이슈가 됩니다. 이름, 설명, 검증된 ID, changelog, 시간 기록까지. 당신은 확인만 하세요. | 유저 스토리가 테스트 케이스가 되고, 버그는 Google Sheets와 Redmine를 오가며, 상태가 다시 동기화됩니다. 검토하고 승인하세요. |
+| 한 번에 한 직원씩 질문하세요 — *"An은 지금 뭐 하고 있지?"*, *"기한이 지난 작업이 있나?"* — 프로젝트별로 묶은 주간 성과 위젯을 받습니다. 읽기 전용이라 실수로 변경될 일이 없습니다. | 커밋과 PR이 자동으로 Redmine 이슈가 됩니다. 이름, 설명, 검증된 ID, changelog, 시간 기록까지. 당신은 확인만 하세요. | 유저 스토리가 테스트 케이스가 되고, 버그는 Google Sheets와 Redmine를 오가며, 상태가 다시 동기화됩니다. 검토하고 승인하세요. |
 
 각 레인은 아래 agent skill이 담당합니다. 에이전트에게 한 문장으로 자신의 레인을 알려주면 나머지는 알아서 진행됩니다.
 
@@ -130,7 +130,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | `redmine-init` | 🧪 테스터 (+ 💻 Dev 스타터, 공용) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
 | `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 테스터 | `SKILL.md` (+ `testcase-generation`에는 `USER_STORY_TEMPLATE.md`) |
 | `user-story-writing` | 👔 보스 | `SKILL.md` + 벤더 포함 `USER_STORY_TEMPLATE.md` |
-| `boss-project-oversight` | 👔 보스 | `SKILL.md` + `widget-template.html` |
+| `boss-project-oversight` | 👔 보스 | `SKILL.md` + `picker-template.html` + `week-picker-template.html` + `widget-template.html` |
 
 `-Lane`을 생략 (또는 `-Lane all`) 하면 8 ZIP 전체를 한 번에 빌드합니다.
 
@@ -153,7 +153,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | 🧪 테스터 | 셋업: 데스크톱 앱 + 서버 연결 + QA skill 설치 | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
 | 🧪 테스터 | 사용법: 첫 end-to-end 실행 (스토리 → 테스트 케이스 → 버그 → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
 | 👔 보스 | 셋업: 데스크톱 앱 + 읽기 전용 연결 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 일/주 성과 위젯 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 달력에서 주 선택 → 성과 위젯 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
 
 ## 내부 동작 방식
 
