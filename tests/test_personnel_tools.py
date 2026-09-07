@@ -261,9 +261,19 @@ class TestPersonWorkSummary:
             "from": "2026-08-31",
             "to": "2026-09-06",
         }
-        call_kwargs = mock_redmine.time_entry.filter.call_args[1]
-        assert call_kwargs["from_date"] == "2026-08-31"
-        assert call_kwargs["to_date"] == "2026-09-06"
+        window_calls = [
+            c[1]
+            for c in mock_redmine.time_entry.filter.call_args_list
+            if "from_date" in c[1]
+        ]
+        assert window_calls[0]["from_date"] == "2026-08-31"
+        assert window_calls[0]["to_date"] == "2026-09-06"
+        lifetime_calls = [
+            c[1]
+            for c in mock_redmine.time_entry.filter.call_args_list
+            if "from_date" not in c[1]
+        ]
+        assert len(lifetime_calls) == 1 and lifetime_calls[0]["user_id"] == 7
 
         mock_redmine.time_entry.filter.reset_mock()
         sunday = await get_person_work_summary(7, window="week", date_str="2026-09-06")
@@ -781,3 +791,46 @@ class TestPersonWorkSummary:
 
         desc = next(t for t in result["task_context"] if t["id"] == 2)["description"]
         assert desc == ""
+
+    @pytest.mark.asyncio
+    async def test_lifetime_hours_span_weeks(self, mock_redmine):
+        """Out-of-window logs surface as total/prior; window numbers stay pure.
+
+        Issue 2 has 3.5h in the viewed week plus 8.0h logged the prior
+        week: week_hours stays 3.5 while lifetime/prior expose 11.5/8.0
+        so overrun is judged on lifetime, not the window slice.
+        """
+        self._setup_week_context(mock_redmine)
+        window_entries = mock_redmine.time_entry.filter.return_value
+
+        def entry_filter(**kwargs):
+            if "from_date" in kwargs:
+                return window_entries
+            return window_entries + [
+                _mock_entry(8.0, issue_id=2, spent_on=date(2026, 8, 20)),
+            ]
+
+        mock_redmine.time_entry.filter.side_effect = entry_filter
+
+        result = await get_person_work_summary(
+            7, window="week", date_str="2026-09-03", compact=True
+        )
+
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert by_id[2]["week_hours"] == 3.5
+        assert by_id[2]["lifetime_hours"] == 11.5
+        assert by_id[2]["prior_hours"] == 8.0
+        assert by_id[1]["week_hours"] == 8.0
+        assert by_id[1]["lifetime_hours"] == 8.0
+        assert by_id[1]["prior_hours"] == 0.0
+
+        friday_row = next(t for t in result["widget_data"]["Thứ 6"] if t["id"] == 1)
+        assert friday_row["hours"] == 8.0
+        assert friday_row["total"] == 8.0
+        assert friday_row["completed"] is True
+        thu_row = next(t for t in result["widget_data"]["Thứ 5"] if t["id"] == 2)
+        assert thu_row["hours"] == 1.5
+        assert thu_row["total"] == 11.5
+        assert thu_row["completed"] is False
+        # Window totals unchanged by the prior-week log.
+        assert result["totals"]["hours"] == 11.5
