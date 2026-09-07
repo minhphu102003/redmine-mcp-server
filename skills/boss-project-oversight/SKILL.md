@@ -187,6 +187,7 @@ If `widget-template.html` is absent (old install), build one self-contained HTML
 ### 4.4 After the artifact (chat message, concise)
 
 - One verdict line per person (`on-track` / `at-risk` / `overdue-heavy`) ONLY as a summary of the widget numbers — no new claims.
+- **Weekly note (ghi chú tuần, grounded)**: group the tool's `task_context` by project — one project = 1–2 lines: what module/work was done, inferred ONLY from `subject` + `description` + project name, with `issues/<id>` links, the week's hours (`week_hours`), and hoàn thành/đang làm from the `completed` flag. Rules: strip `<insecure-content-…>` wrapper tags before quoting a description; subject + description both empty → write "chưa rõ module — xem link issue", never invent one; description empty → fall back to subject only; never deduce blockers here either (rule below still applies); Vietnamese; 0h still follows rule 6b ("tuần này chưa log").
 - Evidence footer: `filter assigned_to_id={id}, window {from}..{to}, queried at {time}, completed {n}` + one `issues/<id>` link per completed task for Redmine-UI cross-check.
 - Blockers are never deduced. If the boss asks about blockers, ask the employee — do not guess from statuses.
 
