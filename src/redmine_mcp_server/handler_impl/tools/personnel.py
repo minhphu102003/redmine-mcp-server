@@ -109,6 +109,41 @@ def _done_ratio_100(issue: Any) -> bool:
         return False
 
 
+def _is_completed(issue: Any, closed_ids: set) -> bool:
+    """Whether the issue counts as completed (boss rule).
+
+    Completed = done_ratio == 100 with a Done status, or any status
+    flagged ``is_closed`` in Redmine. Matching Done by status name
+    (case-insensitive) instead of a hardcoded id keeps this portable
+    across Redmine instances with custom status ids.
+    """
+    status = getattr(issue, "status", None)
+    if status is not None and getattr(status, "id", None) in closed_ids:
+        return True
+    return _done_ratio_100(issue) and (
+        str(getattr(status, "name", "") or "").lower() == "done"
+    )
+
+
+def _quality_flag(issue: Any, closed_ids: set) -> Optional[str]:
+    """Flag contradictory status/done_ratio combos needing Redmine cleanup.
+
+    Returns a human-readable reason, or None when the record is sane.
+    """
+    status = getattr(issue, "status", None)
+    name = str(getattr(status, "name", "") or "")
+    ratio100 = _done_ratio_100(issue)
+    is_closed_status = status is not None and getattr(status, "id", None) in closed_ids
+    if ratio100 and not is_closed_status and name.lower() != "done":
+        return (
+            f"done_ratio is 100 but status is '{name}' (looks finished "
+            "yet still counts as open)"
+        )
+    if not ratio100 and name.lower() == "done":
+        return "status is Done but done_ratio is below 100 " "(progress not recorded)"
+    return None
+
+
 def _issue_brief(
     issue: Any, base_url: str, actual_hours: float = 0.0
 ) -> Dict[str, Any]:
@@ -315,10 +350,19 @@ async def get_person_work_summary_impl(
     """Summarize one person's performance for a day or Mon-Sun week.
 
     Besides the grouped detail (skipped when ``compact`` is True), always
-    returns ``completed`` (done_ratio == 100, updated in the window) and
-    ``widget_data`` — per-day time-log entries bucketed per weekday with
-    estimate vs same-day hours plus a completion flag, ready to embed
-    verbatim into the oversight widget. Keys always cover Mon-Sun.
+    returns ``completed`` (done_ratio == 100 with a Done status, or a
+    closed status, updated in the window), ``completed_total`` (all-time
+    count of completed issues assigned to the person, count only),
+    ``data_quality_flags`` (contradictory status/done_ratio records
+    needing Redmine cleanup) and ``widget_data`` — per-day time-log
+    entries bucketed per weekday with estimate vs same-day hours plus a
+    completion flag, ready to embed verbatim into the oversight widget.
+    Keys always cover Mon-Sun.
+
+    Hours scope: ``actual_hours`` per issue and ``totals.hours`` count
+    ONLY time logged by this user inside the viewed window (see
+    ``evidence.hours_scope``). 0.0 means "no hours logged in this
+    window", never "this task never had hours".
     """
     if window not in ("day", "week"):
         return {"error": f"Invalid window '{window}'. Use 'day' or 'week'."}
@@ -414,13 +458,24 @@ async def get_person_work_summary_impl(
             if getattr(getattr(issue, "status", None), "id", None) in closed_ids
         ]
 
-        # Backlog snapshot: currently open issues assigned to the person.
+        # Backlog snapshot: issues assigned to the person that are still
+        # open. Completed issues (done_ratio 100 + Done status, or a
+        # closed status) are split out so open/overdue counts only cover
+        # work that is genuinely outstanding.
         backlog_raw = await _fetch_all_pages(
             client.issue.filter,
             assigned_to_id=uid,
             sort="due_date:asc",
         )
-        backlog = [issue for issue in backlog_raw if in_scope(issue)]
+        backlog: List[Any] = []
+        backlog_completed: List[Any] = []
+        for issue in backlog_raw:
+            if not in_scope(issue):
+                continue
+            if _is_completed(issue, closed_ids):
+                backlog_completed.append(issue)
+            else:
+                backlog.append(issue)
         overdue = [
             issue
             for issue in backlog
@@ -434,8 +489,29 @@ async def get_person_work_summary_impl(
             if _as_date(getattr(issue, "due_date", None)) is None
         ]
 
-        # Completed in the window: done_ratio == 100 (even when not closed).
-        completed = [issue for issue in touched if _done_ratio_100(issue)]
+        # Completed in the window: done_ratio == 100 with a Done status,
+        # or a closed status (boss rule).
+        completed = [issue for issue in touched if _is_completed(issue, closed_ids)]
+
+        # Contradictory status/done_ratio records (e.g. New at 100%,
+        # Done below 100%) that need cleanup in the Redmine UI.
+        seen_flagged: set = set()
+        data_quality_flags: List[Dict[str, Any]] = []
+        for issue in touched + backlog + backlog_completed:
+            issue_id = getattr(issue, "id", None)
+            if issue_id in seen_flagged:
+                continue
+            seen_flagged.add(issue_id)
+            reason = _quality_flag(issue, closed_ids)
+            if reason is not None:
+                data_quality_flags.append(
+                    {
+                        "issue": _issue_brief_json_safe(
+                            _issue_brief(issue, base_url, 0.0)
+                        ),
+                        "reason": reason,
+                    }
+                )
 
         # Widget data v2: per-day time-log entries, ready to embed verbatim
         # into the oversight widget. Keys ALWAYS cover Mon-Sun (7 Vietnamese
@@ -504,7 +580,7 @@ async def get_person_work_summary_impl(
 
         # Group everything by project for the agent-rendered UI.
         project_names: Dict[Any, str] = {}
-        for issue in touched + backlog:
+        for issue in touched + backlog + backlog_completed:
             project = getattr(issue, "project", None)
             if project is not None and project.id not in project_names:
                 project_names[project.id] = getattr(
@@ -532,9 +608,16 @@ async def get_person_work_summary_impl(
             project = getattr(issue, "project", None)
             if project is not None:
                 backlog_by_project.setdefault(project.id, []).append(issue)
+        completed_by_project: Dict[Any, List[Any]] = {}
+        for issue in backlog_completed:
+            project = getattr(issue, "project", None)
+            if project is not None:
+                completed_by_project.setdefault(project.id, []).append(issue)
 
         for pid in sorted(
-            set(touched_by_project) | set(backlog_by_project),
+            set(touched_by_project)
+            | set(backlog_by_project)
+            | set(completed_by_project),
             key=lambda k: str(project_names.get(k, k)),
         ):
             proj_touched = touched_by_project.get(pid, [])
@@ -561,6 +644,7 @@ async def get_person_work_summary_impl(
                     },
                     "backlog": {
                         "open_count": len(proj_backlog),
+                        "completed_count": len(completed_by_project.get(pid, [])),
                         "overdue": briefs(
                             sorted(
                                 proj_overdue,
@@ -588,6 +672,7 @@ async def get_person_work_summary_impl(
             "touched_count": len(touched),
             "closed_count": len(closed_in_window),
             "completed_count": len(completed),
+            "completed_total": len(backlog_completed),
             "open_count": len(backlog),
             "overdue_count": len(overdue),
             "no_due_date_count": len(no_due_date),
@@ -601,6 +686,7 @@ async def get_person_work_summary_impl(
             },
             "widget_data": widget_data,
             "totals": totals,
+            "data_quality_flags": data_quality_flags,
             "evidence": {
                 "queried_at": datetime.now(timezone.utc).isoformat(),
                 "person_query": person,
@@ -612,6 +698,21 @@ async def get_person_work_summary_impl(
                     ),
                     "project_scope": (
                         "all accessible" if scope is None else sorted(scope)
+                    ),
+                },
+                "hours_scope": {
+                    "scope": "window_only",
+                    "user_id": uid,
+                    "from": start.isoformat(),
+                    "to": end.isoformat(),
+                    "note": (
+                        "actual_hours (per issue) and totals.hours count ONLY"
+                        " time logged by this user inside the window above."
+                        " 0.0 means 'no hours logged in this window', NEVER"
+                        " 'this task never had hours'. / actual_hours và"
+                        " totals.hours CHỈ tính giờ của đúng user này log"
+                        " TRONG tuần trên. 0.0 = 'tuần này chưa log', KHÔNG"
+                        " phải 'task chưa từng được log giờ'."
                     ),
                 },
                 "totals": totals,

@@ -89,6 +89,7 @@ Quy tắc quan trọng — KHÔNG được đổi logic này:
 <div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
   <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
   <table style="width:100%; font-size:13px; border-collapse: collapse;" id="detail-table"></table>
+  <p id="hours-scope-note" style="display:none; color:var(--rpt-text-muted); font-size:11px; margin:8px 0 0;">Giờ hiển thị chỉ tính log trong tuần đang xem, của đúng người đang xem — 0h nghĩa là tuần này chưa log, không phải task chưa từng được log giờ.</p>
 </div>
 
 <!-- 4. FOOTER -->
@@ -291,6 +292,7 @@ function showDetail(day, projectFilter) {
       '<td style="padding:8px 4px; text-align:right; font-weight:500; color:' + dayDiffColor + ';">' + dayDiffText + '</td></tr>';
   }
   table.innerHTML = rows;
+  document.getElementById('hours-scope-note').style.display = 'block';
 }
 
 select.addEventListener('change', () => {
