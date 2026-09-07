@@ -47,6 +47,7 @@ def _mock_issue(
     done_ratio=30,
     updated_on=None,
     estimated_hours=None,
+    description="",
 ):
     issue = Mock()
     issue.id = issue_id
@@ -57,6 +58,7 @@ def _mock_issue(
     issue.done_ratio = done_ratio
     issue.estimated_hours = estimated_hours
     issue.updated_on = updated_on or datetime(2026, 9, 2, 10, 0, 0)
+    issue.description = description
     return issue
 
 
@@ -694,3 +696,88 @@ class TestPersonWorkSummary:
         week = await get_person_work_summary(7, window="week", date_str="2026-09-03")
         assert week["evidence"]["hours_scope"]["from"] == "2026-08-31"
         assert week["evidence"]["hours_scope"]["to"] == "2026-09-06"
+
+    def _setup_week_context(self, mock_redmine):
+        """Week 2026-08-31..2026-09-06: 1 done, 1 working w/ logs, 1 untouched."""
+        done = _mock_issue(
+            1,
+            subject="Tích hợp thanh toán",
+            status_id=3,
+            status_name="Done",
+            done_ratio=100,
+            updated_on=datetime(2026, 9, 4, 15, 0, 0),
+            description="Triển khai module thanh toán VNPay cho giỏ hàng.",
+        )
+        working = _mock_issue(
+            2,
+            subject="Màn hình báo cáo",
+            done_ratio=30,
+            updated_on=datetime(2026, 9, 3, 10, 0, 0),
+            description="x" * 600,
+        )
+        untouched = _mock_issue(
+            3,
+            subject="Việc tồn đọng",
+            done_ratio=10,
+            updated_on=datetime(2026, 8, 1, 10, 0, 0),
+        )
+        issues = [done, working, untouched]
+
+        def issue_filter(**kwargs):
+            if kwargs.get("status_id") == "*":
+                return [done, working]
+            return issues
+
+        mock_redmine.issue.filter.side_effect = issue_filter
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(8.0, issue_id=1, spent_on=date(2026, 9, 4)),
+            _mock_entry(2.0, issue_id=2, spent_on=date(2026, 9, 2)),
+            _mock_entry(1.5, issue_id=2, spent_on=date(2026, 9, 3)),
+        ]
+        return done, working, untouched
+
+    @pytest.mark.asyncio
+    async def test_task_context_present_in_compact_mode(self, mock_redmine):
+        """Compact keeps task_context: done + logged working, not untouched."""
+        self._setup_week_context(mock_redmine)
+
+        result = await get_person_work_summary(
+            7, window="week", date_str="2026-09-03", compact=True
+        )
+
+        assert "per_project" not in result
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert set(by_id) == {1, 2}
+        assert by_id[1]["completed"] is True
+        assert by_id[1]["week_hours"] == 8.0
+        assert "VNPay" in by_id[1]["description"]
+        assert by_id[1]["url"] == "https://redmine.example.com/issues/1"
+        assert by_id[2]["completed"] is False
+        assert by_id[2]["week_hours"] == 3.5
+        assert by_id[2]["status"] == "In Progress"
+
+    @pytest.mark.asyncio
+    async def test_task_context_truncates_long_description(self, mock_redmine):
+        """600-char description is cut to 500 + ellipsis (inside wrap tags)."""
+        self._setup_week_context(mock_redmine)
+
+        result = await get_person_work_summary(
+            7, window="week", date_str="2026-09-03", compact=True
+        )
+
+        desc = next(t for t in result["task_context"] if t["id"] == 2)["description"]
+        assert "…" in desc
+        assert desc.count("x") == 500
+
+    @pytest.mark.asyncio
+    async def test_task_context_missing_description_is_empty(self, mock_redmine):
+        """Issue without a description yields '' instead of crashing."""
+        done, working, _untouched = self._setup_week_context(mock_redmine)
+        del working.description
+
+        result = await get_person_work_summary(
+            7, window="week", date_str="2026-09-03", compact=True
+        )
+
+        desc = next(t for t in result["task_context"] if t["id"] == 2)["description"]
+        assert desc == ""

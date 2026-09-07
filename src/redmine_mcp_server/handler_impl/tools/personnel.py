@@ -18,12 +18,19 @@ import asyncio
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from ...serializers.content import wrap_insecure_content
+
 HandleErrorFn = Callable[
     [Exception, str, Optional[dict[str, Any]]],
     dict[str, Any],
 ]
 
 _PAGE_SIZE = 100
+
+# Max characters of an issue description kept in task_context (weekly
+# note material). Long enough to name the module, short enough to keep
+# the compact payload small.
+_TASK_CONTEXT_DESC_LIMIT = 500
 
 # Vietnamese weekday labels, Monday-first, for widget_data keys.
 _VI_DAY_NAMES = [
@@ -142,6 +149,51 @@ def _quality_flag(issue: Any, closed_ids: set) -> Optional[str]:
     if not ratio100 and name.lower() == "done":
         return "status is Done but done_ratio is below 100 " "(progress not recorded)"
     return None
+
+
+def _truncate_description(value: Any, limit: int = _TASK_CONTEXT_DESC_LIMIT) -> str:
+    """Trim an issue description to a short, note-ready excerpt.
+
+    Non-string or missing values become "". Raw Redmine Textile is kept
+    as-is (no markup parsing) so the agent always sees grounded text.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
+def _task_context_entry(
+    issue: Any, base_url: str, week_hours: float, completed_flag: bool
+) -> Dict[str, Any]:
+    """One task's weekly-note material: what it is + what it says.
+
+    Covers issues completed in the window and in-progress issues with
+    hours logged in the window. The description is truncated and wrapped
+    as insecure content (same convention as the issue serializers), so
+    agents must strip the wrapper tags before quoting it.
+    """
+    project = getattr(issue, "project", None)
+    status = getattr(issue, "status", None)
+    issue_id = getattr(issue, "id", None)
+    return {
+        "id": issue_id,
+        "subject": getattr(issue, "subject", ""),
+        "project": (
+            {"id": project.id, "name": getattr(project, "name", "")}
+            if project is not None
+            else None
+        ),
+        "status": getattr(status, "name", "") or "",
+        "completed": completed_flag,
+        "week_hours": _round2(week_hours),
+        "description": wrap_insecure_content(
+            _truncate_description(getattr(issue, "description", ""))
+        ),
+        "url": (f"{base_url}/issues/{issue_id}" if base_url and issue_id else None),
+    }
 
 
 def _issue_brief(
@@ -354,7 +406,10 @@ async def get_person_work_summary_impl(
     closed status, updated in the window), ``completed_total`` (all-time
     count of completed issues assigned to the person, count only),
     ``data_quality_flags`` (contradictory status/done_ratio records
-    needing Redmine cleanup) and ``widget_data`` — per-day time-log
+    needing Redmine cleanup), ``task_context`` (completed issues plus
+    in-progress issues with hours logged in the window, each with a
+    truncated description for the agent-written weekly note — also
+    returned when ``compact`` is True) and ``widget_data`` — per-day time-log
     entries bucketed per weekday with estimate vs same-day hours plus a
     completion flag, ready to embed verbatim into the oversight widget.
     Keys always cover Mon-Sun.
@@ -578,6 +633,43 @@ async def get_person_work_summary_impl(
                 _widget_entry(issue, day_hours, False)
             )
 
+        # Task context for the agent-written weekly note: issues completed
+        # in the window plus in-progress issues with hours logged in the
+        # window. Untouched backlog is excluded. Always returned, even
+        # when compact is True, so the skill can summarize what the
+        # person actually worked on with grounded descriptions.
+        task_context: List[Dict[str, Any]] = []
+        context_seen_ids: set = set()
+        for issue in completed:
+            issue_id = getattr(issue, "id", None)
+            if issue_id is None or issue_id in context_seen_ids:
+                continue
+            context_seen_ids.add(issue_id)
+            task_context.append(
+                _task_context_entry(
+                    issue,
+                    base_url,
+                    actual_by_issue.get(issue_id, 0.0),
+                    True,
+                )
+            )
+        for issue_id, _spent_iso in sorted(
+            hours_by_issue_day, key=lambda k: (str(k[0]), k[1])
+        ):
+            if issue_id in context_seen_ids:
+                continue
+            context_seen_ids.add(issue_id)
+            issue = known_issues.get(issue_id)
+            if issue is None or not in_scope(issue):
+                continue
+            if _is_completed(issue, closed_ids):
+                continue
+            task_context.append(
+                _task_context_entry(
+                    issue, base_url, actual_by_issue.get(issue_id, 0.0), False
+                )
+            )
+
         # Group everything by project for the agent-rendered UI.
         project_names: Dict[Any, str] = {}
         for issue in touched + backlog + backlog_completed:
@@ -687,6 +779,7 @@ async def get_person_work_summary_impl(
             "widget_data": widget_data,
             "totals": totals,
             "data_quality_flags": data_quality_flags,
+            "task_context": task_context,
             "evidence": {
                 "queried_at": datetime.now(timezone.utc).isoformat(),
                 "person_query": person,
