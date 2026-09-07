@@ -8,7 +8,7 @@
 
 | 👔 老板 / 管理者 | 💻 开发者 | 🧪 测试 |
 |---|---|---|
-| 一次只问一名员工 — *"An 在做什么？"*、*"有延期任务吗？"* — 按项目分组的日/周绩效可视化组件。只读，不会误改数据。 | Commit 和 PR 自动变成 Redmine issue：命名、描述、已验证 ID、changelog、工时记录。你只需确认。 | 用户故事变成测试用例，bug 在 Google Sheets 和 Redmine 之间流转，状态同步回来。你负责评审和批准。 |
+| 一次只问一名员工 — *"An 在做什么？"*、*"有延期任务吗？"* — 按项目分组的周绩效可视化组件。只读，不会误改数据。 | Commit 和 PR 自动变成 Redmine issue：命名、描述、已验证 ID、changelog、工时记录。你只需确认。 | 用户故事变成测试用例，bug 在 Google Sheets 和 Redmine 之间流转，状态同步回来。你负责评审和批准。 |
 
 每个通道都由下面的 agent skill 驱动。用一句话告诉助手你在哪个通道，剩下的交给它。
 
@@ -130,7 +130,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | `redmine-init` | 🧪 测试（+ 💻 Dev 入门，共用） | `SKILL.md`、`google-sheets-schema.md`、`member-rules-catalog.md` |
 | `testcase-generation`、`bug-reporting`、`bug-to-redmine`、`status-sync`、`reopen-bug` | 🧪 测试 | `SKILL.md`（`testcase-generation` 另含 `USER_STORY_TEMPLATE.md`） |
 | `user-story-writing` | 👔 老板 | `SKILL.md` + 内置的 `USER_STORY_TEMPLATE.md` |
-| `boss-project-oversight` | 👔 老板 | `SKILL.md` + `widget-template.html` |
+| `boss-project-oversight` | 👔 老板 | `SKILL.md` + `picker-template.html` + `week-picker-template.html` + `widget-template.html` |
 
 省略 `-Lane`（或使用 `-Lane all`）可一次性构建全部 8 个 ZIP。
 
@@ -153,7 +153,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | 🧪 测试 | 配置：桌面应用 + 服务器连接 + QA skill 安装 | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
 | 🧪 测试 | 使用：第一次端到端运行（story → 测试用例 → bug → Redmine） | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
 | 👔 老板 | 配置：桌面应用 + 只读连接 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 老板 | 使用：员工列表 → 选一个人 → 日/周绩效组件 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 老板 | 使用：员工列表 → 选一个人 → 在日历上选一周 → 绩效组件 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
 
 ## 内部原理
 

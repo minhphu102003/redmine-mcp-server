@@ -1,0 +1,147 @@
+<!-- boss-picker-template v1 -->
+<!--
+TEMPLATE CỐ ĐỊNH — bảng chọn nhân viên (boss skill Step 1). Có fallback CSS
+variables để hiển thị đúng cả khi mở độc lập ngoài trình duyệt. KHÔNG dùng
+CDN — hoạt động offline hoàn toàn.
+
+CHỈ ĐƯỢC SỬA 1 CHỖ, đánh dấu rõ bằng comment:
+  1. PEOPLE (mảng personnel lấy verbatim từ tool list_personnel)
+
+Data schema mỗi entry (verbatim từ list_personnel.personnel):
+{ "id": number, "name": string, "projects": [{ "id": number, "name": string, "roles": [string] }] }
+
+Quy tắc quan trọng — KHÔNG được đổi logic này:
+- Ô search lọc theo tên (không phân biệt hoa/thường, có dấu giữ nguyên).
+- Phân trang đúng 8 người/trang, số thứ tự là VỊ TRÍ TRONG FULL LIST
+  (trang 2 bắt đầu từ 9 khi không lọc; khi search thì giữ số gốc để boss
+  trả lời số trong chat vẫn khớp).
+- Bấm vào tên gọi sendPrompt('Xem báo cáo hiệu suất của {tên}') để nhảy
+  thẳng sang Bước 2. Host nào không có sendPrompt thì hiện hộp text để
+  boss copy/paste vào chat (fallback, không alert).
+-->
+<style>
+#rpt-root {
+  --rpt-surface-1: var(--surface-1, #f4f3f1);
+  --rpt-surface-2: var(--surface-2, #ebe9e5);
+  --rpt-border: var(--border, #ddd9d3);
+  --rpt-border-strong: var(--border-strong, #c7c2ba);
+  --rpt-text-primary: var(--text-primary, #21201c);
+  --rpt-text-secondary: var(--text-secondary, #6b6660);
+  --rpt-text-muted: var(--text-muted, #948f87);
+  --rpt-text-accent: var(--text-accent, #2a78d6);
+  --rpt-radius: var(--radius, 10px);
+  --rpt-shadow-md: var(--shadow-md, 0 2px 8px rgba(0,0,0,0.12));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--rpt-text-primary);
+  max-width: 520px;
+}
+#rpt-root .pk-search { width: 100%; box-sizing: border-box; font-size: 14px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--rpt-border-strong); background: var(--rpt-surface-1); color: var(--rpt-text-primary); margin-bottom: 12px; }
+#rpt-root .pk-list { display: flex; flex-direction: column; gap: 6px; }
+#rpt-root .pk-row { display: block; width: 100%; text-align: left; padding: 10px 12px; background: var(--rpt-surface-1); color: var(--rpt-text-primary); border: 1px solid var(--rpt-border); border-radius: var(--rpt-radius); cursor: pointer; box-shadow: var(--rpt-shadow-md); }
+#rpt-root .pk-row:hover { background: var(--rpt-surface-2); }
+#rpt-root .pk-name { font-size: 14px; font-weight: 600; }
+#rpt-root .pk-sub { font-size: 12px; color: var(--rpt-text-secondary); margin-top: 2px; }
+#rpt-root .pk-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+#rpt-root .pk-nav button { font-size: 14px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--rpt-border-strong); background: var(--rpt-surface-1); color: var(--rpt-text-primary); cursor: pointer; }
+#rpt-root .pk-nav button:disabled { opacity: 0.4; cursor: default; }
+#rpt-root .pk-page { font-size: 13px; color: var(--rpt-text-muted); }
+#rpt-root .pk-fallback { display: none; margin-top: 12px; font-size: 13px; padding: 10px 12px; border: 1px dashed var(--rpt-border-strong); border-radius: var(--rpt-radius); }
+#rpt-root .pk-fallback code { color: var(--rpt-text-accent); }
+</style>
+<div id="rpt-root">
+<h2 style="font-size:17px; font-weight:600; margin:0 0 4px;">Chọn nhân viên để xem báo cáo hiệu suất</h2>
+<p style="font-size:13px; color:var(--rpt-text-secondary); margin:0 0 12px;">Bấm vào tên để xem ngay — hoặc trả lời số thứ tự / tên trong chat.</p>
+<input class="pk-search" id="pk-search" type="text" placeholder="Tìm theo tên..." />
+<div class="pk-list" id="pk-list"></div>
+<div class="pk-nav">
+  <button id="pk-prev">Trước</button>
+  <span class="pk-page" id="pk-page"></span>
+  <button id="pk-next">Sau</button>
+</div>
+<div class="pk-fallback" id="pk-fallback"></div>
+<script>
+// 1. PEOPLE — fill verbatim from list_personnel.personnel (single slot).
+const PEOPLE = [];
+const PER_PAGE = 8;
+
+let pkPage = 0;
+let pkFiltered = PEOPLE;
+
+function pkStrip(s) {
+  return String(s == null ? "" : s).replace(/<\/?insecure-content-[^>]*>/g, "");
+}
+
+function pkSubtitle(p) {
+  const parts = (p.projects || []).map(function (pr) {
+    const roles = (pr.roles || []).join(", ");
+    return pkStrip(pr.name) + (roles ? " (" + pkStrip(roles) + ")" : "");
+  });
+  return parts.join(" · ");
+}
+
+function pkPick(name) {
+  const text = "Xem báo cáo hiệu suất của " + name;
+  if (typeof sendPrompt === "function") {
+    sendPrompt(text);
+  } else {
+    const fb = document.getElementById("pk-fallback");
+    fb.style.display = "block";
+    fb.innerHTML = "";
+    const span = document.createElement("span");
+    span.textContent = "Trình xem này không tự gửi được — copy câu sau vào chat: ";
+    const code = document.createElement("code");
+    code.textContent = text;
+    fb.appendChild(span);
+    fb.appendChild(code);
+  }
+}
+
+function pkRender() {
+  const start = pkPage * PER_PAGE;
+  const items = pkFiltered.slice(start, start + PER_PAGE);
+  const list = document.getElementById("pk-list");
+  list.innerHTML = "";
+  items.forEach(function (p, i) {
+    // Number = position in the FULL unfiltered PEOPLE array, so a chat
+    // reply with a number always matches even while a search filter
+    // is active (filtered items keep their original numbers).
+    const n = PEOPLE.indexOf(p) + 1;
+    const row = document.createElement("button");
+    row.className = "pk-row";
+    const name = document.createElement("div");
+    name.className = "pk-name";
+    name.textContent = n + ". " + pkStrip(p.name);
+    row.appendChild(name);
+    const sub = pkSubtitle(p);
+    if (sub) {
+      const subEl = document.createElement("div");
+      subEl.className = "pk-sub";
+      subEl.textContent = sub;
+      row.appendChild(subEl);
+    }
+    row.onclick = (function (nm) { return function () { pkPick(nm); }; })(pkStrip(p.name));
+    list.appendChild(row);
+  });
+  const totalPages = Math.max(1, Math.ceil(pkFiltered.length / PER_PAGE));
+  document.getElementById("pk-page").textContent = (pkPage + 1) + " / " + totalPages + " — " + pkFiltered.length + " người";
+  document.getElementById("pk-prev").disabled = pkPage === 0;
+  document.getElementById("pk-next").disabled = pkPage >= totalPages - 1;
+}
+
+document.getElementById("pk-search").addEventListener("input", function (e) {
+  const q = e.target.value.toLowerCase();
+  pkFiltered = PEOPLE.filter(function (p) {
+    return pkStrip(p.name).toLowerCase().indexOf(q) !== -1;
+  });
+  pkPage = 0;
+  pkRender();
+});
+document.getElementById("pk-prev").addEventListener("click", function () { if (pkPage > 0) { pkPage--; pkRender(); } });
+document.getElementById("pk-next").addEventListener("click", function () {
+  const totalPages = Math.max(1, Math.ceil(pkFiltered.length / PER_PAGE));
+  if (pkPage < totalPages - 1) { pkPage++; pkRender(); }
+});
+
+pkRender();
+</script>
+</div>

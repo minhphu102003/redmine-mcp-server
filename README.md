@@ -8,7 +8,7 @@ Your AI agent works with Redmine so you don't have to. Connect once, install a s
 
 | 👔 Boss / Manager | 💻 Developer | 🧪 Tester |
 |---|---|---|
-| Ask about one employee at a time — *"what is An working on?"*, *"any overdue tasks?"* — and get a visual day/week performance widget grouped by project. Read-only, nothing can be changed by accident. | Commits and PRs become Redmine issues automatically: naming, description, verified IDs, changelog, time logging. You only confirm. | User stories become test cases, bugs flow between Google Sheets and Redmine, statuses sync back. You review and approve. |
+| Ask about one employee at a time — *"what is An working on?"*, *"any overdue tasks?"* — and get a visual weekly performance widget grouped by project. Read-only, nothing can be changed by accident. | Commits and PRs become Redmine issues automatically: naming, description, verified IDs, changelog, time logging. You only confirm. | User stories become test cases, bugs flow between Google Sheets and Redmine, statuses sync back. You review and approve. |
 
 Each lane is powered by an agent skill below. Tell your agent which lane you're in with one sentence, and it takes it from there.
 
@@ -130,7 +130,7 @@ Then **Settings → Customize → Skills → Add Skill → Upload ZIP** (repeat 
 | `redmine-init` | 🧪 Tester (+ 💻 Dev starter, shared) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
 | `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester | `SKILL.md` (+ `USER_STORY_TEMPLATE.md` for `testcase-generation`) |
 | `user-story-writing` | 👔 Boss | `SKILL.md` + vendored `USER_STORY_TEMPLATE.md` |
-| `boss-project-oversight` | 👔 Boss | `SKILL.md` + `widget-template.html` |
+| `boss-project-oversight` | 👔 Boss | `SKILL.md` + `picker-template.html` + `week-picker-template.html` + `widget-template.html` |
 
 Omit `-Lane` (or use `-Lane all`) to build all 8 ZIPs at once.
 
@@ -153,7 +153,7 @@ Short walkthroughs — watch first, then follow the steps above. (Links go live 
 | 🧪 Tester | Setup: desktop app + server connection + QA skills install | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
 | 🧪 Tester | Usage: first end-to-end run (story → test cases → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
 | 👔 Boss | Setup: desktop app + read-only connection + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Boss | Usage: employee list → pick a person → day/week performance widget | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Boss | Usage: employee list → pick a person → pick a week on the calendar → performance widget | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
 
 ## Under the hood
 

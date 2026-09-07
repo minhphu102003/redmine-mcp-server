@@ -8,7 +8,7 @@ AIエージェントがRedmine作業を代行します。一度接続してskill
 
 | 👔 ボス / マネージャー | 💻 開発者 | 🧪 テスター |
 |---|---|---|
-| 一度に一人ずつ尋ねてください — *"Anは今何をしている?"*、*"期限切れタスクはある?"* — プロジェクト別にまとめた日/週パフォーマンスウィジェットを受け取ります。読み取り専用なので誤って変更される心配がありません。 | コミットとPRが自動でRedmine 이슈になります。命名、説明、検証済みID、changelog、時間記録まで。あなたは確認するだけです。 | ユーザーストーリーがテストケースになり、バグはGoogle SheetsとRedmine間を行き来し、ステータスが同期されます。レビューして承認してください。 |
+| 一度に一人ずつ尋ねてください — *"Anは今何をしている?"*、*"期限切れタスクはある?"* — プロジェクト別にまとめた週次パフォーマンスウィジェットを受け取ります。読み取り専用なので誤って変更される心配がありません。 | コミットとPRが自動でRedmine 이슈になります。命名、説明、検証済みID、changelog、時間記録まで。あなたは確認するだけです。 | ユーザーストーリーがテストケースになり、バグはGoogle SheetsとRedmine間を行き来し、ステータスが同期されます。レビューして承認してください。 |
 
 各レーンは以下のagent skillが担当します。エージェントに一文で自分のレーンを伝えれば、あとは 맡せてください。
 
@@ -130,7 +130,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | `redmine-init` | 🧪 テスター (+ 💻 Devスターター、共用) | `SKILL.md`、`google-sheets-schema.md`、`member-rules-catalog.md` |
 | `testcase-generation`、`bug-reporting`、`bug-to-redmine`、`status-sync`、`reopen-bug` | 🧪 テスター | `SKILL.md` (+ `testcase-generation`には`USER_STORY_TEMPLATE.md`) |
 | `user-story-writing` | 👔 ボス | `SKILL.md` + ベンダー同梱の`USER_STORY_TEMPLATE.md` |
-| `boss-project-oversight` | 👔 ボス | `SKILL.md` + `widget-template.html` |
+| `boss-project-oversight` | 👔 ボス | `SKILL.md` + `picker-template.html` + `week-picker-template.html` + `widget-template.html` |
 
 `-Lane`を省略 (または`-Lane all`) すると8 ZIPすべてを一括ビルドします。
 
@@ -153,7 +153,7 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 | 🧪 テスター | セットアップ: デスクトップアプリ + サーバー接続 + QA skillインストール | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
 | 🧪 テスター | 使い方: 初回end-to-end実行 (ストーリー → テストケース → バグ → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
 | 👔 ボス | セットアップ: デスクトップアプリ + 読み取り専用接続 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 ボス | 使い方: 従業員リスト → 一人選択 → 日/週パフォーマンスウィジェット | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 ボス | 使い方: 従業員リスト → 一人選択 → カレンダーで週選択 → パフォーマンスウィジェット | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
 
 ## 内部の仕組み
 
