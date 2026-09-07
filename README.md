@@ -175,6 +175,7 @@ Set with `REDMINE_AUTH_MODE=legacy|oauth|dynamic`. Public deployments: prefer `o
 - [Claude Desktop setup](./docs/claude-desktop-setup.md) — MCP + skills on Claude Desktop
 - [OAuth Setup](./docs/oauth-setup.md) — per-user OAuth2 (Redmine 6.1+)
 - [Troubleshooting](./docs/troubleshooting.md) — common issues
+- [Tool-call logging](./docs/tool-call-logging.md) — per-tool e2e trace (params, output, errors) via `docker logs`
 - [Contributing](./docs/contributing.md) — development setup
 - [Changelog](./CHANGELOG.md)
 

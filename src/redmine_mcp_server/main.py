@@ -22,8 +22,10 @@ import argparse
 import threading
 
 # Configure basic logging before importing modules that log during init
+# REDMINE_MCP_LOG_LEVEL overrides the level (default INFO).
+_LOG_LEVEL = os.environ.get("REDMINE_MCP_LOG_LEVEL", "INFO").strip().upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, _LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)-8s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -260,6 +262,10 @@ elif REDMINE_AUTH_MODE == "dynamic":
 # Log version at module load time so it appears regardless of how the server is started
 logger.info("Redmine MCP Server v%s", get_version())
 logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
+logger.info(
+    "Tool-call logging: %s (REDMINE_MCP_TOOL_LOG)",
+    "enabled" if _is_true_env("REDMINE_MCP_TOOL_LOG", "true") else "disabled",
+)
 
 
 def main():

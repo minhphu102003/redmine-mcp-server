@@ -149,6 +149,8 @@ from .resources import (  # noqa: E402
     validate_issue_description_template,
 )
 
+from .tool_logging import log_tool_call  # noqa: E402
+
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
 REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
@@ -726,6 +728,7 @@ async def _resolve_project_tracker_name(
 
 
 @mcp.tool()
+@log_tool_call
 async def get_redmine_issue(
     issue_id: Annotated[int, Field(description="ID of the Redmine issue to retrieve.")],
     include_journals: Annotated[
@@ -797,6 +800,7 @@ async def get_redmine_issue(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_redmine_projects() -> List[Dict[str, Any]]:
     """List all projects the current credential can access.
 
@@ -810,6 +814,7 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+@log_tool_call
 async def get_project_issue_context(
     project_id: Annotated[
         Union[str, int],
@@ -848,6 +853,7 @@ async def get_project_issue_context(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_redmine_issues(
     project_id: Annotated[
         Optional[Union[int, str]],
@@ -976,6 +982,7 @@ async def list_redmine_issues(
 
 
 @mcp.tool()
+@log_tool_call
 async def search_redmine_issues(
     query: Annotated[
         str,
@@ -1053,6 +1060,7 @@ async def search_redmine_issues(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_redmine_issue(
     project_id: Annotated[
         int,
@@ -1220,6 +1228,7 @@ async def create_redmine_issue(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_redmine_issue_with_subtasks(
     project_id: Annotated[
         int,
@@ -1353,6 +1362,7 @@ async def create_redmine_issue_with_subtasks(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_redmine_issue_relation(
     issue_id: Annotated[
         int,
@@ -1414,6 +1424,7 @@ async def create_redmine_issue_relation(
 
 
 @mcp.tool()
+@log_tool_call
 async def delete_redmine_issue_relation(
     relation_id: Annotated[
         int,
@@ -1431,6 +1442,7 @@ async def delete_redmine_issue_relation(
 
 
 @mcp.tool()
+@log_tool_call
 async def update_redmine_issue(
     issue_id: Annotated[int, Field(description="ID of the issue to update.")],
     fields: Annotated[
@@ -1521,6 +1533,7 @@ async def update_redmine_issue(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all issue statuses defined in Redmine."""
     return await list_redmine_issue_statuses_impl(
@@ -1531,6 +1544,7 @@ async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str,
 
 
 @mcp.tool()
+@log_tool_call
 async def get_redmine_issue_allowed_statuses(
     issue_id: Annotated[
         int,
@@ -1551,6 +1565,7 @@ async def get_redmine_issue_allowed_statuses(
 
 
 @mcp.tool()
+@log_tool_call
 async def manage_time_entries(
     action: Annotated[
         Literal["list", "create", "update", "delete", "activities"],
@@ -1693,6 +1708,7 @@ async def manage_time_entries(
 
 
 @mcp.tool()
+@log_tool_call
 async def search_entire_redmine(
     query: Annotated[
         str,
@@ -1740,6 +1756,7 @@ async def search_entire_redmine(
 
 
 @_conditional_tool(_WIKI_TOOLS_ENABLED)
+@log_tool_call
 async def get_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -1782,6 +1799,7 @@ async def get_redmine_wiki_page(
 
 
 @_conditional_tool(_WIKI_TOOLS_ENABLED)
+@log_tool_call
 async def create_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -1825,6 +1843,7 @@ async def create_redmine_wiki_page(
 
 
 @_conditional_tool(_WIKI_TOOLS_ENABLED)
+@log_tool_call
 async def update_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -1867,6 +1886,7 @@ async def update_redmine_wiki_page(
 
 
 @_conditional_tool(_WIKI_TOOLS_ENABLED)
+@log_tool_call
 async def delete_redmine_wiki_page(
     project_id: Annotated[
         Union[str, int],
@@ -1894,6 +1914,7 @@ async def delete_redmine_wiki_page(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_time_entries(
     project_id: Annotated[
         Optional[Union[str, int]],
@@ -1944,6 +1965,7 @@ async def list_time_entries(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_time_entry(
     hours: Annotated[
         float,
@@ -2002,6 +2024,7 @@ async def create_time_entry(
 
 
 @mcp.tool()
+@log_tool_call
 async def update_time_entry(
     time_entry_id: Annotated[
         int,
@@ -2042,6 +2065,7 @@ async def update_time_entry(
 
 
 @mcp.tool()
+@log_tool_call
 async def delete_time_entry(
     time_entry_id: Annotated[
         int,
@@ -2063,6 +2087,7 @@ async def delete_time_entry(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_time_entry_activities() -> List[Dict[str, Any]]:
     """List available time entry activities from Redmine."""
     return await list_time_entry_activities_impl(
@@ -2077,6 +2102,7 @@ async def list_time_entry_activities() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+@log_tool_call
 async def list_personnel(
     project_ids: Annotated[
         Optional[List[int]],
@@ -2102,6 +2128,7 @@ async def list_personnel(
 
 
 @mcp.tool()
+@log_tool_call
 async def get_person_work_summary(
     person: Annotated[
         Union[int, str],
@@ -2176,6 +2203,7 @@ async def get_person_work_summary(
 
 
 @mcp.tool()
+@log_tool_call
 async def read_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     range: Annotated[
@@ -2193,6 +2221,7 @@ async def read_google_sheet(
 
 
 @mcp.tool()
+@log_tool_call
 async def write_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     range: Annotated[
@@ -2214,6 +2243,7 @@ async def write_google_sheet(
 
 
 @mcp.tool()
+@log_tool_call
 async def append_google_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     sheet_name: Annotated[
@@ -2234,6 +2264,7 @@ async def append_google_sheet(
 
 
 @mcp.tool()
+@log_tool_call
 async def get_sheet_metadata(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
 ) -> Dict[str, Any]:
@@ -2246,6 +2277,7 @@ async def get_sheet_metadata(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_test_cases_on_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     sheet_name: Annotated[
@@ -2289,6 +2321,7 @@ async def create_test_cases_on_sheet(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_redmine_issues_from_bugs(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     sheet_name: Annotated[
@@ -2332,6 +2365,7 @@ async def create_redmine_issues_from_bugs(
 
 
 @mcp.tool()
+@log_tool_call
 async def sync_redmine_status_to_sheet(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     bug_sheet: Annotated[str, Field(description="Bug sheet name")] = "Bugs",
@@ -2357,6 +2391,7 @@ async def sync_redmine_status_to_sheet(
 
 
 @mcp.tool()
+@log_tool_call
 async def reopen_bug(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     sheet_name: Annotated[str, Field(description="Bug sheet name, e.g. 'Bugs'")],
@@ -2383,6 +2418,7 @@ async def reopen_bug(
 
 
 @mcp.tool()
+@log_tool_call
 async def set_sheet_data_validation(
     spreadsheet_id: Annotated[str, Field(description="Google Spreadsheet ID")],
     sheet_name: Annotated[
@@ -2441,6 +2477,7 @@ async def set_sheet_data_validation(
 
 
 @mcp.tool()
+@log_tool_call
 async def create_test_sheet_structure(
     title: str = Field(description="The spreadsheet title"),
     spreadsheet_id: Optional[str] = Field(
@@ -2508,6 +2545,7 @@ def _handle_google_sheets_error(
 
 
 @mcp.tool()
+@log_tool_call
 async def get_user_memory(
     key: Annotated[
         str,
@@ -2544,6 +2582,7 @@ async def get_user_memory(
 
 
 @mcp.tool()
+@log_tool_call
 async def set_user_memory(
     key: Annotated[
         str,
@@ -2604,6 +2643,7 @@ async def set_user_memory(
 
 
 @mcp.tool()
+@log_tool_call
 async def delete_user_memory(
     key: Annotated[
         str,
@@ -2629,6 +2669,7 @@ async def delete_user_memory(
 
 
 @mcp.tool()
+@log_tool_call
 async def list_user_memory() -> Dict[str, Any]:
     """List all stored memory keys for the current user.
 
