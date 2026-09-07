@@ -111,19 +111,28 @@ QA skill은 서비스 계정으로 Google Sheets에서 테스트 케이스와 �
 
 ### Claude Desktop 사용자 (테스터 & 보스: repo 불필요)
 
-Claude Desktop은 skill을 ZIP 파일로 가져옵니다 — 저장소 안에서 일하지 않을 때 적합합니다. 빌드 방법:
+Claude Desktop은 skill을 ZIP 파일로 가져옵니다 — 저장소 안에서 일하지 않을 때 적합합니다. 두 가지 번들이 있습니다: 자신의 번들을 `-Lane`으로 빌드하세요:
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+# 테스터 (6 ZIP)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane tester
+```
+
+```powershell
+# 보스 (2 ZIP)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane boss
 ```
 
 그런 다음 **Settings → Customize → Skills → Add Skill → Upload ZIP** (skill마다 반복):
 
-| ZIP | 레인 |
-|---|---|
-| `redmine-init` | 💻 Dev 스타터 |
-| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 테스터 |
-| `boss-project-oversight` | 👔 보스 |
+| ZIP | 번들 | 포함 파일 |
+|---|---|---|
+| `redmine-init` | 🧪 테스터 (+ 💻 Dev 스타터, 공용) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
+| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 테스터 | `SKILL.md` (+ `testcase-generation`에는 `USER_STORY_TEMPLATE.md`) |
+| `user-story-writing` | 👔 보스 | `SKILL.md` + 벤더 포함 `USER_STORY_TEMPLATE.md` |
+| `boss-project-oversight` | 👔 보스 | `SKILL.md` + `widget-template.html` |
+
+`-Lane`을 생략 (또는 `-Lane all`) 하면 8 ZIP 전체를 한 번에 빌드합니다.
 
 ### 유저 레벨 설치 (opencode global / ChatGPT desktop)
 

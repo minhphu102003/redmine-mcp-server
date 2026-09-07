@@ -3,7 +3,14 @@
 # serves the BOM through to 'irm', and Windows PowerShell 5.1 then fails
 # to parse the param() block when the script is run via 'irm ... | iex'.
 # Create ZIP files for each skill for Claude Desktop import
-# Usage: irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+# Usage: irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane tester
+# Lane picks which ZIP bundle to build: "tester" (6 QA skills), "boss" (2 boss
+# skills), or "all" (default, both bundles).
+
+param(
+    [ValidateSet("all", "tester", "boss")]
+    [string]$Lane = "all"
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -14,17 +21,28 @@ $RawBase = "https://raw.githubusercontent.com/${RepoOwner}/${RepoName}/${Branch}
 $ApiBase = "https://api.github.com/repos/${RepoOwner}/${RepoName}/contents"
 $OutputDir = "claude-desktop-skills"
 
-# Skills list for Claude Desktop (QA-focused + boss oversight)
-$SkillNames = @(
+# Skills list for Claude Desktop, grouped by lane.
+$TesterSkills = @(
     "redmine-init",
     "testcase-generation",
-    "user-story-writing",
     "bug-reporting",
     "bug-to-redmine",
     "status-sync",
-    "reopen-bug",
+    "reopen-bug"
+)
+$BossSkills = @(
+    "user-story-writing",
     "boss-project-oversight"
 )
+if ($Lane -eq "tester") {
+    $SkillNames = $TesterSkills
+} elseif ($Lane -eq "boss") {
+    $SkillNames = $BossSkills
+} else {
+    $SkillNames = $TesterSkills + $BossSkills
+}
+
+Write-Host "Lane: $Lane ($($SkillNames.Count) skills)" -ForegroundColor Cyan
 
 # Create temp directory for downloading
 $TempDir = Join-Path $env:TEMP "redmine-skills-$(Get-Random)"

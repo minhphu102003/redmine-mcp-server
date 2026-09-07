@@ -111,19 +111,28 @@ Skill QA theo dõi test case và bug trong Google Sheets qua service account:
 
 ### Cho người dùng Claude Desktop (tester & sếp: không cần repo)
 
-Claude Desktop nhập skill dưới dạng file ZIP — lý tưởng khi bạn không làm việc trong repository. Build ZIP bằng:
+Claude Desktop nhập skill dưới dạng file ZIP — lý tưởng khi bạn không làm việc trong repository. Có hai gói: chọn gói của bạn và build bằng `-Lane`:
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1
+# Tester (6 file ZIP)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane tester
+```
+
+```powershell
+# Sếp (2 file ZIP)
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-claude-desktop.ps1 -OutFile install-skills-claude-desktop.ps1; .\install-skills-claude-desktop.ps1 -Lane boss
 ```
 
 Rồi **Settings → Customize → Skills → Add Skill → Upload ZIP** (lặp lại cho mỗi skill):
 
-| ZIP | Làn |
-|---|---|
-| `redmine-init` | 💻 Dev khởi đầu |
-| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester |
-| `boss-project-oversight` | 👔 Sếp |
+| ZIP | Gói | File kèm theo |
+|---|---|---|
+| `redmine-init` | 🧪 Tester (+ 💻 Dev khởi đầu, dùng chung) | `SKILL.md`, `google-sheets-schema.md`, `member-rules-catalog.md` |
+| `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug` | 🧪 Tester | `SKILL.md` (+ `USER_STORY_TEMPLATE.md` cho `testcase-generation`) |
+| `user-story-writing` | 👔 Sếp | `SKILL.md` + `USER_STORY_TEMPLATE.md` vendored |
+| `boss-project-oversight` | 👔 Sếp | `SKILL.md` + `widget-template.html` |
+
+Bỏ `-Lane` (hoặc dùng `-Lane all`) để build cả 8 ZIP một lúc.
 
 ### Cài user-level (opencode global / ChatGPT desktop)
 
