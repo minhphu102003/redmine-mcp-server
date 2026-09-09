@@ -164,7 +164,8 @@ week-scoped from `hours` only — never from `total`.
 
 ### 4.2 Fill and render
 
-1. Call `get_person_work_summary(person=<id from step 1>, window=week, date_str=<Monday YYYY-MM-DD from the Step-2 confirm message, passed verbatim>, compact=true)`. That `tuần YYYY-MM-DD` string IS the Monday — never re-parse or shift it. `ambiguous` error → present candidates, never guess.
+0. Resolve the person to a numeric id FIRST, silently: call `list_personnel` (omit `project_ids`) and match the Step-1/Step-2 person name against the returned `personnel` array (same matching as §2.2 step 5 — number = position in the full unfiltered list; multiple matches → present candidates, never guess). Pass ONLY the numeric id as `person=` in step 1 below. NEVER pass a raw name string to `get_person_work_summary` on the first call of a run — a name goes through the admin Users API, and a non-admin key returns a confusing "Access denied" instead of a clean result or an "ambiguous" message. This step runs silently (no picker render) when the boss already named the person directly (§3.2 shortcut) — it still runs.
+1. Call `get_person_work_summary(person=<numeric id from step 0>, window=week, date_str=<Monday YYYY-MM-DD from the Step-2 confirm message, passed verbatim>, compact=true)`. That `tuần YYYY-MM-DD` string IS the Monday — never re-parse or shift it. `ambiguous` error → present candidates, never guess.
 2. Fill the 4 template slots with the live result (`widget_data` → DATA slot verbatim, person + window → title slot, `evidence.queried_at` → footer slot, RAMP stays as pinned).
 3. Run the pre-render checklist, then render one inline HTML widget in the chat (rule 9 — widget, not a file):
    - [ ] 7 weekday columns in order Thứ 2 → Chủ nhật, DATA keys match exactly.
@@ -193,6 +194,7 @@ If `widget-template.html` is absent (old install), build one self-contained inli
 
 - One verdict line per person (`on-track` / `at-risk` / `overdue-heavy`) ONLY as a summary of the widget numbers — no new claims.
  - **Weekly note (ghi chú tuần, grounded)**: group the tool's `task_context` by project — one project = 1–2 lines: what module/work was done, inferred ONLY from `subject` + `description` + project name, with `issues/<id>` links, the week's hours (`week_hours`), and hoàn thành/đang làm from the `completed` flag. Overrun is judged on lifetime, not the week slice: `lifetime_hours` vs estimate — `lifetime > est` means over budget even when `week_hours` is small; mention `prior_hours` ("đã log Xh từ trước tuần này") when it is > 0. Rules: strip `<insecure-content-…>` wrapper tags before quoting a description; subject + description both empty → write "chưa rõ module — xem link issue", never invent one; description empty → fall back to subject only; never deduce blockers here either (rule below still applies); Vietnamese; 0h still follows rule 6b ("tuần này chưa log").
+ - **Business framing (default)**: the weekly note describes value/business outcomes (đáng tin cậy hơn, an toàn hơn, nhanh hơn, đỡ tốn công thủ công...), never specific technology names (Redis, Qdrant, MinIO, SSE...). Name concrete tech ONLY when the boss asks in technical language.
 - Evidence footer: `filter assigned_to_id={id}, window {from}..{to}, queried at {time}, completed {n}` + one `issues/<id>` link per completed task for Redmine-UI cross-check.
 - Blockers are never deduced. If the boss asks about blockers, ask the employee — do not guess from statuses.
 
@@ -201,4 +203,4 @@ If `widget-template.html` is absent (old install), build one self-contained inli
 ## 5. What this skill never does
 
 - Team/aggregate reports, sprint planning, issue creation/update, QA sheets, personal daily reports (that is `redmine-daily-report`), wiki work.
-- Reaching any other person mid-run: one run = one person + one week. A new person = a new run from Step 1 (the id is already known, so Step 1 can be skipped when the boss names them directly — and Step 2 can be skipped too when the boss also names the week).
+- Reaching any other person mid-run: one run = one person + one week. A new person = a new run from Step 1 (the id is already known, so Step 1 can be skipped when the id was resolved earlier in THIS run — via the picker or via the silent `list_personnel` at §4.2 step 0; a name typed by the boss is never treated as a known id — and Step 2 can be skipped too when the boss also names the week).
