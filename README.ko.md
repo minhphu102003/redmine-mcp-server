@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 7개 skill(`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`)과 템플릿 파일(`README.md` 제외)을 설치합니다. 재실행 시 GitHub rate limit에 걸리면 먼저 `$env:GITHUB_TOKEN = "<your_pat>"`을 설정하세요(`public_repo` scope면 충분). 제거: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 영상 가이드 (테스터 & 보스)
+## 🎬 영상 가이드
 
-짧은 walkthrough — 먼저 시청한 뒤 위 단계를 따라 하세요. (녹화되는 대로 링크가 게시됩니다. 그때까지 각 행의 placeholder가 유지됩니다.)
+짧은 walkthrough — 먼저 시청한 뒤 위 단계를 따라 하세요. 영상은 GitHub 플레이어에서 재생됩니다. *coming soon* 행은 아직 녹화 중입니다.
 
 | 레인 | 영상 | 링크 |
 |---|---|---|
-| 🧪 테스터 | 셋업: 데스크톱 앱 + 서버 연결 + QA skill 설치 | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 테스터 | 사용법: 첫 end-to-end 실행 (스토리 → 테스트 케이스 → 버그 → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 테스터 | 셋업: 데스크톱 앱 + 서버 연결 + QA skill 설치 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 🧪 테스터 | 사용법: 첫 end-to-end 실행 (스토리 → 테스트 케이스 → 버그 → Redmine) | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 💻 개발자 | 사용법: AI agent로 Redmine 이슈 생성 / 업데이트 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
 | 👔 보스 | 셋업: 데스크톱 앱 + 읽기 전용 연결 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 달력에서 주 선택 → 성과 위젯 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 달력에서 주 선택 → 성과 위젯 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
 
 ## 내부 동작 방식
 

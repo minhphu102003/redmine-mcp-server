@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Installs 7 skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) plus their template files (`README.md` excluded). Hitting GitHub rate limits on re-runs? Set `$env:GITHUB_TOKEN = "<your_pat>"` first (`public_repo` scope is enough). Uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 Video guides (tester & boss)
+## 🎬 Video guides
 
-Short walkthroughs — watch first, then follow the steps above. (Links go live here once recorded; each row keeps its placeholder until then.)
+Short walkthroughs — watch first, then follow the steps above. Videos open in GitHub's player. Rows marked *coming soon* are still being recorded.
 
 | Lane | Video | Link |
 |---|---|---|
-| 🧪 Tester | Setup: desktop app + server connection + QA skills install | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 Tester | Usage: first end-to-end run (story → test cases → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 Tester | Setup: desktop app + server connection + QA skills install | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 🧪 Tester | Usage: first end-to-end run (story → test cases → bug → Redmine) | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 💻 Developer | Usage: create / update a Redmine issue with an AI agent | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
 | 👔 Boss | Setup: desktop app + read-only connection + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Boss | Usage: employee list → pick a person → pick a week on the calendar → performance widget | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Boss | Usage: employee list → pick a person → pick a week on the calendar → performance widget | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
 
 ## Under the hood
 

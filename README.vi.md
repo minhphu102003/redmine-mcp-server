@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Lệnh này cài 7 skill (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) kèm file mẫu (trừ `README.md`). Chạy lại mà dính giới hạn GitHub rate limit? Đặt `$env:GITHUB_TOKEN = "<your_pat>"` trước (`public_repo` scope là đủ). Gỡ cài đặt: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 Video hướng dẫn (tester & sếp)
+## 🎬 Video hướng dẫn
 
-Video walkthrough ngắn — xem trước rồi làm theo các bước trên. (Link sẽ đăng tại đây khi quay xong; mỗi dòng giữ placeholder cho tới lúc đó.)
+Video walkthrough ngắn — xem trước rồi làm theo các bước trên. Video mở trong trình phát của GitHub. Dòng ghi *coming soon* vẫn đang được quay.
 
 | Làn | Video | Link |
 |---|---|---|
-| 🧪 Tester | Setup: app desktop + kết nối server + cài skill QA | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 Tester | Usage: chạy end-to-end đầu tiên (story → test case → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 Tester | Setup: app desktop + kết nối server + cài skill QA | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 🧪 Tester | Usage: chạy end-to-end đầu tiên (story → test case → bug → Redmine) | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
+| 💻 Developer | Usage: tạo / cập nhật issue Redmine với AI agent | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
 | 👔 Sếp | Setup: app desktop + kết nối chỉ đọc + skill giám sát | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → chọn tuần trên lịch → widget hiệu suất | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → chọn tuần trên lịch → widget hiệu suất | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
 
 ## Bên trong hoạt động thế nào
 
