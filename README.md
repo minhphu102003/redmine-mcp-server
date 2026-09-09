@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Installs 7 skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) plus their template files (`README.md` excluded). Hitting GitHub rate limits on re-runs? Set `$env:GITHUB_TOKEN = "<your_pat>"` first (`public_repo` scope is enough). Uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 Video guides (tester & boss)
+## 🎬 Video guides
 
-Short walkthroughs — watch first, then follow the steps above. (Links go live here once recorded; each row keeps its placeholder until then.)
+Short walkthroughs — watch first, then follow the steps above. Videos open in GitHub's player. Rows marked *coming soon* are still being recorded.
 
 | Lane | Video | Link |
 |---|---|---|
-| 🧪 Tester | Setup: desktop app + server connection + QA skills install | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 Tester | Usage: first end-to-end run (story → test cases → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 Tester | Setup: desktop app + server connection + QA skills install | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 Tester | Usage: first end-to-end run (story → test cases → bug → Redmine) | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 Developer | Usage: create / update a Redmine issue with an AI agent | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 Boss | Setup: desktop app + read-only connection + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Boss | Usage: employee list → pick a person → pick a week on the calendar → performance widget | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Boss | Usage: employee list → pick a person → pick a week on the calendar → performance widget | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## Under the hood
 

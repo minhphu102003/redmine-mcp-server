@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 7つのskill(`redmine-init`、`testcase-generation`、`bug-reporting`、`bug-to-redmine`、`status-sync`、`reopen-bug`、`boss-project-oversight`)とテンプレートファイル(`README.md`除く)をインストールします。再実行時にGitHub rate limitに当たったら先に`$env:GITHUB_TOKEN = "<your_pat>"`を設定してください(`public_repo`スコープで十分)。アンインストール: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 動画ガイド (テスター&ボス)
+## 🎬 動画ガイド
 
-短いwalkthrough — 先に見てから上記手順に従ってください。(録画され次第リンクを掲載します。それまで各行のplaceholderを維持します。)
+短いwalkthrough — 先に見てから上記手順に従ってください。動画はGitHubのプレイヤーで再生されます。*coming soon* の行はまだ録画中です。
 
 | レーン | 動画 | リンク |
 |---|---|---|
-| 🧪 テスター | セットアップ: デスクトップアプリ + サーバー接続 + QA skillインストール | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 テスター | 使い方: 初回end-to-end実行 (ストーリー → テストケース → バグ → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 テスター | セットアップ: デスクトップアプリ + サーバー接続 + QA skillインストール | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 テスター | 使い方: 初回end-to-end実行 (ストーリー → テストケース → バグ → Redmine) | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 開発者 | 使い方: AIエージェントでRedmineイシューを作成 / 更新 | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 ボス | セットアップ: デスクトップアプリ + 読み取り専用接続 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 ボス | 使い方: 従業員リスト → 一人選択 → カレンダーで週選択 → パフォーマンスウィジェット | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 ボス | 使い方: 従業員リスト → 一人選択 → カレンダーで週選択 → パフォーマンスウィジェット | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## 内部の仕組み
 

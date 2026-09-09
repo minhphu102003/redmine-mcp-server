@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Lệnh này cài 7 skill (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) kèm file mẫu (trừ `README.md`). Chạy lại mà dính giới hạn GitHub rate limit? Đặt `$env:GITHUB_TOKEN = "<your_pat>"` trước (`public_repo` scope là đủ). Gỡ cài đặt: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-## 🎬 Video hướng dẫn (tester & sếp)
+## 🎬 Video hướng dẫn
 
-Video walkthrough ngắn — xem trước rồi làm theo các bước trên. (Link sẽ đăng tại đây khi quay xong; mỗi dòng giữ placeholder cho tới lúc đó.)
+Video walkthrough ngắn — xem trước rồi làm theo các bước trên. Video mở trong trình phát của GitHub. Dòng ghi *coming soon* vẫn đang được quay.
 
 | Làn | Video | Link |
 |---|---|---|
-| 🧪 Tester | Setup: app desktop + kết nối server + cài skill QA | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 Tester | Usage: chạy end-to-end đầu tiên (story → test case → bug → Redmine) | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 Tester | Setup: app desktop + kết nối server + cài skill QA | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 Tester | Usage: chạy end-to-end đầu tiên (story → test case → bug → Redmine) | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 Developer | Usage: tạo / cập nhật issue Redmine với AI agent | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 Sếp | Setup: app desktop + kết nối chỉ đọc + skill giám sát | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → chọn tuần trên lịch → widget hiệu suất | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 Sếp | Usage: danh sách nhân viên → chọn một người → chọn tuần trên lịch → widget hiệu suất | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## Bên trong hoạt động thế nào
 

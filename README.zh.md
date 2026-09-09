@@ -144,16 +144,17 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 安装 7 个 skill（`redmine-init`、`testcase-generation`、`bug-reporting`、`bug-to-redmine`、`status-sync`、`reopen-bug`、`boss-project-oversight`）及模板文件（不含 `README.md`）。重复运行时遇到 GitHub rate limit？先设置 `$env:GITHUB_TOKEN = "<your_pat>"`（`public_repo` scope 足够）。卸载：`Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`。
 
-## 🎬 视频指南（测试 & 老板）
+## 🎬 视频指南
 
-简短 walkthrough — 先看再跟着上面的步骤操作。（录制完成后链接会发布在这里；每行在此之前保留占位。）
+简短 walkthrough — 先看再跟着上面的步骤操作。视频在 GitHub 播放器中打开。标为 *coming soon* 的行仍在录制中。
 
 | 通道 | 视频 | 链接 |
 |---|---|---|
-| 🧪 测试 | 配置：桌面应用 + 服务器连接 + QA skill 安装 | *coming soon* <!-- VIDEO-TESTER-SETUP: replace with https://... --> |
-| 🧪 测试 | 使用：第一次端到端运行（story → 测试用例 → bug → Redmine） | *coming soon* <!-- VIDEO-TESTER-USAGE: replace with https://... --> |
+| 🧪 测试 | 配置：桌面应用 + 服务器连接 + QA skill 安装 | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 测试 | 使用：第一次端到端运行（story → 测试用例 → bug → Redmine） | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 开发 | 使用：用 AI agent 创建 / 更新 Redmine issue | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 老板 | 配置：桌面应用 + 只读连接 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 老板 | 使用：员工列表 → 选一个人 → 在日历上选一周 → 绩效组件 | *coming soon* <!-- VIDEO-BOSS-USAGE: replace with https://... --> |
+| 👔 老板 | 使用：员工列表 → 选一个人 → 在日历上选一周 → 绩效组件 | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## 内部原理
 
