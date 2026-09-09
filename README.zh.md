@@ -150,11 +150,11 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 | 通道 | 视频 | 链接 |
 |---|---|---|
-| 🧪 测试 | 配置：桌面应用 + 服务器连接 + QA skill 安装 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 🧪 测试 | 使用：第一次端到端运行（story → 测试用例 → bug → Redmine） | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 💻 开发 | 使用：用 AI agent 创建 / 更新 Redmine issue | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
+| 🧪 测试 | 配置：桌面应用 + 服务器连接 + QA skill 安装 | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 测试 | 使用：第一次端到端运行（story → 测试用例 → bug → Redmine） | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 开发 | 使用：用 AI agent 创建 / 更新 Redmine issue | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 老板 | 配置：桌面应用 + 只读连接 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 老板 | 使用：员工列表 → 选一个人 → 在日历上选一周 → 绩效组件 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
+| 👔 老板 | 使用：员工列表 → 选一个人 → 在日历上选一周 → 绩效组件 | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## 内部原理
 

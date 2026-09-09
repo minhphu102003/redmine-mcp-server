@@ -150,11 +150,11 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 | 레인 | 영상 | 링크 |
 |---|---|---|
-| 🧪 테스터 | 셋업: 데스크톱 앱 + 서버 연결 + QA skill 설치 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 🧪 테스터 | 사용법: 첫 end-to-end 실행 (스토리 → 테스트 케이스 → 버그 → Redmine) | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 💻 개발자 | 사용법: AI agent로 Redmine 이슈 생성 / 업데이트 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
+| 🧪 테스터 | 셋업: 데스크톱 앱 + 서버 연결 + QA skill 설치 | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 테스터 | 사용법: 첫 end-to-end 실행 (스토리 → 테스트 케이스 → 버그 → Redmine) | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 개발자 | 사용법: AI agent로 Redmine 이슈 생성 / 업데이트 | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 보스 | 셋업: 데스크톱 앱 + 읽기 전용 연결 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 달력에서 주 선택 → 성과 위젯 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
+| 👔 보스 | 사용법: 직원 목록 → 한 사람 선택 → 달력에서 주 선택 → 성과 위젯 | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## 내부 동작 방식
 

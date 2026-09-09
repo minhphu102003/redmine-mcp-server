@@ -150,11 +150,11 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 | レーン | 動画 | リンク |
 |---|---|---|
-| 🧪 テスター | セットアップ: デスクトップアプリ + サーバー接続 + QA skillインストール | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 🧪 テスター | 使い方: 初回end-to-end実行 (ストーリー → テストケース → バグ → Redmine) | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/tester-setup-and-generation-demo.mp4) |
-| 💻 開発者 | 使い方: AIエージェントでRedmineイシューを作成 / 更新 | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/developer-create-issue-demo.mp4) |
+| 🧪 テスター | セットアップ: デスクトップアプリ + サーバー接続 + QA skillインストール | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 🧪 テスター | 使い方: 初回end-to-end実行 (ストーリー → テストケース → バグ → Redmine) | <video src="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d" width="360" controls><a href="https://github.com/user-attachments/assets/f96c263a-12c7-4c0f-9a86-98b42d65026d">Watch</a></video> |
+| 💻 開発者 | 使い方: AIエージェントでRedmineイシューを作成 / 更新 | <video src="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361" width="360" controls><a href="https://github.com/user-attachments/assets/83f7b986-5ad7-46d0-9975-124468405361">Watch</a></video> |
 | 👔 ボス | セットアップ: デスクトップアプリ + 読み取り専用接続 + oversight skill | *coming soon* <!-- VIDEO-BOSS-SETUP: replace with https://... --> |
-| 👔 ボス | 使い方: 従業員リスト → 一人選択 → カレンダーで週選択 → パフォーマンスウィジェット | [Watch](https://github.com/minhphu102003/redmine-mcp-server/blob/videos/boss-project-oversight-demo.mp4) |
+| 👔 ボス | 使い方: 従業員リスト → 一人選択 → カレンダーで週選択 → パフォーマンスウィジェット | <video src="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811" width="360" controls><a href="https://github.com/user-attachments/assets/db5a9288-edd8-4d51-a2a4-f335cbace811">Watch</a></video> |
 
 ## 内部の仕組み
 
