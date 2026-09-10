@@ -114,9 +114,9 @@ box instead. Offline single file: keep inline `<style>` + `<script>`, no CDN.
 
 The skill ships with three templates in the **same folder as this SKILL.md** (the installer copies all `*.html` next to `SKILL.md` — boss skill only): `picker-template.html` (Step 1), `week-picker-template.html` (Step 2), and the reference widget template below (Step 3). **Read `widget-template.html` first, in full, before calling `get_person_work_summary`.** It is the single source of truth for layout, element IDs, CSS classes, palette, and Vietnamese labels. The spec in §4.1–4.3 below mirrors that file and is only the fallback for when the file is missing.
 
-### 4.1 Template contract (v3 — `widget-template.html` in this folder)
+### 4.1 Template contract (v4 — `widget-template.html` in this folder)
 
-Version pin: `<!-- boss-widget-template v3 -->` at the top of the file.
+Version pin: `<!-- boss-widget-template v4 -->` at the top of the file.
 If the pin differs, STOP and tell the boss to update the skill — never render
 against a mismatched template.
 
@@ -133,11 +133,16 @@ Visualizer). **Only these 4 slots may change per run:**
    `widget_data`. One row = one time log on one day for one task; the same
    task id repeats across days, `completed=true` on exactly one day.
    Schema per entry:
-   `{ "id": number, "name": string, "project": string, "est": number, "hours": number, "total": number, "url": string, "completed": boolean }`
-   where `est` = estimate of the WHOLE task (same value on every row with
-   that id), `hours` = hours logged on THAT day only (not the task total),
-   and `total` = hours logged on that task in ALL weeks by this user
-   (lifetime, for the overrun column — NOT the week sum).
+    `{ "id": number, "name": string, "project": string, "est": number, "hours": number, "total": number, "url": string, "completed": boolean, "role": "owner" | "supporting" | "supported" }`
+    where `est` = estimate of the WHOLE task (same value on every row with
+    that id), `hours` = hours logged on THAT day only (not the task total),
+    and `total` = hours logged on that task in ALL weeks by this user
+    (lifetime, for the overrun column — NOT the week sum).
+    `role` = `owner` (assigned to this person) or a contributor role:
+    `supporting` (someone else's open task this person logged hours on)
+    or `supported` (someone else's closed task they contributed to).
+    Contributor rows always carry `completed=false`, so chart columns and
+    the 3 cards (which count only `completed=true`) exclude them.
    7 day keys in fixed order, always covering the Mon–Sun week being viewed:
    `"Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7","Chủ nhật"`.
 4. **Footer** — `Nguồn: Redmine, queried at {evidence.queried_at}`.
@@ -153,7 +158,8 @@ red when > 0 / green when < 0); stacked count bars Thứ 2 → Chủ nhật coun
 ONLY `completed=true` entries (never double-count multi-day tasks), with
 per-segment hover tooltip and empty-day `2px` tick; click-a-column
 `showDetail(day, projectFilter)` showing in-progress rows too (badge
-`Đang làm` vs `Hoàn thành`, hyperlink via `url`, `hours` = that day's log,
+`Đang làm` vs `Hoàn thành` vs `Hỗ trợ` (role=supporting) vs `Đã hỗ trợ`
+(role=supported), hyperlink via `url`, `hours` = that day's log,
 `Tổng đã log` = lifetime `total`, Estimate/Chênh lệch = `—` for
 in-progress rows, Chênh lệch for completed rows = `total` − est,
 2 decimals, red > 0 else green) plus a `Tổng ngày` row (variance counts
@@ -171,14 +177,16 @@ week-scoped from `hours` only — never from `total`.
    - [ ] 7 weekday columns in order Thứ 2 → Chủ nhật, DATA keys match exactly.
    - [ ] `completed=true` on exactly one day per task id; every other logged day of that id is `completed=false`.
    - [ ] `est` identical on all rows sharing an id; `hours` = that day's log only; `total` = lifetime hours (≥ week sum).
-   - [ ] In-progress rows present exactly on days with logged hours (badge `Đang làm`, Estimate/Chênh lệch `—`); no unlogged open task appears.
+    - [ ] In-progress rows present exactly on days with logged hours (badge `Đang làm`, Estimate/Chênh lệch `—`); no unlogged open task appears.
+    - [ ] Contributor rows (`supporting`/`supported`) present exactly on days with logged hours on unassigned tasks, badge Hỗ trợ/Đã hỗ trợ, `completed=false`.
+    - [ ] Completion counts (`total-tasks` card, chart columns) exclude contributor rows.
    - [ ] `#project-filter` options = `Tất cả` + projects present in DATA (first-appearance order).
    - [ ] `total-tasks` / `eff-ratio` / `week-diff` computed from the active filter only, tasks deduped by id.
    - [ ] Chênh lệch (detail rows + `Tổng ngày`) red when `total` − est > 0, green when < 0; `total-tasks` / `eff-ratio` / `week-diff` stay week-scoped from `hours`.
    - [ ] Task names link via each task's `url`; evidence footer present with `queried_at`.
    - [ ] Known gap (say it if asked): project-level logs with no issue, or issues the tool could not resolve, stay in `totals.hours` but have no DATA row — cross-check via `totals.time_entries`.
 
-### 4.3 Fallback when the template file is missing (mirrors v3)
+### 4.3 Fallback when the template file is missing (mirrors v4)
 
 If `widget-template.html` is absent (old install), build one self-contained inline HTML widget (inline `<style>` + `<script>`, no CDN, rule 9 — widget, not a file) from `widget_data` embedded verbatim as `const DATA = {...}`:
 
@@ -186,14 +194,14 @@ If `widget-template.html` is absent (old install), build one self-contained inli
 2. **Project dropdown** (`#project-filter`, top): `Tất cả` + one option per project in DATA (first-appearance order). Default `Tất cả`.
 3. **Three metric cards** from the active filter, tasks deduped by id: completed-task count (`#total-tasks`); Σest/Σactual × 100 with one decimal + `%` (`—` when Σactual is 0) (`#eff-ratio`), where Σactual per task = total `hours` of all rows with that id; week diff Σactual−Σest with 2 decimals, `+` prefix when > 0, red > 0 / green < 0 (`#week-diff`).
 4. **Stacked bar chart** (`#bar-chart` + `#day-labels` + `#tooltip` + `#legend`) Thứ 2 → Chủ nhật: per-project stacked counts of `completed=true` entries ONLY (`Tất cả`) or single-project data; legend with name + color swatch. Palette: `["#85B7EB", "#378ADD", "#185FA5", "#042C53", "#B5D4F4"]` (wrap past 5).
-5. **Detail table** (`#detail-panel` / `#detail-day` / `#detail-table`) on bar click (day AND active project filter): Tên task (hyperlink via `url`), Project, Trạng thái badge (`Hoàn thành` / `Đang làm`), Estimate (`—` when in progress), Giờ log ngày này (`hours`), Tổng đã log (lifetime `total`, `—` when in progress), Chênh lệch (completed rows: `total` − est, 2 decimals, red > 0, green ≤ 0; in-progress rows: `—`) + `Tổng ngày` row (variance counts only tasks completed that day). Empty day → `Không có task nào`.
+5. **Detail table** (`#detail-panel` / `#detail-day` / `#detail-table`) on bar click (day AND active project filter): Tên task (hyperlink via `url`), Project, Trạng thái badge (`Hoàn thành` / `Đang làm` / `Hỗ trợ` / `Đã hỗ trợ`), Estimate (`—` when in progress), Giờ log ngày này (`hours`), Tổng đã log (lifetime `total`, `—` when in progress), Chênh lệch (completed rows: `total` − est, 2 decimals, red > 0, green ≤ 0; in-progress rows: `—`) + `Tổng ngày` row (variance counts only tasks completed that day). Empty day → `Không có task nào`.
 6. **Footer**: `Nguồn: Redmine, queried at {evidence.queried_at}`.
 7. Behavior: one state `{projectFilter, selectedDay}`, re-render chart + legend + metrics on filter change, hide detail on change, hover tooltips, click toggles day detail.
 
 ### 4.4 After the widget (chat message, concise)
 
 - One verdict line per person (`on-track` / `at-risk` / `overdue-heavy`) ONLY as a summary of the widget numbers — no new claims.
- - **Weekly note (ghi chú tuần, grounded)**: group the tool's `task_context` by project — one project = 1–2 lines: what module/work was done, inferred ONLY from `subject` + `description` + project name, with `issues/<id>` links, the week's hours (`week_hours`), and hoàn thành/đang làm from the `completed` flag. Overrun is judged on lifetime, not the week slice: `lifetime_hours` vs estimate — `lifetime > est` means over budget even when `week_hours` is small; mention `prior_hours` ("đã log Xh từ trước tuần này") when it is > 0. Rules: strip `<insecure-content-…>` wrapper tags before quoting a description; subject + description both empty → write "chưa rõ module — xem link issue", never invent one; description empty → fall back to subject only; never deduce blockers here either (rule below still applies); Vietnamese; 0h still follows rule 6b ("tuần này chưa log").
+ - **Weekly note (ghi chú tuần, grounded)**: group the tool's `task_context` by project — one project = 1–2 lines: what module/work was done, inferred ONLY from `subject` + `description` + project name, with `issues/<id>` links, the week's hours (`week_hours`), and hoàn thành/đang làm from the `completed` flag. Overrun is judged on lifetime, not the week slice: `lifetime_hours` vs estimate — `lifetime > est` means over budget even when `week_hours` is small; mention `prior_hours` ("đã log Xh từ trước tuần này") when it is > 0. Rules: strip `<insecure-content-…>` wrapper tags before quoting a description; subject + description both empty → write "chưa rõ module — xem link issue", never invent one; description empty → fall back to subject only; never deduce blockers here either (rule below still applies); Vietnamese; 0h still follows rule 6b ("tuần này chưa log"). Contributor entries (role `supporting`/`supported`) are phrased as "hỗ trợ {task}" with their `week_hours`; never judge overrun from them — `est` is the whole task's, not this person's share.
  - **Business framing (default)**: the weekly note describes value/business outcomes (đáng tin cậy hơn, an toàn hơn, nhanh hơn, đỡ tốn công thủ công...), never specific technology names (Redis, Qdrant, MinIO, SSE...). Name concrete tech ONLY when the boss asks in technical language.
 - Evidence footer: `filter assigned_to_id={id}, window {from}..{to}, queried at {time}, completed {n}` + one `issues/<id>` link per completed task for Redmine-UI cross-check.
 - Blockers are never deduced. If the boss asks about blockers, ask the employee — do not guess from statuses.

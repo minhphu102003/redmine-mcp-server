@@ -1,8 +1,10 @@
-<!-- boss-widget-template v3 -->
+<!-- boss-widget-template v4 -->
 <!--
 TEMPLATE CỐ ĐỊNH — hỗ trợ task trải nhiều ngày (log giờ ở nhiều ngày, chỉ
-"hoàn thành" ở đúng 1 ngày) và task dàn trải nhiều tuần (giờ log ngoài tuần
-đang xem vẫn được tính chênh lệch qua field "total"). Có fallback CSS
+"hoàn thành" ở đúng 1 ngày), task dàn trải nhiều tuần (giờ log ngoài tuần
+đang xem vẫn được tính chênh lệch qua field "total") và task góp giờ
+(task của người khác mà user log giờ vào — hiện với badge Hỗ trợ/Đã hỗ trợ,
+không tính vào số hoàn thành). Có fallback CSS
 variables để hiển thị đúng cả khi mở độc lập ngoài trình duyệt. KHÔNG dùng
 CDN — hoạt động offline hoàn toàn.
 
@@ -21,17 +23,24 @@ Data schema mỗi entry (1 dòng = 1 lần log giờ trong 1 ngày cho 1 task):
   "hours": number,         // giờ log RIÊNG trong ngày đó (không phải tổng cả task)
   "total": number,         // giờ đã log MỌI tuần của đúng user cho task này (để tính chênh lệch)
   "url": string,
-  "completed": boolean     // true CHỈ ở đúng 1 ngày — ngày task được đánh dấu hoàn thành
+  "completed": boolean,    // true CHỈ ở đúng 1 ngày — ngày task được đánh dấu hoàn thành
+  "role": string           // "owner" (task của mình) | "supporting" (task mở của người khác mà mình góp giờ)
+                           // | "supported" (task đã đóng của người khác mà mình từng góp giờ).
+                           // Hàng contributor LUÔN có completed=false — chart/cards chỉ đếm completed=true
+                           // nên số hoàn thành không đổi. Entry cũ thiếu "role" thì coi như "owner".
 }
 
 Quy tắc quan trọng — KHÔNG được đổi logic này:
-- Cột biểu đồ chỉ đếm entry có completed=true (tránh đếm trùng task nhiều ngày).
+- Cột biểu đồ chỉ đếm entry có completed=true (tránh đếm trùng task nhiều ngày;
+  hàng Hỗ trợ/Đã hỗ trợ luôn completed=false nên không lọt vào đếm).
 - "Chênh lệch" của 1 task hoàn thành = field "total" (giờ mọi tuần) trừ est —
   KHÔNG tính từ "hours" của riêng 1 ngày hay tổng hours trong tuần. Entry cũ
   thiếu "total" thì fallback = tổng hours của mọi entry cùng id trong tuần.
 - Các số mang nghĩa "tuần/ngày" (3 cards, "Giờ log ngày này", "Tổng ngày")
   vẫn chỉ tính từ "hours" trong tuần đang xem — KHÔNG dùng "total".
 - Task chưa hoàn thành (completed=false) hiện Estimate và Chênh lệch là "—".
+  Badge Trạng thái: completed → "Hoàn thành"; role=supporting → "Hỗ trợ";
+  role=supported → "Đã hỗ trợ"; còn lại → "Đang làm" (entry thiếu role = owner).
 - 7 khóa ngày theo đúng thứ tự: "Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6",
   "Thứ 7","Chủ nhật".
 -->
@@ -55,6 +64,7 @@ Quy tắc quan trọng — KHÔNG được đổi logic này:
 .rpt-badge { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:500; }
 .rpt-badge-done { background: rgba(30,138,92,0.14); color: var(--rpt-text-success); }
 .rpt-badge-progress { background: rgba(107,102,96,0.14); color: var(--rpt-text-secondary); }
+.rpt-badge-support { background: rgba(42,120,214,0.14); color: var(--rpt-text-accent); }
 </style>
 <div id="rpt-root">
 <h2 style="position:absolute; width:1px; height:1px; overflow:hidden;">Biểu đồ cột số task hoàn thành theo ngày, có task trải nhiều ngày, hover xem chi tiết, click xem task</h2>
@@ -89,7 +99,7 @@ Quy tắc quan trọng — KHÔNG được đổi logic này:
 <div id="day-labels" style="display:flex; padding: 0 4px; margin-bottom:1rem;"></div>
 
 <div id="legend" style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:1rem; font-size:12px; color:var(--rpt-text-secondary);"></div>
-<p style="font-size:13px; color:var(--rpt-text-muted); margin: 0 0 1rem;">Cột chỉ đếm task <b>hoàn thành</b> trong ngày. Bảng chi tiết hiện cả task đang làm dở (chưa hoàn thành). Click vào cột để xem.</p>
+<p style="font-size:13px; color:var(--rpt-text-muted); margin: 0 0 1rem;">Cột chỉ đếm task <b>hoàn thành</b> trong ngày. Bảng chi tiết hiện cả task đang làm dở (chưa hoàn thành) và task góp giờ (Hỗ trợ / Đã hỗ trợ). Click vào cột để xem.</p>
 
 <div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
   <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
@@ -278,8 +288,13 @@ function showDetail(day, projectFilter) {
   let dayHoursLogged = 0, dayEstCompleted = 0, dayDiffCompleted = 0;
   entries.forEach(t => {
     dayHoursLogged += t.hours;
+    const role = t.role || 'owner';
     const statusBadge = t.completed
       ? '<span class="rpt-badge rpt-badge-done">Hoàn thành</span>'
+      : role === 'supporting'
+      ? '<span class="rpt-badge rpt-badge-support">Hỗ trợ</span>'
+      : role === 'supported'
+      ? '<span class="rpt-badge rpt-badge-support">Đã hỗ trợ</span>'
       : '<span class="rpt-badge rpt-badge-progress">Đang làm</span>';
     const lifetime = lifetimeById[t.id];
     let estCell = '—', diffCell = '—';
