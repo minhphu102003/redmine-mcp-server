@@ -1024,12 +1024,14 @@ Summarize one person's performance for a day or a Monday–Sunday week, grouped 
 - `window` (string, optional): `"day"` (default) or `"week"` (Mon–Sun week containing the reference date, even when it is a Sunday)
 - `date_str` (string, optional): Reference date `YYYY-MM-DD`. Defaults to today (server date)
 - `project_ids` (array of integers, optional): Restrict to these project IDs. Omit for all accessible projects
-- `compact` (boolean, optional): When `true`, skip the per-project detail and return only `person`, `window`, `widget_data`, `totals`, and `evidence` (smaller payload for the oversight widget). Default: `false`
+- `compact` (boolean, optional): When `true`, skip the per-project detail and return only `person`, `window`, `widget_data`, `totals`, `task_context`, `unlinked_logs`, `data_quality_flags` and `evidence` (smaller payload for the oversight widget). Default: `false`
 
 **Returns:** Dictionary with:
 - `person` (`id`, `name`, `login`, `mail`)
 - `window` (`type`, `from`, `to`)
-- `widget_data`: completed tasks bucketed per weekday (`Thứ 2` … `Chủ nhật`), each item `id`, `name`, `project`, `est`, `actual`, `url` — embed verbatim into the oversight widget. A task counts as completed when `done_ratio == 100` (even with an open status) and it was updated inside the window; `est` is 0 when Redmine has no estimate, `actual` sums the time entries logged on that issue inside the window (0 when none)
+- `widget_data`: time-log entries bucketed per weekday (`Thứ 2` … `Chủ nhật`), each item `id`, `name`, `project`, `est`, `hours`, `total`, `url`, `completed`, `role`, `log` — embed verbatim into the oversight widget. A task counts as completed when `done_ratio == 100` with a Done status (or any closed status) and it was updated inside the window; `est` is 0 when Redmine has no estimate, `hours` counts that day's logs only, `total` counts lifetime logs, and `log` is the concatenated time-entry comments of that day (one line per day, truncated to 1000 chars, wrapped in insecure-content tags, `""` when nothing logged)
+- `task_context`: completed plus logged in-progress issues, each with `subject`, truncated `description`, per-day `daily_logs` (`{YYYY-MM-DD: wrapped log line}`), `week_hours`/`lifetime_hours`/`prior_hours`, `role`, `url`
+- `unlinked_logs`: window time entries logged at project level with no issue (`date`, `hours`, wrapped `comment`, `project`, `activity`)
 - `per_project`: per project, `activity` (`hours`, `touched`/`touched_count`, `closed`/`closed_count`) and `backlog` (`open_count`, `overdue`/`overdue_count`, `no_due_date`/`no_due_date_count`, `in_progress`). Each issue brief carries `id`, `subject`, `status`, `due_date`, `done_ratio`, `estimated_hours`, `actual_hours`, `updated_on`, and `url`. Omitted when `compact=true`
 - `totals`: `hours`, `time_entries`, `touched_count`, `closed_count`, `open_count`, `overdue_count`, `no_due_date_count`
 - `evidence`: `queried_at`, `person_query`, `filters_used`, `totals` — cite this block so the boss can cross-check every answer in the Redmine UI

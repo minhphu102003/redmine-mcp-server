@@ -461,12 +461,17 @@ block (filters used, query time, totals) for Redmine-UI cross-checks.
 | `window` | `str` | no | `'day'` (default) or `'week'` (Mon–Sun containing the date) |
 | `date_str` | `str` | no | Reference date `YYYY-MM-DD` (defaults to server today) |
 | `project_ids` | `List[int]` | no | Restrict to these projects. Omit for all accessible projects |
-| `compact` | `bool` | no | Skip per-project detail; return person, window, widget_data, totals, evidence |
+| `compact` | `bool` | no | Skip per-project detail; return person, window, widget_data, totals, task_context, unlinked_logs, evidence |
 
 **Returns:** `Dict` with `person`, `window{type, from, to}`,
-`widget_data` (completed tasks per weekday `Thứ 2`…`Chủ nhật`, each with
-`id`/`name`/`project`/`est`/`actual`/`url` — completed means
-`done_ratio == 100` updated in the window),
+`widget_data` (time-log entries per weekday `Thứ 2`…`Chủ nhật`, each with
+`id`/`name`/`project`/`est`/`hours`/`total`/`url`/`completed`/`role`/`log` —
+`log` is the concatenated time-entry comments of that day, one line per day,
+truncated to 1000 chars and wrapped in insecure-content tags),
+`task_context` (per task: `subject`, `description`, `daily_logs`
+`{YYYY-MM-DD: wrapped log line}`, hours),
+`unlinked_logs` (project-level logs with no issue: `date`/`hours`/`comment`/
+`project`/`activity`),
 `per_project[{project, activity, backlog}]` (omitted when `compact=true`),
 `totals`, `evidence`.
 
