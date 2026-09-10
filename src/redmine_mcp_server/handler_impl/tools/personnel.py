@@ -488,9 +488,6 @@ async def get_person_work_summary_impl(
         uid = resolved["id"]
         base_url = str(getattr(client, "url", "") or "").rstrip("/")
 
-        statuses = await asyncio.to_thread(client.issue_status.all)
-        closed_ids = {s.id for s in statuses if bool(getattr(s, "is_closed", False))}
-
         scope = set(project_ids) if project_ids else None
 
         def in_scope(issue: Any) -> bool:
@@ -499,13 +496,44 @@ async def get_person_work_summary_impl(
             project = getattr(issue, "project", None)
             return project is not None and project.id in scope
 
-        # Activity: time logged in the window.
-        time_entries = await _fetch_all_pages(
-            client.time_entry.filter,
-            user_id=uid,
-            from_date=start.isoformat(),
-            to_date=end.isoformat(),
+        # Independent reads fetched concurrently: statuses, window +
+        # lifetime time entries, touched issues, full assigned backlog.
+        # Total latency is the slowest call, not the sum. Any failure
+        # still aborts into the outer error handler, as before.
+        (
+            statuses,
+            time_entries,
+            lifetime_entries,
+            touched_raw,
+            backlog_raw,
+        ) = await asyncio.gather(
+            asyncio.to_thread(client.issue_status.all),
+            _fetch_all_pages(
+                client.time_entry.filter,
+                user_id=uid,
+                from_date=start.isoformat(),
+                to_date=end.isoformat(),
+            ),
+            _fetch_all_pages(
+                client.time_entry.filter,
+                user_id=uid,
+            ),
+            _fetch_all_pages(
+                client.issue.filter,
+                assigned_to_id=uid,
+                status_id="*",
+                updated_on=f">={start.isoformat()}",
+                sort="updated_on:desc",
+            ),
+            _fetch_all_pages(
+                client.issue.filter,
+                assigned_to_id=uid,
+                sort="due_date:asc",
+            ),
         )
+        closed_ids = {s.id for s in statuses if bool(getattr(s, "is_closed", False))}
+
+        # Activity: time logged in the window.
         hours_total = 0.0
         hours_by_project: Dict[Any, float] = {}
         actual_by_issue: Dict[Any, float] = {}
@@ -541,10 +569,7 @@ async def get_person_work_summary_impl(
         # report the true overrun (est vs lifetime) instead of the
         # window slice only. One extra paginated call per summary.
         lifetime_by_issue: Dict[Any, float] = {}
-        for entry in await _fetch_all_pages(
-            client.time_entry.filter,
-            user_id=uid,
-        ):
+        for entry in lifetime_entries:
             entry_issue = getattr(entry, "issue", None)
             entry_issue_id = (
                 getattr(entry_issue, "id", None) if entry_issue is not None else None
@@ -555,13 +580,6 @@ async def get_person_work_summary_impl(
                 ) + _round2(getattr(entry, "hours", 0))
 
         # Activity: assigned issues touched in the window (any status).
-        touched_raw = await _fetch_all_pages(
-            client.issue.filter,
-            assigned_to_id=uid,
-            status_id="*",
-            updated_on=f">={start.isoformat()}",
-            sort="updated_on:desc",
-        )
         touched = [
             issue
             for issue in touched_raw
@@ -578,11 +596,6 @@ async def get_person_work_summary_impl(
         # open. Completed issues (done_ratio 100 + Done status, or a
         # closed status) are split out so open/overdue counts only cover
         # work that is genuinely outstanding.
-        backlog_raw = await _fetch_all_pages(
-            client.issue.filter,
-            assigned_to_id=uid,
-            sort="due_date:asc",
-        )
         backlog: List[Any] = []
         backlog_completed: List[Any] = []
         for issue in backlog_raw:
@@ -620,21 +633,37 @@ async def get_person_work_summary_impl(
             getattr(i, "id", None) for i in touched + backlog + backlog_completed
         }
         contrib_issues: Dict[Any, Any] = {}
-        for logged_id in sorted(
-            {iid for (iid, _spent_iso) in hours_by_issue_day},
-            key=lambda v: str(v),
-        ):
-            if logged_id is None or logged_id in assigned_ids:
-                continue
-            try:
-                contrib = await asyncio.to_thread(client.issue.get, logged_id)
-            except Exception:
-                continue
+        contrib_sem = asyncio.Semaphore(5)
+
+        async def _fetch_contrib(
+            logged_id: Any,
+        ) -> Optional[tuple[Any, Any]]:
+            async with contrib_sem:
+                try:
+                    contrib = await asyncio.to_thread(client.issue.get, logged_id)
+                except Exception:
+                    return None
             if getattr(contrib, "id", None) != logged_id:
-                continue
+                return None
             if not in_scope(contrib):
-                continue
-            contrib_issues[logged_id] = contrib
+                return None
+            return logged_id, contrib
+
+        contrib_ids = sorted(
+            {
+                iid
+                for (iid, _spent_iso) in hours_by_issue_day
+                if iid is not None and iid not in assigned_ids
+            },
+            key=lambda v: str(v),
+        )
+        # gather preserves input order, so insertion order matches the
+        # old sequential loop exactly.
+        for fetched in await asyncio.gather(
+            *(_fetch_contrib(logged_id) for logged_id in contrib_ids)
+        ):
+            if fetched is not None:
+                contrib_issues[fetched[0]] = fetched[1]
 
         def _contrib_role(issue: Any) -> str:
             if _is_completed(issue, closed_ids):
@@ -841,6 +870,11 @@ async def get_person_work_summary_impl(
             if project is not None:
                 completed_by_project.setdefault(project.id, []).append(issue)
 
+        # Id sets for O(1) membership below (the old `i in overdue`
+        # list checks were O(n) each, i.e. O(B^2) over the backlog).
+        overdue_ids = {getattr(i, "id", None) for i in overdue}
+        no_due_ids = {getattr(i, "id", None) for i in no_due_date}
+
         for pid in sorted(
             set(touched_by_project)
             | set(backlog_by_project)
@@ -854,8 +888,12 @@ async def get_person_work_summary_impl(
                 if getattr(getattr(i, "status", None), "id", None) in closed_ids
             ]
             proj_backlog = backlog_by_project.get(pid, [])
-            proj_overdue = [i for i in proj_backlog if i in overdue]
-            proj_no_due = [i for i in proj_backlog if i in no_due_date]
+            proj_overdue = [
+                i for i in proj_backlog if getattr(i, "id", None) in overdue_ids
+            ]
+            proj_no_due = [
+                i for i in proj_backlog if getattr(i, "id", None) in no_due_ids
+            ]
             per_project.append(
                 {
                     "project": {
