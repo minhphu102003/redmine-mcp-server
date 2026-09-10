@@ -2167,6 +2167,7 @@ async def get_person_work_summary(
             description=(
                 "When true, skip the per-project detail and return only"
                 " person, window, widget_data, totals, task_context,"
+                " unlinked_logs,"
                 " data_quality_flags and evidence (smaller payload for"
                 " the oversight widget)."
             )
@@ -2181,16 +2182,21 @@ async def get_person_work_summary(
     issue, plus a completion flag, ready to embed into the oversight
     widget: completed tasks carry completed=true on exactly one day,
     in-progress logged days carry completed=false; keys always cover
-    Mon-Sun)
+    Mon-Sun; every widget row also carries a wrapped one-line-per-day
+    `log` of the time-entry comments logged that day ("" when nothing
+    was logged that day))
     plus per-project activity (hours logged, issues touched and closed in the
     window), the current backlog (genuinely open issues only: completed
     issues are split out into completed_total; overdue where due_date is
     past and the issue is still outstanding, no-due-date listed
     separately), task_context (completed issues plus in-progress issues
     with hours logged in the window, each with a truncated description
+    plus per-day `daily_logs` time-entry comment lines
     so the agent can write a grounded weekly note — returned even when
     compact is true; week_hours is window-only while lifetime_hours and
     prior_hours span all weeks so overrun is judged on lifetime),
+    unlinked_logs (window time entries logged at project level with no
+    issue: date, hours, wrapped comment, project, activity),
     data_quality_flags (contradictory status/done_ratio records needing
     Redmine cleanup) and an evidence block (filters used, hours_scope
     noting window hours are window-only, query time, totals) so every

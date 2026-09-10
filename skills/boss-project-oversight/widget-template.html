@@ -1,18 +1,22 @@
-<!-- boss-widget-template v4 -->
+<!-- boss-widget-template v5 -->
 <!--
 TEMPLATE CỐ ĐỊNH — hỗ trợ task trải nhiều ngày (log giờ ở nhiều ngày, chỉ
 "hoàn thành" ở đúng 1 ngày), task dàn trải nhiều tuần (giờ log ngoài tuần
-đang xem vẫn được tính chênh lệch qua field "total") và task góp giờ
+đang xem vẫn được tính chênh lệch qua field "total"), task góp giờ
 (task của người khác mà user log giờ vào — hiện với badge Hỗ trợ/Đã hỗ trợ,
-không tính vào số hoàn thành). Có fallback CSS
+không tính vào số hoàn thành), nội dung logtime theo ngày (field "log":
+comment gộp 1 dòng/ngày, tối đa 1000 ký tự) và log ngoài task
+("unlinked_logs": log ở mức project, không gắn issue — hiện ở mục riêng,
+không tính vào chart/cards). Có fallback CSS
 variables để hiển thị đúng cả khi mở độc lập ngoài trình duyệt. KHÔNG dùng
 CDN — hoạt động offline hoàn toàn.
 
-CHỈ ĐƯỢC SỬA 4 CHỖ, đánh dấu rõ bằng comment:
+CHỈ ĐƯỢC SỬA 5 CHỖ, đánh dấu rõ bằng comment:
   1. Tiêu đề — id="widget-title"
   2. RAMP (dải màu gradient cùng tông, KHÔNG đổi sang hệ màu khác)
   3. DATA (object 7 ngày, mỗi ngày là mảng entry LOG GIỜ trong ngày đó)
   4. Dòng "Nguồn: Redmine, queried at ..." ở footer
+  5. UNLINKED (mảng log ngoài task, không gắn issue)
 
 Data schema mỗi entry (1 dòng = 1 lần log giờ trong 1 ngày cho 1 task):
 {
@@ -24,11 +28,20 @@ Data schema mỗi entry (1 dòng = 1 lần log giờ trong 1 ngày cho 1 task):
   "total": number,         // giờ đã log MỌI tuần của đúng user cho task này (để tính chênh lệch)
   "url": string,
   "completed": boolean,    // true CHỈ ở đúng 1 ngày — ngày task được đánh dấu hoàn thành
-  "role": string           // "owner" (task của mình) | "supporting" (task mở của người khác mà mình góp giờ)
+  "role": string,          // "owner" (task của mình) | "supporting" (task mở của người khác mà mình góp giờ)
                            // | "supported" (task đã đóng của người khác mà mình từng góp giờ).
                            // Hàng contributor LUÔN có completed=false — chart/cards chỉ đếm completed=true
                            // nên số hoàn thành không đổi. Entry cũ thiếu "role" thì coi như "owner".
+  "log": string            // comment logtime gộp 1 dòng của NGÀY đó (nhiều lần log cùng ngày nối bằng "; ",
+                           // mỗi đoạn dạng "{comment} ({hours}h[, {activity}])"), bọc trong
+                           // thẻ <insecure-content-...> — strip thẻ trước khi hiển thị.
+                           // "" nghĩa là hôm đó không log (luôn rỗng ở dòng completed có hours=0).
+                           // Entry cũ thiếu "log" thì coi như "".
 }
+
+UNLINKED schema (log ở mức project, không gắn issue — KHÔNG tính vào chart/cards):
+[{ "date": "YYYY-MM-DD", "hours": number, "comment": string (bọc insecure-content),
+   "project": string, "activity": string }]
 
 Quy tắc quan trọng — KHÔNG được đổi logic này:
 - Cột biểu đồ chỉ đếm entry có completed=true (tránh đếm trùng task nhiều ngày;
@@ -104,7 +117,12 @@ Quy tắc quan trọng — KHÔNG được đổi logic này:
 <div id="detail-panel" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
   <p id="detail-day" style="font-weight:500; font-size:16px; margin:0 0 12px;"></p>
   <table style="width:100%; font-size:13px; border-collapse: collapse;" id="detail-table"></table>
-  <p id="hours-scope-note" style="display:none; color:var(--rpt-text-muted); font-size:11px; margin:8px 0 0;">Giờ ngày/tuần chỉ tính log trong tuần đang xem, của đúng người đang xem — 0h nghĩa là tuần này chưa log, không phải task chưa từng được log giờ. Cột "Tổng đã log" gồm mọi tuần; "Chênh lệch" so với Estimate tính trên tổng mọi tuần.</p>
+  <p id="hours-scope-note" style="display:none; color:var(--rpt-text-muted); font-size:11px; margin:8px 0 0;">Giờ ngày/tuần chỉ tính log trong tuần đang xem, của đúng người đang xem — 0h nghĩa là tuần này chưa log, không phải task chưa từng được log giờ. Cột "Tổng đã log" gồm mọi tuần; "Chênh lệch" so với Estimate tính trên tổng mọi tuần. Cột "Ghi chú log" là nội dung người đó gõ khi log giờ hôm đó.</p>
+</div>
+
+<div id="unlinked-section" style="display:none; background: var(--rpt-surface-2); border: 1px solid var(--rpt-border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem;">
+  <p style="font-weight:500; font-size:16px; margin:0 0 12px;">Việc ngoài task (log giờ không gắn issue)</p>
+  <table style="width:100%; font-size:13px; border-collapse: collapse;" id="unlinked-table"></table>
 </div>
 
 <!-- 4. FOOTER -->
@@ -128,6 +146,21 @@ const DATA = {
   "Chủ nhật": []
 };
 // ==== HẾT VÙNG DỮ LIỆU ====
+
+// ==== 5. VÙNG LOG NGOÀI TASK — thay bằng unlinked_logs thật ====
+const UNLINKED = [];
+// ==== HẾT VÙNG LOG NGOÀI TASK ====
+
+// Strip thẻ <insecure-content-...> bọc nội dung logtime từ Redmine + escape HTML
+// để hiển thị an toàn (comment là user input).
+function stripWrap(s) {
+  return String(s == null ? '' : s).replace(/<\/?insecure-content-[a-z0-9]+>/gi, '').trim();
+}
+function escHtml(s) {
+  return stripWrap(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 const allEntries = Object.entries(DATA).flatMap(([d, arr]) => arr.map(t => ({...t, day: d})));
 const projects = [...new Set(allEntries.map(t => t.project))];
@@ -202,6 +235,19 @@ function showTooltip(evt, lines) {
 }
 function hideTooltip() { tooltip.style.display = 'none'; }
 
+// Tooltip của 1 cột ngày: số task hoàn thành theo project + ghi chú log
+// trong ngày (tối đa 3 dòng, mỗi dòng cắt ngắn) để boss thấy ngay hôm đó làm gì.
+function dayTooltipLines(day, total, nonZeroProjects, counts) {
+  const lines = [day + ` — ${total} task hoàn thành`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)];
+  const logs = getDayEntries(day, 'Tất cả')
+    .map(t => stripWrap(t.log || ''))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(s => s.length > 80 ? s.slice(0, 80).trimEnd() + '…' : s);
+  logs.forEach(s => lines.push('• ' + s));
+  return lines;
+}
+
 function renderChart(projectFilter) {
   const activeProjects = projectFilter === 'Tất cả' ? projects : [projectFilter];
   const perDayCounts = days.map(d => {
@@ -239,11 +285,11 @@ function renderChart(projectFilter) {
       });
     }
     col.addEventListener('mouseenter', (e) => {
-      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task hoàn thành`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, dayTooltipLines(d, total, nonZeroProjects, counts)); }
       else if (total === 0) { showTooltip(e, [d, 'Không có task hoàn thành']); }
     });
     col.addEventListener('mousemove', (e) => {
-      if (total > 0 && activeProjects.length > 1) { showTooltip(e, [d + ` — ${total} task hoàn thành`, ...nonZeroProjects.map(p => `${p}: ${counts[p]}`)]); }
+      if (total > 0 && activeProjects.length > 1) { showTooltip(e, dayTooltipLines(d, total, nonZeroProjects, counts)); }
       else if (total === 0) { showTooltip(e, [d, 'Không có task hoàn thành']); }
     });
     col.addEventListener('mouseleave', hideTooltip);
@@ -279,10 +325,11 @@ function showDetail(day, projectFilter) {
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Estimate (h)</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Giờ log ngày này</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Tổng đã log</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Ghi chú log</td>' +
     '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Chênh lệch</td></tr>';
 
   if (entries.length === 0) {
-    rows += '<tr><td colspan="7" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task nào</td></tr>';
+    rows += '<tr><td colspan="8" style="padding:12px 4px; color:var(--rpt-text-muted);">Không có task nào</td></tr>';
   }
 
   let dayHoursLogged = 0, dayEstCompleted = 0, dayDiffCompleted = 0;
@@ -297,6 +344,7 @@ function showDetail(day, projectFilter) {
       ? '<span class="rpt-badge rpt-badge-support">Đã hỗ trợ</span>'
       : '<span class="rpt-badge rpt-badge-progress">Đang làm</span>';
     const lifetime = lifetimeById[t.id];
+    const logCell = stripWrap(t.log || '') ? escHtml(t.log) : '—';
     let estCell = '—', diffCell = '—';
     if (t.completed) {
       const diff = lifetime - t.est;
@@ -313,6 +361,7 @@ function showDetail(day, projectFilter) {
       '<td style="padding:6px 4px; text-align:right;">' + estCell + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + t.hours.toFixed(2) + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + lifetime.toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px;">' + logCell + '</td>' +
       '<td style="padding:6px 4px; text-align:right;">' + diffCell + '</td></tr>';
   });
 
@@ -323,10 +372,34 @@ function showDetail(day, projectFilter) {
       '<td style="padding:8px 4px; font-weight:500;" colspan="3">Tổng ngày <span style="font-weight:400; color:var(--rpt-text-muted); font-size:11px;">(chênh lệch chỉ tính task hoàn thành hôm nay)</span></td>' +
       '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayEstCompleted.toFixed(2) + '</td>' +
       '<td style="padding:8px 4px; text-align:right; font-weight:500;">' + dayHoursLogged.toFixed(2) + '</td>' +
+      '<td style="padding:8px 4px; text-align:right; font-weight:500;" colspan="2">—</td>' +
       '<td style="padding:8px 4px; text-align:right; font-weight:500; color:' + dayDiffColor + ';">' + dayDiffText + '</td></tr>';
   }
   table.innerHTML = rows;
   document.getElementById('hours-scope-note').style.display = 'block';
+}
+
+function renderUnlinked() {
+  const section = document.getElementById('unlinked-section');
+  const table = document.getElementById('unlinked-table');
+  if (!Array.isArray(UNLINKED) || UNLINKED.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  let rows = '<tr style="border-bottom:1px solid var(--rpt-border);">' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Ngày</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Project</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary); text-align:right;">Giờ log</td>' +
+    '<td style="padding:6px 4px; color:var(--rpt-text-secondary);">Ghi chú</td></tr>';
+  UNLINKED.forEach(u => {
+    rows += '<tr style="border-bottom:1px solid var(--rpt-border);">' +
+      '<td style="padding:6px 4px;">' + escHtml(u.date || '') + '</td>' +
+      '<td style="padding:6px 4px;">' + escHtml(u.project || '') + '</td>' +
+      '<td style="padding:6px 4px; text-align:right;">' + Number(u.hours || 0).toFixed(2) + '</td>' +
+      '<td style="padding:6px 4px;">' + (stripWrap(u.comment || '') ? escHtml(u.comment) : '—') + '</td></tr>';
+  });
+  table.innerHTML = rows;
 }
 
 select.addEventListener('change', () => {
@@ -334,5 +407,5 @@ select.addEventListener('change', () => {
   renderChart(val); renderLegend(val); updateMetrics(val);
   document.getElementById('detail-panel').style.display = 'none';
 });
-renderChart('Tất cả'); renderLegend('Tất cả'); updateMetrics('Tất cả');
+renderChart('Tất cả'); renderLegend('Tất cả'); updateMetrics('Tất cả'); renderUnlinked();
 </script>

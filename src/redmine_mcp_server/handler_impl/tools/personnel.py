@@ -32,6 +32,11 @@ _PAGE_SIZE = 100
 # the compact payload small.
 _TASK_CONTEXT_DESC_LIMIT = 1500
 
+# Max characters of the concatenated per-day log text (time-entry
+# comments) kept on a widget row / task_context day. One line per day
+# per task, long enough for a week/month view without per-log detail.
+_LOG_TEXT_LIMIT = 1000
+
 # Vietnamese weekday labels, Monday-first, for widget_data keys.
 _VI_DAY_NAMES = [
     "Thứ 2",
@@ -165,6 +170,42 @@ def _truncate_description(value: Any, limit: int = _TASK_CONTEXT_DESC_LIMIT) -> 
     return text[:limit].rstrip() + "…"
 
 
+def _truncate_log_text(value: Any, limit: int = _LOG_TEXT_LIMIT) -> str:
+    """Trim concatenated per-day log text to a short, note-ready line.
+
+    Non-string or missing values become "". Used for the one-line-per-day
+    time-entry comment summaries (``log`` / ``daily_logs`` /
+    ``unlinked_logs`` comments).
+    """
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
+def _format_day_log(parts: List[tuple]) -> str:
+    """Concatenate one day's time-entry comments into a single line.
+
+    ``parts`` is a list of ``(hours, comment, activity)`` tuples for the
+    same issue and day. Each part renders as
+    ``"{comment} ({hours}h[, {activity}])"`` (comment-less parts render
+    as just ``"({hours}h[, {activity}])"``) and parts are joined with
+    ``"; "``. Raw Redmine text is kept as-is (no markup parsing).
+    """
+    segments: List[str] = []
+    for hours, comment, activity in parts:
+        label = f"{_round2(hours)}h"
+        if activity:
+            label += f", {activity}"
+        if comment:
+            segments.append(f"{comment} ({label})")
+        else:
+            segments.append(f"({label})")
+    return "; ".join(segments)
+
+
 def _task_context_entry(
     issue: Any,
     base_url: str,
@@ -173,6 +214,7 @@ def _task_context_entry(
     lifetime_hours: float = 0.0,
     prior_hours: float = 0.0,
     role: str = "owner",
+    daily_logs: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """One task's weekly-note material: what it is + what it says.
 
@@ -190,6 +232,11 @@ def _task_context_entry(
     ``role`` is "owner" (assigned to this user), "supporting" (someone
     else's open task this user logged hours on) or "supported"
     (someone else's closed task this user contributed hours to).
+
+    ``daily_logs`` maps ``YYYY-MM-DD`` to the concatenated, truncated
+    and wrapped time-entry comments logged that day (one line per day),
+    so multi-day in-progress tasks report what was actually done each
+    day instead of repeating the issue description.
     """
     project = getattr(issue, "project", None)
     status = getattr(issue, "status", None)
@@ -211,6 +258,7 @@ def _task_context_entry(
         "description": wrap_insecure_content(
             _truncate_description(getattr(issue, "description", ""))
         ),
+        "daily_logs": daily_logs or {},
         "url": (f"{base_url}/issues/{issue_id}" if base_url and issue_id else None),
     }
 
@@ -443,11 +491,15 @@ async def get_person_work_summary_impl(
     ``data_quality_flags`` (contradictory status/done_ratio records
     needing Redmine cleanup), ``task_context`` (completed issues plus
     in-progress issues with hours logged in the window, each with a
-    truncated description for the agent-written weekly note — also
-    returned when ``compact`` is True) and ``widget_data`` — per-day time-log
-    entries bucketed per weekday with estimate vs same-day hours, a
-    lifetime ``total`` per issue, plus a completion flag, ready to embed
-    verbatim into the oversight widget. Keys always cover Mon-Sun.
+    truncated description plus per-day ``daily_logs`` time-entry comment
+    lines for the agent-written weekly note — also returned when
+    ``compact`` is True), ``unlinked_logs`` (window time entries logged
+    at project level with no issue: date, hours, wrapped comment,
+    project, activity) and ``widget_data`` — per-day time-log entries
+    bucketed per weekday with estimate vs same-day hours, a lifetime
+    ``total`` per issue, a wrapped one-line-per-day ``log`` of the
+    time-entry comments, plus a completion flag, ready to embed verbatim
+    into the oversight widget. Keys always cover Mon-Sun.
 
     Every widget row and task-context entry carries a ``role``:
     "owner" (assigned to this person — the only rows that count toward
@@ -540,6 +592,12 @@ async def get_person_work_summary_impl(
         # Per-day hours per issue: (issue_id, spent_on ISO date) -> hours.
         # Drives the widget "hours" field (hours logged on that day only).
         hours_by_issue_day: Dict[tuple, float] = {}
+        # Per-day log parts per issue: (issue_id, spent_on ISO date) ->
+        # list of (hours, comment, activity) tuples, concatenated into one
+        # wrapped line per day ("log"). Project-level logs (no issue) go
+        # to unlinked_raw instead of a named task row.
+        log_parts_by_issue_day: Dict[tuple, List[tuple]] = {}
+        unlinked_raw: List[Dict[str, Any]] = []
         for entry in time_entries:
             entry_hours = _round2(getattr(entry, "hours", 0))
             hours_total += entry_hours
@@ -552,19 +610,78 @@ async def get_person_work_summary_impl(
             entry_issue_id = (
                 getattr(entry_issue, "id", None) if entry_issue is not None else None
             )
+            spent_day = _as_date(getattr(entry, "spent_on", None))
+            raw_comment = getattr(entry, "comments", "")
+            entry_comment = (
+                str(raw_comment).strip() if isinstance(raw_comment, str) else ""
+            )
+            activity = getattr(entry, "activity", None)
+            raw_activity = getattr(activity, "name", "") if activity is not None else ""
+            entry_activity = (
+                str(raw_activity).strip() if isinstance(raw_activity, str) else ""
+            )
             if entry_issue_id is not None:
                 actual_by_issue[entry_issue_id] = (
                     actual_by_issue.get(entry_issue_id, 0.0) + entry_hours
                 )
-                spent_day = _as_date(getattr(entry, "spent_on", None))
-                if spent_day is not None and start <= spent_day <= end:
-                    day_key = (entry_issue_id, spent_day.isoformat())
-                    hours_by_issue_day[day_key] = (
-                        hours_by_issue_day.get(day_key, 0.0) + entry_hours
+                if spent_day is None or spent_day < start or spent_day > end:
+                    continue
+                day_key = (entry_issue_id, spent_day.isoformat())
+                hours_by_issue_day[day_key] = (
+                    hours_by_issue_day.get(day_key, 0.0) + entry_hours
+                )
+                log_parts_by_issue_day.setdefault(day_key, []).append(
+                    (entry_hours, entry_comment, entry_activity)
+                )
+            else:
+                if spent_day is None or spent_day < start or spent_day > end:
+                    continue
+                if project is not None and (scope is None or project.id in scope):
+                    unlinked_raw.append(
+                        {
+                            "date": spent_day.isoformat(),
+                            "hours": entry_hours,
+                            "comment": entry_comment,
+                            "project": getattr(project, "name", "") or "",
+                            "activity": entry_activity,
+                        }
                     )
 
+        # Concatenated one-line-per-day log text, truncated and wrapped
+        # as insecure content (empty when nothing was logged that day).
+        day_log_text: Dict[tuple, str] = {}
+        for day_key, parts in log_parts_by_issue_day.items():
+            line = _truncate_log_text(_format_day_log(parts))
+            day_log_text[day_key] = wrap_insecure_content(line) if line else ""
+
+        def _daily_logs_for(issue_id: Any) -> Dict[str, str]:
+            """Wrapped per-day log lines for one issue in the window."""
+            return {
+                spent_iso: day_log_text[(issue_id, spent_iso)]
+                for (logged_id, spent_iso) in day_log_text
+                if logged_id == issue_id and day_log_text[(issue_id, spent_iso)]
+            }
+
+        # Project-level logs (no issue): window-only, sorted by date.
+        unlinked_logs: List[Dict[str, Any]] = [
+            {
+                "date": item["date"],
+                "hours": _round2(item["hours"]),
+                "comment": (
+                    wrap_insecure_content(_truncate_log_text(item["comment"]))
+                    if item["comment"]
+                    else ""
+                ),
+                "project": item["project"],
+                "activity": item["activity"],
+            }
+            for item in sorted(
+                unlinked_raw, key=lambda i: (i["date"], str(i["project"]))
+            )
+        ]
+
         # Lifetime hours per issue for this user (all weeks, no date
-        # bounds). Drives the widget v4 "total" field and the
+        # bounds). Drives the widget v5 "total" field and the
         # task_context lifetime/prior hours so week-spanning issues
         # report the true overrun (est vs lifetime) instead of the
         # window slice only. One extra paginated call per summary.
@@ -692,7 +809,7 @@ async def get_person_work_summary_impl(
                     }
                 )
 
-        # Widget data v4: per-day time-log entries, ready to embed verbatim
+        # Widget data v5: per-day time-log entries, ready to embed verbatim
         # into the oversight widget. Keys ALWAYS cover Mon-Sun (7 Vietnamese
         # labels) for both day and week windows — days outside a day window
         # stay empty. Completed tasks appear with completed=true on exactly
@@ -705,15 +822,21 @@ async def get_person_work_summary_impl(
         # count completed=true) are unaffected. Each entry
         # also carries "total" (this user's lifetime hours on the issue,
         # all weeks) so the widget computes overrun as total - est instead
-        # of the window slice. Entries whose issue is unknown (e.g.
-        # project-level logs, reassigned issues) stay in totals but cannot
-        # be placed on a named task row.
+        # of the window slice, plus "log" (the concatenated, truncated and
+        # wrapped time-entry comments logged that day — one line per day,
+        # "" when nothing was logged that day). Project-level logs with no
+        # issue go to top-level "unlinked_logs"; unresolvable issues stay
+        # in totals only.
         widget_data: Dict[str, List[Dict[str, Any]]] = {
             name: [] for name in _VI_DAY_NAMES
         }
 
         def _widget_entry(
-            issue: Any, day_hours: float, is_completed: bool, role: str = "owner"
+            issue: Any,
+            day_hours: float,
+            is_completed: bool,
+            role: str = "owner",
+            day_log: str = "",
         ) -> Dict[str, Any]:
             project = getattr(issue, "project", None)
             issue_id = getattr(issue, "id", None)
@@ -734,6 +857,7 @@ async def get_person_work_summary_impl(
                 ),
                 "completed": is_completed,
                 "role": role,
+                "log": day_log,
             }
 
         emitted_days: set = set()
@@ -746,7 +870,13 @@ async def get_person_work_summary_impl(
             issue_id = getattr(issue, "id", None)
             day_hours = hours_by_issue_day.get((issue_id, updated_day.isoformat()), 0.0)
             widget_data[_VI_DAY_NAMES[updated_day.weekday()]].append(
-                _widget_entry(issue, day_hours, True)
+                _widget_entry(
+                    issue,
+                    day_hours,
+                    True,
+                    "owner",
+                    day_log_text.get((issue_id, updated_day.isoformat()), ""),
+                )
             )
             emitted_days.add((issue_id, updated_day.isoformat()))
 
@@ -772,7 +902,13 @@ async def get_person_work_summary_impl(
                 continue
             spent_day = date.fromisoformat(spent_iso)
             widget_data[_VI_DAY_NAMES[spent_day.weekday()]].append(
-                _widget_entry(issue, day_hours, False, role)
+                _widget_entry(
+                    issue,
+                    day_hours,
+                    False,
+                    role,
+                    day_log_text.get((issue_id, spent_iso), ""),
+                )
             )
 
         # Task context for the agent-written weekly note: issues completed
@@ -800,6 +936,8 @@ async def get_person_work_summary_impl(
                     True,
                     lifetime,
                     prior,
+                    "owner",
+                    _daily_logs_for(issue_id),
                 )
             )
         for issue_id, _spent_iso in sorted(
@@ -831,6 +969,7 @@ async def get_person_work_summary_impl(
                     lifetime,
                     prior,
                     role,
+                    _daily_logs_for(issue_id),
                 )
             )
 
@@ -953,6 +1092,7 @@ async def get_person_work_summary_impl(
             "totals": totals,
             "data_quality_flags": data_quality_flags,
             "task_context": task_context,
+            "unlinked_logs": unlinked_logs,
             "evidence": {
                 "queried_at": datetime.now(timezone.utc).isoformat(),
                 "person_query": person,

@@ -78,12 +78,24 @@ def _mock_status(sid, name, is_closed=False):
     return _named_mock(id=sid, name=name, is_closed=is_closed)
 
 
-def _mock_entry(hours, project_id=1, project_name="Proj", issue_id=None, spent_on=None):
+def _mock_entry(
+    hours,
+    project_id=1,
+    project_name="Proj",
+    issue_id=None,
+    spent_on=None,
+    comments="",
+    activity_name=None,
+):
     e = Mock()
     e.hours = hours
     e.project = _named_mock(id=project_id, name=project_name)
     e.issue = _named_mock(id=issue_id) if issue_id is not None else None
     e.spent_on = spent_on
+    e.comments = comments
+    e.activity = (
+        _named_mock(id=9, name=activity_name) if activity_name is not None else None
+    )
     return e
 
 
@@ -974,3 +986,130 @@ class TestPersonWorkSummary:
         assert by_day_id[("Thứ 5", 99)] == "supported"
         assert result["totals"]["hours"] == 3.0
         assert result["totals"]["completed_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_day_log_concatenates_same_day_comments(self, mock_redmine):
+        """Two logs same day+issue -> one widget row, one joined log line."""
+        working = _mock_issue(
+            1,
+            done_ratio=30,
+            estimated_hours=5.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [working])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(
+                2.0,
+                issue_id=1,
+                spent_on=date(2026, 9, 2),
+                comments="test case đăng nhập",
+                activity_name="Development",
+            ),
+            _mock_entry(
+                1.5,
+                issue_id=1,
+                spent_on=date(2026, 9, 2),
+                comments="fix lỗi hiển thị",
+                activity_name="Development",
+            ),
+        ]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        wed = result["widget_data"]["Thứ 4"]
+        assert len(wed) == 1
+        assert wed[0]["hours"] == 3.5
+        assert "test case đăng nhập (2.0h, Development)" in wed[0]["log"]
+        assert "fix lỗi hiển thị (1.5h, Development)" in wed[0]["log"]
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert set(by_id[1]["daily_logs"]) == {"2026-09-02"}
+        assert "fix lỗi hiển thị" in by_id[1]["daily_logs"]["2026-09-02"]
+
+    @pytest.mark.asyncio
+    async def test_day_log_empty_when_no_comment(self, mock_redmine):
+        """Logs without comments still render hours; completed 0h row has ''."""
+        done = _mock_issue(
+            1,
+            status_id=3,
+            status_name="Done",
+            done_ratio=100,
+            estimated_hours=4.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+
+        def issue_filter(**kwargs):
+            if kwargs.get("status_id") == "*":
+                return [done]
+            return []
+
+        mock_redmine.issue.filter.side_effect = issue_filter
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(2.0, issue_id=1, spent_on=date(2026, 9, 1)),
+        ]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        tue = result["widget_data"]["Thứ 3"]
+        assert "(2.0h)" in tue[0]["log"]
+        wed = result["widget_data"]["Thứ 4"]
+        assert wed[0]["completed"] is True
+        assert wed[0]["hours"] == 0.0
+        assert wed[0]["log"] == ""
+
+    @pytest.mark.asyncio
+    async def test_day_log_truncated_to_1000_chars(self, mock_redmine):
+        """A very long comment is cut to 1000 chars + ellipsis (in tags)."""
+        working = _mock_issue(
+            1,
+            done_ratio=30,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [working])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(
+                1.0, issue_id=1, spent_on=date(2026, 9, 2), comments="y" * 1200
+            ),
+        ]
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        log = result["widget_data"]["Thứ 4"][0]["log"]
+        assert "…" in log
+        assert log.count("y") == 1000
+
+    @pytest.mark.asyncio
+    async def test_unlinked_logs_for_project_level_entries(self, mock_redmine):
+        """Project-level logs (no issue) surface in unlinked_logs, not DATA."""
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(
+                2.0,
+                project_id=1,
+                project_name="Web",
+                issue_id=None,
+                spent_on=date(2026, 9, 2),
+                comments="họp dự án",
+                activity_name="Meeting",
+            ),
+        ]
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["hours"] == 2.0
+        assert all(days == [] for days in result["widget_data"].values())
+        assert len(result["unlinked_logs"]) == 1
+        row = result["unlinked_logs"][0]
+        assert row["date"] == "2026-09-02"
+        assert row["hours"] == 2.0
+        assert "họp dự án" in row["comment"]
+        assert row["project"] == "Web"
+        assert row["activity"] == "Meeting"
+
+    @pytest.mark.asyncio
+    async def test_unlinked_logs_empty_by_default(self, mock_redmine):
+        """Responses without project-level logs carry an empty list."""
+        self._setup_backlog(mock_redmine, [])
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["unlinked_logs"] == []
