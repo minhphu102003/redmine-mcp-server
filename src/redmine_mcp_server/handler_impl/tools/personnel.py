@@ -172,6 +172,7 @@ def _task_context_entry(
     completed_flag: bool,
     lifetime_hours: float = 0.0,
     prior_hours: float = 0.0,
+    role: str = "owner",
 ) -> Dict[str, Any]:
     """One task's weekly-note material: what it is + what it says.
 
@@ -185,6 +186,10 @@ def _task_context_entry(
     every week, and ``prior_hours`` is the out-of-window part
     (lifetime minus window). Overrun judgments must use lifetime, not
     the window slice.
+
+    ``role`` is "owner" (assigned to this user), "supporting" (someone
+    else's open task this user logged hours on) or "supported"
+    (someone else's closed task this user contributed hours to).
     """
     project = getattr(issue, "project", None)
     status = getattr(issue, "status", None)
@@ -199,6 +204,7 @@ def _task_context_entry(
         ),
         "status": getattr(status, "name", "") or "",
         "completed": completed_flag,
+        "role": role,
         "week_hours": _round2(week_hours),
         "lifetime_hours": _round2(lifetime_hours),
         "prior_hours": _round2(prior_hours),
@@ -431,7 +437,7 @@ async def get_person_work_summary_impl(
     """Summarize one person's performance for a day or Mon-Sun week.
 
     Besides the grouped detail (skipped when ``compact`` is True), always
-    returns ``completed`` (done_ratio == 100 with a Done status, or a
+    returns     ``completed`` (done_ratio == 100 with a Done status, or a
     closed status, updated in the window), ``completed_total`` (all-time
     count of completed issues assigned to the person, count only),
     ``data_quality_flags`` (contradictory status/done_ratio records
@@ -442,6 +448,13 @@ async def get_person_work_summary_impl(
     entries bucketed per weekday with estimate vs same-day hours, a
     lifetime ``total`` per issue, plus a completion flag, ready to embed
     verbatim into the oversight widget. Keys always cover Mon-Sun.
+
+    Every widget row and task-context entry carries a ``role``:
+    "owner" (assigned to this person — the only rows that count toward
+    completion), "supporting" (someone else's open task this person
+    logged hours on in the window) or "supported" (someone else's
+    closed task this person contributed hours to). Contributor rows
+    never count toward completed/backlog/overdue totals.
 
     Hours scope: ``actual_hours`` per issue and ``totals.hours`` count
     ONLY time logged by this user inside the viewed window (see
@@ -523,7 +536,7 @@ async def get_person_work_summary_impl(
                     )
 
         # Lifetime hours per issue for this user (all weeks, no date
-        # bounds). Drives the widget v3 "total" field and the
+        # bounds). Drives the widget v4 "total" field and the
         # task_context lifetime/prior hours so week-spanning issues
         # report the true overrun (est vs lifetime) instead of the
         # window slice only. One extra paginated call per summary.
@@ -596,11 +609,45 @@ async def get_person_work_summary_impl(
         # or a closed status (boss rule).
         completed = [issue for issue in touched if _is_completed(issue, closed_ids)]
 
+        # Contributor issues: tasks with hours logged by this user in the
+        # window that are NOT assigned to them (someone else's task they
+        # helped with). Resolved individually so the widget and the weekly
+        # note can credit the work with a contributor role instead of
+        # dropping it from named rows. Fetch failures (no permission,
+        # deleted issue) are skipped silently — the hours stay in the
+        # totals either way.
+        assigned_ids = {
+            getattr(i, "id", None) for i in touched + backlog + backlog_completed
+        }
+        contrib_issues: Dict[Any, Any] = {}
+        for logged_id in sorted(
+            {iid for (iid, _spent_iso) in hours_by_issue_day},
+            key=lambda v: str(v),
+        ):
+            if logged_id is None or logged_id in assigned_ids:
+                continue
+            try:
+                contrib = await asyncio.to_thread(client.issue.get, logged_id)
+            except Exception:
+                continue
+            if getattr(contrib, "id", None) != logged_id:
+                continue
+            if not in_scope(contrib):
+                continue
+            contrib_issues[logged_id] = contrib
+
+        def _contrib_role(issue: Any) -> str:
+            if _is_completed(issue, closed_ids):
+                return "supported"
+            return "supporting"
+
         # Contradictory status/done_ratio records (e.g. New at 100%,
         # Done below 100%) that need cleanup in the Redmine UI.
         seen_flagged: set = set()
         data_quality_flags: List[Dict[str, Any]] = []
-        for issue in touched + backlog + backlog_completed:
+        for issue in (
+            touched + backlog + backlog_completed + list(contrib_issues.values())
+        ):
             issue_id = getattr(issue, "id", None)
             if issue_id in seen_flagged:
                 continue
@@ -616,13 +663,17 @@ async def get_person_work_summary_impl(
                     }
                 )
 
-        # Widget data v3: per-day time-log entries, ready to embed verbatim
+        # Widget data v4: per-day time-log entries, ready to embed verbatim
         # into the oversight widget. Keys ALWAYS cover Mon-Sun (7 Vietnamese
         # labels) for both day and week windows — days outside a day window
         # stay empty. Completed tasks appear with completed=true on exactly
         # one day (their updated_on day, hours = logged that day only, 0.0
         # when nothing was logged that day). Every other logged day of any
-        # task appears as completed=false (in-progress row). Each entry
+        # task appears as completed=false (in-progress row). Tasks this user
+        # helped with but is not assigned to appear the same way with
+        # role="supporting" (open) or "supported" (closed) and
+        # completed=false, so charts and completion counts (which only
+        # count completed=true) are unaffected. Each entry
         # also carries "total" (this user's lifetime hours on the issue,
         # all weeks) so the widget computes overrun as total - est instead
         # of the window slice. Entries whose issue is unknown (e.g.
@@ -633,7 +684,7 @@ async def get_person_work_summary_impl(
         }
 
         def _widget_entry(
-            issue: Any, day_hours: float, is_completed: bool
+            issue: Any, day_hours: float, is_completed: bool, role: str = "owner"
         ) -> Dict[str, Any]:
             project = getattr(issue, "project", None)
             issue_id = getattr(issue, "id", None)
@@ -653,6 +704,7 @@ async def get_person_work_summary_impl(
                     f"{base_url}/issues/{issue_id}" if base_url and issue_id else None
                 ),
                 "completed": is_completed,
+                "role": role,
             }
 
         emitted_days: set = set()
@@ -681,11 +733,17 @@ async def get_person_work_summary_impl(
             if (issue_id, spent_iso) in emitted_days:
                 continue
             issue = known_issues.get(issue_id)
-            if issue is None or not in_scope(issue):
+            role = "owner"
+            if issue is None:
+                issue = contrib_issues.get(issue_id)
+                if issue is None or not in_scope(issue):
+                    continue
+                role = _contrib_role(issue)
+            elif not in_scope(issue):
                 continue
             spent_day = date.fromisoformat(spent_iso)
             widget_data[_VI_DAY_NAMES[spent_day.weekday()]].append(
-                _widget_entry(issue, day_hours, False)
+                _widget_entry(issue, day_hours, False, role)
             )
 
         # Task context for the agent-written weekly note: issues completed
@@ -722,9 +780,15 @@ async def get_person_work_summary_impl(
                 continue
             context_seen_ids.add(issue_id)
             issue = known_issues.get(issue_id)
-            if issue is None or not in_scope(issue):
+            role = "owner"
+            if issue is None:
+                issue = contrib_issues.get(issue_id)
+                if issue is None or not in_scope(issue):
+                    continue
+                role = _contrib_role(issue)
+            elif not in_scope(issue):
                 continue
-            if _is_completed(issue, closed_ids):
+            if role == "owner" and _is_completed(issue, closed_ids):
                 continue
             lifetime, prior = _lifetime_split(
                 issue_id, actual_by_issue, lifetime_by_issue
@@ -737,6 +801,7 @@ async def get_person_work_summary_impl(
                     False,
                     lifetime,
                     prior,
+                    role,
                 )
             )
 

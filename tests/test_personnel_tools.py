@@ -834,3 +834,105 @@ class TestPersonWorkSummary:
         assert thu_row["completed"] is False
         # Window totals unchanged by the prior-week log.
         assert result["totals"]["hours"] == 11.5
+
+    @pytest.mark.asyncio
+    async def test_supporting_row_for_open_task_of_other_person(self, mock_redmine):
+        """Hours on someone else's open task -> supporting row, not completed."""
+        foreign = _mock_issue(
+            99,
+            subject="Task người khác",
+            done_ratio=30,
+            estimated_hours=8.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(2.0, issue_id=99, spent_on=date(2026, 9, 2)),
+        ]
+        mock_redmine.issue.get.side_effect = lambda iid: foreign
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        wed = result["widget_data"]["Thứ 4"]
+        assert [(t["id"], t["completed"], t["role"]) for t in wed] == [
+            (99, False, "supporting")
+        ]
+        assert wed[0]["hours"] == 2.0
+        assert wed[0]["est"] == 8.0
+        assert wed[0]["total"] == 2.0
+        assert result["totals"]["completed_count"] == 0
+        assert result["totals"]["open_count"] == 0  # not their backlog
+        assert result["totals"]["hours"] == 2.0
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert by_id[99]["completed"] is False
+        assert by_id[99]["role"] == "supporting"
+        assert by_id[99]["week_hours"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_supported_row_for_closed_task_of_other_person(self, mock_redmine):
+        """Hours on someone else's closed task -> supported, off the counts."""
+        foreign = _mock_issue(
+            99,
+            subject="Task đã đóng",
+            status_id=5,
+            status_name="Closed",
+            done_ratio=80,
+            estimated_hours=8.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(1.5, issue_id=99, spent_on=date(2026, 9, 2)),
+        ]
+        mock_redmine.issue.get.side_effect = lambda iid: foreign
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        wed = result["widget_data"]["Thứ 4"]
+        assert [(t["id"], t["completed"], t["role"]) for t in wed] == [
+            (99, False, "supported")
+        ]
+        assert result["totals"]["completed_count"] == 0
+        assert result["totals"]["completed_total"] == 0
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert by_id[99]["completed"] is False
+        assert by_id[99]["role"] == "supported"
+
+    @pytest.mark.asyncio
+    async def test_owner_rows_keep_owner_role(self, mock_redmine):
+        """Assigned task rows carry role=owner (regression guard)."""
+        working = _mock_issue(
+            1,
+            done_ratio=30,
+            estimated_hours=5.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [working])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(2.0, issue_id=1, spent_on=date(2026, 9, 2)),
+        ]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        wed = result["widget_data"]["Thứ 4"]
+        assert [(t["id"], t["completed"], t["role"]) for t in wed] == [
+            (1, False, "owner")
+        ]
+        by_id = {t["id"]: t for t in result["task_context"]}
+        assert by_id[1]["role"] == "owner"
+
+    @pytest.mark.asyncio
+    async def test_contributor_fetch_failure_stays_in_totals(self, mock_redmine):
+        """issue.get raising -> hours in totals, no row (graceful)."""
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(3.0, issue_id=99, spent_on=date(2026, 9, 2)),
+        ]
+        mock_redmine.issue.get.side_effect = RuntimeError("forbidden")
+
+        result = await get_person_work_summary(7, date_str="2026-09-02")
+
+        assert result["totals"]["hours"] == 3.0
+        all_ids = [t["id"] for days in result["widget_data"].values() for t in days]
+        assert 99 not in all_ids
+        assert 99 not in {t["id"] for t in result["task_context"]}
