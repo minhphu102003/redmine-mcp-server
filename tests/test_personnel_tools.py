@@ -936,3 +936,41 @@ class TestPersonWorkSummary:
         all_ids = [t["id"] for days in result["widget_data"].values() for t in days]
         assert 99 not in all_ids
         assert 99 not in {t["id"] for t in result["task_context"]}
+
+    @pytest.mark.asyncio
+    async def test_multiple_contributor_issues_all_resolved(self, mock_redmine):
+        """Batch path: several foreign logged issues each get their row."""
+        helping = _mock_issue(
+            98,
+            subject="Task ké mở",
+            done_ratio=20,
+            estimated_hours=4.0,
+            updated_on=datetime(2026, 9, 2, 9, 0, 0),
+        )
+        helped = _mock_issue(
+            99,
+            subject="Task ké đóng",
+            status_id=5,
+            status_name="Closed",
+            done_ratio=80,
+            estimated_hours=6.0,
+            updated_on=datetime(2026, 9, 3, 9, 0, 0),
+        )
+        self._setup_backlog(mock_redmine, [])
+        mock_redmine.time_entry.filter.return_value = [
+            _mock_entry(1.0, issue_id=98, spent_on=date(2026, 9, 2)),
+            _mock_entry(2.0, issue_id=99, spent_on=date(2026, 9, 3)),
+        ]
+        mock_redmine.issue.get.side_effect = lambda iid: {98: helping, 99: helped}[iid]
+
+        result = await get_person_work_summary(7, window="week", date_str="2026-09-03")
+
+        by_day_id = {
+            (day, t["id"]): t["role"]
+            for day, days in result["widget_data"].items()
+            for t in days
+        }
+        assert by_day_id[("Thứ 4", 98)] == "supporting"
+        assert by_day_id[("Thứ 5", 99)] == "supported"
+        assert result["totals"]["hours"] == 3.0
+        assert result["totals"]["completed_count"] == 0
