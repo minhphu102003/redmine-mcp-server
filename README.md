@@ -144,6 +144,16 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Installs 7 skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) plus their template files (`README.md` excluded). Hitting GitHub rate limits on re-runs? Set `$env:GITHUB_TOKEN = "<your_pat>"` first (`public_repo` scope is enough). Uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
+### For Codex (all skills from a local clone)
+
+Need **every** skill (not just the 7 above), straight from your checkout — e.g. so Codex auto-loads them from `%USERPROFILE%\.agents\skills\`:
+
+```powershell
+.\scripts\install-skills-codex.ps1
+```
+
+Discovers all folders under `skills\` containing `SKILL.md` (new skills are picked up automatically), copies payloads (`README.md` excluded, `.html` templates included when present) to `$env:USERPROFILE\.agents\skills`. Idempotent — re-run to sync after editing skills. Restart Codex if it was already running.
+
 ## 🎬 Video guides
 
 Short walkthroughs — watch first, then follow the steps above. Videos open in GitHub's player. Rows marked *coming soon* are still being recorded.
