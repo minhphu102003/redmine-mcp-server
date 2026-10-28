@@ -4,14 +4,19 @@
 # to parse the param() block when the script is run via 'irm ... | iex'.
 # Install QA/tester skills to the current user's home directory so multiple
 # agent clients (opencode, ChatGPT desktop, ...) can auto-scan them.
-# Target: $env:USERPROFILE\.agents\skills  (fixed, no -Target needed)
+# Target: $env:USERPROFILE\.agents\skills  (default)
+#         <current-directory>\.agents\skills  (with -Local)
 # Source: GitHub raw (default) -- same behavior as install-skills*.ps1 when piped.
 # Usage: irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex
+# Local-folder install (e.g. run from D:\ -> D:\.agents\skills):
+#   irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 -OutFile install-skills-user.ps1
+#   .\install-skills-user.ps1 -Local
 
 param(
     [string]$Repo = "minhphu102003/redmine-mcp-server",
     [string]$Branch = "develop",
-    [string]$GitHubToken = $env:GITHUB_TOKEN
+    [string]$GitHubToken = $env:GITHUB_TOKEN,
+    [switch]$Local
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,10 +56,14 @@ $skills = @(
     "boss-project-oversight"
 )
 
-if (-not $env:USERPROFILE) {
-    throw "USERPROFILE env not set -- cannot determine user-level install target."
+if ($Local) {
+    $destRoot = Join-Path (Get-Location).Path ".agents\skills"
+} else {
+    if (-not $env:USERPROFILE) {
+        throw "USERPROFILE env not set -- cannot determine user-level install target."
+    }
+    $destRoot = Join-Path $env:USERPROFILE ".agents\skills"
 }
-$destRoot = Join-Path $env:USERPROFILE ".agents\skills"
 New-Item -ItemType Directory -Path $destRoot -Force | Out-Null
 
 Write-Host "Installing user-level skills to: $destRoot" -ForegroundColor Cyan
@@ -77,9 +86,14 @@ foreach ($skill in $skills) {
 Write-Host ""
 Write-Host "Done." -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Auto-scan coverage:" -ForegroundColor Yellow
-Write-Host "  * opencode      -> ~/.agents/skills/  (verified)"
-Write-Host "  * ChatGPT app   -> ~/.agents/skills/  (confirmed by user)"
+if ($Local) {
+    Write-Host "Local-folder install: skills live under this directory." -ForegroundColor Yellow
+    Write-Host "  * opencode    -> picks them up when opened in this folder"
+} else {
+    Write-Host "Auto-scan coverage:" -ForegroundColor Yellow
+    Write-Host "  * opencode      -> ~/.agents/skills/  (verified)"
+    Write-Host "  * ChatGPT app   -> ~/.agents/skills/  (confirmed by user)"
+}
 Write-Host ""
 Write-Host "To update later: re-run this script (idempotent, overwrites in place)."
 Write-Host "To uninstall:    Remove-Item -Recurse -Force $destRoot"
