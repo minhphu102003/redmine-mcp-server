@@ -9,8 +9,7 @@
 # Source: GitHub raw (default) -- same behavior as install-skills*.ps1 when piped.
 # Usage: irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 | iex
 # Local-folder install (e.g. run from D:\ -> D:\.agents\skills):
-#   irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 -OutFile install-skills-user.ps1
-#   .\install-skills-user.ps1 -Local
+#   irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 -OutFile install-skills-user.ps1; .\install-skills-user.ps1 -Local; Remove-Item install-skills-user.ps1
 
 param(
     [string]$Repo = "minhphu102003/redmine-mcp-server",

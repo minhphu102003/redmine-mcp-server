@@ -144,12 +144,10 @@ irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/s
 
 Installs 7 skills (`redmine-init`, `testcase-generation`, `bug-reporting`, `bug-to-redmine`, `status-sync`, `reopen-bug`, `boss-project-oversight`) plus their template files (`README.md` excluded). Hitting GitHub rate limits on re-runs? Set `$env:GITHUB_TOKEN = "<your_pat>"` first (`public_repo` scope is enough). Uninstall: `Remove-Item -Recurse -Force $env:USERPROFILE\.agents\skills`.
 
-**Install to the folder you're standing in instead** — e.g. run from `D:\` and the skills land in `D:\.agents\skills\`, not under your user profile. Use this when you want the skills scoped to one place on disk (a shared drive, a portable workspace, …) rather than everywhere for your Windows account. Because `irm … | iex` can't take parameters, download the script first, then pass `-Local`:
+**Install to the folder you're standing in instead** — e.g. run from `D:\` and the skills land in `D:\.agents\skills\`, not under your user profile. Use this when you want the skills scoped to one place on disk (a shared drive, a portable workspace, …) rather than everywhere for your Windows account. Because `irm … | iex` can't take parameters, download the script first, then pass `-Local` (the `;` separators make the whole block safe to paste as a single line):
 
 ```powershell
-irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 -OutFile install-skills-user.ps1
-.\install-skills-user.ps1 -Local
-Remove-Item install-skills-user.ps1
+irm https://raw.githubusercontent.com/minhphu102003/redmine-mcp-server/develop/scripts/install-skills-user.ps1 -OutFile install-skills-user.ps1; .\install-skills-user.ps1 -Local; Remove-Item install-skills-user.ps1
 ```
 
 Same 7 skills, same payloads — only the destination changes to `<current-directory>\.agents\skills`. Uninstall: `Remove-Item -Recurse -Force .\.agents` (from that folder).
